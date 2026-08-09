@@ -42,9 +42,14 @@ export async function enforceRateLimit(
   const keyHash = hashKey(policy.namespace, identifier);
   const sql = getSqlClient();
 
+  // postgres.js raw tagged queries do not reliably serialize Date instances in every runtime.
+  // Keep Dates for the public result, but normalize raw SQL parameters at this boundary.
+  const windowStartedAtSql = windowStartedAt.toISOString();
+  const expiresAtSql = expiresAt.toISOString();
+
   const [bucket] = await sql<{ request_count: number }[]>`
     insert into rate_limit_buckets (key_hash, window_started_at, request_count, expires_at)
-    values (${keyHash}, ${windowStartedAt}, 1, ${expiresAt})
+    values (${keyHash}, ${windowStartedAtSql}::timestamptz, 1, ${expiresAtSql}::timestamptz)
     on conflict (key_hash) do update set
       request_count = case
         when rate_limit_buckets.window_started_at < excluded.window_started_at then 1
