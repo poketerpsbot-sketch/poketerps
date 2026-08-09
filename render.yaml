@@ -1,0 +1,65 @@
+services:
+  - type: web
+    name: pokedex-community
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_OWNER_IDS
+        sync: false
+      - key: TELEGRAM_ADMIN_IDS
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: TELEGRAM_CHANNEL_URL
+        sync: false
+      - key: TELEGRAM_CHAT_URL
+        sync: false
+      - key: TELEGRAM_AUTH_MAX_AGE_SECONDS
+        value: "300"
+      - key: INSTAGRAM_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SESSION_MAX_AGE_SECONDS
+        value: "604800"
+      - key: RATE_LIMIT_SECRET
+        generateValue: true
+      - key: APP_DISPLAY_NAME
+        value: Pokédex
+      - key: APP_TIMEZONE
+        value: Europe/Zurich
+      - key: APP_LEGAL_COUNTRY
+        value: CH
+      - key: AGE_GATE_ENABLED
+        value: "true"
+      - key: MINIMUM_AGE
+        value: "18"
+      - key: ENTRY_VIEW_DEDUP_HOURS
+        value: "6"

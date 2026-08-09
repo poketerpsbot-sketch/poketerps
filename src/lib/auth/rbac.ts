@@ -1,0 +1,89 @@
+import "server-only";
+
+import { forbidden } from "@/lib/errors";
+import type { UserRole } from "@/lib/db/schema";
+
+export type Permission =
+  | "entry:create"
+  | "entry:update:own"
+  | "entry:update:any"
+  | "entry:moderate"
+  | "review:create"
+  | "review:moderate"
+  | "message:create"
+  | "message:manage"
+  | "partner:manage"
+  | "category:manage"
+  | "user:manage"
+  | "settings:manage"
+  | "badge:manage"
+  | "publication:manage"
+  | "storage:upload:entry"
+  | "storage:upload:partner"
+  | "storage:upload:message"
+  | "telegram:admin"
+  | "audit:read";
+
+const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
+  OWNER: new Set(["*"]),
+  ADMIN: new Set([
+    "entry:create",
+    "entry:update:own",
+    "entry:update:any",
+    "entry:moderate",
+    "review:create",
+    "review:moderate",
+    "message:create",
+    "message:manage",
+    "partner:manage",
+    "category:manage",
+    "user:manage",
+    "settings:manage",
+    "badge:manage",
+    "publication:manage",
+    "storage:upload:entry",
+    "storage:upload:partner",
+    "storage:upload:message",
+    "telegram:admin",
+    "audit:read",
+  ]),
+  MODERATOR: new Set([
+    "entry:update:own",
+    "review:create",
+    "review:moderate",
+    "message:create",
+    "message:manage",
+    "storage:upload:message",
+    "telegram:admin",
+  ]),
+  EDITOR: new Set([
+    "entry:create",
+    "entry:update:own",
+    "review:create",
+    "message:create",
+    "storage:upload:entry",
+    "storage:upload:message",
+  ]),
+  MEMBER: new Set([
+    "entry:create",
+    "entry:update:own",
+    "review:create",
+    "message:create",
+    "storage:upload:entry",
+    "storage:upload:message",
+  ]),
+  BANNED: new Set(),
+};
+
+export function hasPermission(role: UserRole, permission: Permission): boolean {
+  const rolePermissions = permissions[role];
+  return rolePermissions.has("*") || rolePermissions.has(permission);
+}
+
+export function assertPermission(role: UserRole, permission: Permission): void {
+  if (!hasPermission(role, permission)) throw forbidden();
+}
+
+export function isAdminRole(role: UserRole): boolean {
+  return role === "OWNER" || role === "ADMIN" || role === "MODERATOR";
+}
