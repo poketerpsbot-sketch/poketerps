@@ -3,7 +3,7 @@ services:
     name: pokedex-community
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run start
     healthCheckPath: /api/health
     autoDeployTrigger: commit
@@ -52,7 +52,7 @@ services:
       - key: RATE_LIMIT_SECRET
         generateValue: true
       - key: APP_DISPLAY_NAME
-        value: Pokédex
+        value: PokéTerps
       - key: APP_TIMEZONE
         value: Europe/Zurich
       - key: APP_LEGAL_COUNTRY
