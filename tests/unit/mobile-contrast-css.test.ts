@@ -35,4 +35,9 @@ describe("mobile and contrast CSS invariants", () => {
   it("keeps the mobile scanner action at least 44px high", () => {
     expect(css).toMatch(/\.search-console \.button \{\s*min-height: 46px;/);
   });
+
+  it("clips the closed drawer so it cannot create horizontal mobile scrolling", () => {
+    expect(css).toMatch(/\.nav-drawer \{[\s\S]*?inset: 0;[\s\S]*?overflow: hidden;/);
+    expect(css).toMatch(/\.bottom-nav__inner \{[\s\S]*?repeat\(6, minmax\(0, 1fr\)\);/);
+  });
 });

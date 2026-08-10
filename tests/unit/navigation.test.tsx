@@ -29,5 +29,7 @@ describe("primary navigation", () => {
     expect(rankings).toBeGreaterThan(-1);
     expect(partners).toBeGreaterThan(rankings);
     expect(markup.slice(rankings, partners)).toContain("Classement");
+    expect(markup.match(/class="bottom-nav__item/g)).toHaveLength(6);
+    expect(markup).not.toContain('href="/profil"');
   });
 });

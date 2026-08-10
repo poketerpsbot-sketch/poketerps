@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Handshake, Home, Medal, Plus, ScanSearch, Trophy, UserRound } from "lucide-react";
+import { Handshake, Home, Medal, Plus, ScanSearch, Trophy } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 function sessionRole(payload: unknown) {
@@ -74,13 +74,6 @@ export function BottomNav() {
       icon: Handshake,
       primary: false,
       matches: ["/partenaires"],
-    },
-    {
-      href: "/profil",
-      label: "Profil",
-      icon: UserRound,
-      primary: false,
-      matches: ["/profil", "/favoris"],
     },
   ] as const;
 

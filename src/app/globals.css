@@ -341,6 +341,7 @@ svg {
   position: fixed;
   z-index: 150;
   inset: 0;
+  overflow: hidden;
   visibility: hidden;
   pointer-events: none;
 }
@@ -609,7 +610,7 @@ svg {
   display: grid;
   max-width: 620px;
   margin-inline: auto;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 2px;
 }
 
