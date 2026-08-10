@@ -31,4 +31,8 @@ describe("mobile and contrast CSS invariants", () => {
       /@media \(max-width: 430px\) \{[\s\S]*?\.page-shell \{[\s\S]*?100% - 16px[\s\S]*?\.search-console \{[\s\S]*?grid-template-columns: auto minmax\(0, 1fr\);/,
     );
   });
+
+  it("keeps the mobile scanner action at least 44px high", () => {
+    expect(css).toMatch(/\.search-console \.button \{\s*min-height: 46px;/);
+  });
 });
