@@ -4,11 +4,13 @@ import {
   AGE_GATE_COOKIE_NAME,
   AGE_GATE_MAX_AGE_SECONDS,
   safeAgeGateReturnUrl,
+  trustedAgeGateRequestUrl,
 } from "@/lib/age-gate";
 
 export async function POST(request: Request) {
+  const publicRequestUrl = trustedAgeGateRequestUrl(request.url, process.env.NEXT_PUBLIC_APP_URL);
   const response = NextResponse.redirect(
-    safeAgeGateReturnUrl(request.url, request.headers.get("referer")),
+    safeAgeGateReturnUrl(publicRequestUrl.href, request.headers.get("referer")),
     303,
   );
 
@@ -19,7 +21,7 @@ export async function POST(request: Request) {
     maxAge: AGE_GATE_MAX_AGE_SECONDS,
     path: "/",
     sameSite: "lax",
-    secure: new URL(request.url).protocol === "https:",
+    secure: publicRequestUrl.protocol === "https:",
   });
 
   return response;

@@ -7,6 +7,28 @@ export function isAgeGateConfirmed(value: string | null | undefined) {
   return value === AGE_GATE_CONFIRMED_VALUE;
 }
 
+export function trustedAgeGateRequestUrl(
+  requestUrl: string,
+  configuredAppUrl: string | null | undefined,
+) {
+  const incoming = new URL(requestUrl);
+  if (!configuredAppUrl) return incoming;
+
+  try {
+    const configured = new URL(configuredAppUrl);
+    if (
+      !["http:", "https:"].includes(configured.protocol) ||
+      configured.username ||
+      configured.password
+    ) {
+      return incoming;
+    }
+    return new URL(`${incoming.pathname}${incoming.search}`, configured.origin);
+  } catch {
+    return incoming;
+  }
+}
+
 export function safeAgeGateReturnUrl(requestUrl: string, referer: string | null) {
   const fallback = new URL("/", requestUrl);
   if (!referer) return fallback;
