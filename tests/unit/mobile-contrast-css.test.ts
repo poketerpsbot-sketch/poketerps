@@ -39,5 +39,7 @@ describe("mobile and contrast CSS invariants", () => {
   it("clips the closed drawer so it cannot create horizontal mobile scrolling", () => {
     expect(css).toMatch(/\.nav-drawer \{[\s\S]*?inset: 0;[\s\S]*?overflow: hidden;/);
     expect(css).toMatch(/\.bottom-nav__inner \{[\s\S]*?repeat\(6, minmax\(0, 1fr\)\);/);
+    const topbarBlock = css.match(/\.topbar \{([\s\S]*?)\}/)?.[1] ?? "";
+    expect(topbarBlock).not.toContain("backdrop-filter");
   });
 });

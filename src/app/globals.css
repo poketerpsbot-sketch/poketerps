@@ -174,7 +174,6 @@ svg {
   border-bottom: 3px solid var(--border);
   background: rgba(191, 20, 47, 0.94);
   box-shadow: 0 4px 0 rgba(78, 4, 16, 0.5);
-  backdrop-filter: blur(18px);
 }
 
 .topbar__inner {
