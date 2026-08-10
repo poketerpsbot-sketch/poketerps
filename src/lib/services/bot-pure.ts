@@ -39,6 +39,15 @@ export function parseBotCommand(text: string, botUsername?: string): BotCommand 
   return { name, argument: match[3]?.trim().slice(0, 120) ?? "" };
 }
 
+export function isStartCommandUpdate(
+  update: { message?: { text?: string; chat: { type: string } } },
+  botUsername?: string,
+): boolean {
+  const message = update.message;
+  if (!message?.text || message.chat.type !== "private") return false;
+  return parseBotCommand(message.text, botUsername)?.name === "start";
+}
+
 export type AdminEntity = "entry" | "review" | "message";
 export type AdminAction =
   "approve" | "publish" | "changes" | "reject" | "hide" | "read" | "assign" | "resolve" | "archive";
@@ -119,13 +128,15 @@ function appUrl(baseUrl: string, path = ""): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
 
-function adminSection(baseUrl: string, section: string): string {
-  return appUrl(baseUrl, `/admin?section=${encodeURIComponent(section)}`);
-}
-
 export function buildAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
   return {
     inline_keyboard: [
+      [
+        {
+          text: "🛡 Ouvrir la console web",
+          web_app: { url: appUrl(baseUrl, "/admin") },
+        },
+      ],
       [
         {
           text: "➕ Ajouter une fiche",
@@ -156,29 +167,29 @@ export function buildAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
       [
         {
           text: "🚩 Signalements",
-          web_app: { url: adminSection(baseUrl, "signalements") },
+          web_app: { url: appUrl(baseUrl, "/admin/messages?type=REPORT") },
         },
-        { text: "🖼 Images", web_app: { url: adminSection(baseUrl, "images") } },
+        { text: "🖼 Images", web_app: { url: appUrl(baseUrl, "/admin/fiches") } },
       ],
       [
-        { text: "🗃 Catégories", web_app: { url: adminSection(baseUrl, "categories") } },
+        { text: "🗃 Catégories", web_app: { url: appUrl(baseUrl, "/admin/categories") } },
         {
           text: "📢 Publications",
-          web_app: { url: adminSection(baseUrl, "publications") },
+          web_app: { url: appUrl(baseUrl, "/admin/publications") },
         },
       ],
       [
-        { text: "👤 Profils", web_app: { url: adminSection(baseUrl, "profils") } },
+        { text: "👤 Profils", web_app: { url: appUrl(baseUrl, "/admin/utilisateurs") } },
         {
           text: "👥 Utilisateurs",
-          web_app: { url: adminSection(baseUrl, "utilisateurs") },
+          web_app: { url: appUrl(baseUrl, "/admin/utilisateurs") },
         },
       ],
       [
-        { text: "🏅 Badges", web_app: { url: adminSection(baseUrl, "badges") } },
+        { text: "🏅 Badges", web_app: { url: appUrl(baseUrl, "/admin/badges") } },
         {
           text: "🏆 Classements",
-          web_app: { url: adminSection(baseUrl, "classements") },
+          web_app: { url: appUrl(baseUrl, "/classements") },
         },
       ],
       [
@@ -186,19 +197,19 @@ export function buildAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
           text: "🤝 Partenaires",
           web_app: { url: appUrl(baseUrl, "/admin/partenaires") },
         },
-        { text: "🛡 Équipe", web_app: { url: adminSection(baseUrl, "equipe") } },
+        { text: "🛡 Équipe", web_app: { url: appUrl(baseUrl, "/admin/utilisateurs") } },
       ],
       [
         {
           text: "📊 Statistiques",
-          web_app: { url: adminSection(baseUrl, "statistiques") },
+          web_app: { url: appUrl(baseUrl, "/admin/statistiques") },
         },
-        { text: "📜 Journal", web_app: { url: adminSection(baseUrl, "journal") } },
+        { text: "📜 Journal", web_app: { url: appUrl(baseUrl, "/admin/journal") } },
       ],
       [
         {
           text: "⚙️ Paramètres",
-          web_app: { url: adminSection(baseUrl, "parametres") },
+          web_app: { url: appUrl(baseUrl, "/admin/parametres") },
         },
       ],
     ],

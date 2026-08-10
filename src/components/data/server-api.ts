@@ -8,20 +8,62 @@ export type ApiResult<T> = {
   status: number;
 };
 
-function cleanBaseUrl(value: string) {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
+function firstForwardedValue(value: string | null) {
+  return value?.split(",", 1)[0]?.trim() || null;
+}
+
+function originFromRequestHeaders(incoming: Headers) {
+  const host = firstForwardedValue(incoming.get("x-forwarded-host") ?? incoming.get("host"));
+  if (!host || /[\s/@\\?#]/.test(host)) return null;
+
+  const forwardedProtocol = firstForwardedValue(incoming.get("x-forwarded-proto"));
+  const protocol =
+    forwardedProtocol === "http" || forwardedProtocol === "https" ? forwardedProtocol : "http";
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return null;
+  }
+}
+
+function configuredOrigin() {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (!configured) return null;
+  try {
+    const url = new URL(configured);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackOrigin(value: string) {
+  const hostname = new URL(value).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 }
 
 async function getRequestOrigin() {
-  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (configured) return cleanBaseUrl(configured);
-
+  const configured = configuredOrigin();
   const incoming = await headers();
-  const host = incoming.get("x-forwarded-host") ?? incoming.get("host");
-  const protocol = incoming.get("x-forwarded-proto") ?? "http";
+  const requestOrigin = originFromRequestHeaders(incoming);
+  if (configured) {
+    if (requestOrigin === configured) return configured;
+    if (
+      process.env.NODE_ENV === "development" &&
+      requestOrigin &&
+      isLoopbackOrigin(requestOrigin)
+    ) {
+      return requestOrigin;
+    }
+    return configured;
+  }
 
-  if (!host) return "http://127.0.0.1:3000";
-  return `${protocol}://${host}`;
+  if (process.env.NODE_ENV === "development") {
+    if (requestOrigin && isLoopbackOrigin(requestOrigin)) return requestOrigin;
+    return "http://127.0.0.1:3000";
+  }
+  throw new Error("NEXT_PUBLIC_APP_URL must define the trusted server API origin.");
 }
 
 function getErrorMessage(payload: unknown, fallback: string) {

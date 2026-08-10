@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Handshake, Home, Plus, ScanSearch, UserRound } from "lucide-react";
+import { Handshake, Home, Plus, ScanSearch, Trophy, UserRound } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 function sessionRole(payload: unknown) {
@@ -53,6 +53,13 @@ export function BottomNav() {
       icon: Plus,
       primary: true,
       matches: ["/capturer"],
+    },
+    {
+      href: "/classements",
+      label: "Classement",
+      icon: Trophy,
+      primary: false,
+      matches: ["/classements"],
     },
     {
       href: "/partenaires",

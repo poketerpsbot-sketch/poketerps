@@ -9,6 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
+    "start:render": "npm run telegram:set-webhook:startup && npm run start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -18,7 +19,9 @@
     "db:validate": "node supabase/validate-schema.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "telegram:set-webhook": "tsx scripts/set-telegram-webhook.ts"
+    "demo-media:sync": "tsx scripts/sync-demo-media.ts",
+    "telegram:set-webhook": "tsx scripts/set-telegram-webhook.ts",
+    "telegram:set-webhook:startup": "tsx scripts/set-telegram-webhook.ts --startup"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.7.1",

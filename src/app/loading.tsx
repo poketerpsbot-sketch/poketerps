@@ -1,10 +1,5 @@
-import { LoadingState, SkeletonGrid } from "@/components/ui/states";
+import { ArchiveLoadingScreen } from "@/components/ui/archive-loading-screen";
 
 export default function Loading() {
-  return (
-    <div className="page-shell page-stack">
-      <LoadingState />
-      <SkeletonGrid />
-    </div>
-  );
+  return <ArchiveLoadingScreen />;
 }

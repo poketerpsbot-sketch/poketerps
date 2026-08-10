@@ -4,7 +4,6 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { isAdminRole } from "@/lib/auth/rbac";
 import { getDb } from "@/lib/db";
 import { auditLogs, entries, submissionChanges, submissions } from "@/lib/db/schema";
 import { notFound } from "@/lib/errors";
@@ -76,7 +75,6 @@ export async function createCorrection(
 }
 
 export async function listSubmissions(actor: CurrentUser, limit: number, offset: number) {
-  const where = isAdminRole(actor.role) ? undefined : eq(submissions.userId, actor.id);
   return getDb()
     .select({
       id: submissions.id,
@@ -93,7 +91,7 @@ export async function listSubmissions(actor: CurrentUser, limit: number, offset:
     })
     .from(submissions)
     .leftJoin(entries, eq(submissions.entryId, entries.id))
-    .where(where)
+    .where(and(eq(submissions.userId, actor.id), isNull(submissions.deletedAt)))
     .orderBy(desc(submissions.createdAt))
     .limit(limit)
     .offset(offset);

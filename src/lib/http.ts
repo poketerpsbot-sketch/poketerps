@@ -79,7 +79,16 @@ function requestIdFrom(request: Request): string {
   return supplied && /^[A-Za-z0-9._-]{8,80}$/.test(supplied) ? supplied : randomUUID();
 }
 
-function errorResponse(error: unknown, requestId: string): NextResponse {
+function isExpectedMissingSession(request: Request, error: AppError): boolean {
+  return (
+    request.method === "GET" &&
+    new URL(request.url).pathname === "/api/me" &&
+    error.status === 401 &&
+    error.code === "UNAUTHORIZED"
+  );
+}
+
+function errorResponse(error: unknown, requestId: string, request: Request): NextResponse {
   const appError =
     error instanceof AppError
       ? error
@@ -91,6 +100,13 @@ function errorResponse(error: unknown, requestId: string): NextResponse {
           });
   if (appError.status >= 500) {
     logger.error("api_request_failed", { requestId, error });
+  } else if (isExpectedMissingSession(request, appError)) {
+    logger.info("api_session_missing", {
+      requestId,
+      code: appError.code,
+      status: appError.status,
+      path: "/api/me",
+    });
   } else {
     logger.warn("api_request_rejected", {
       requestId,
@@ -130,6 +146,6 @@ export async function handleApi(
     response.headers.set("X-Request-Id", requestId);
     return response;
   } catch (error) {
-    return errorResponse(error, requestId);
+    return errorResponse(error, requestId, request);
   }
 }

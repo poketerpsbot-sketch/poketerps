@@ -1,67 +1,75 @@
 import { config } from "dotenv";
 
-config({ path: ".env.local" });
-config();
+import {
+  configureTelegramBotForStartup,
+  configureTelegramBotWithRetry,
+  sanitizeTelegramSetupError,
+  TelegramSetupConfigurationError,
+  type SanitizedTelegramSetupError,
+  type TelegramSetupConfig,
+  type TelegramWebhookInfo,
+} from "../src/lib/services/telegram-setup";
 
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
-const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
-const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+config({ path: ".env.local", quiet: true });
+config({ quiet: true });
 
-if (!botToken || !webhookSecret || !appUrl) {
-  throw new Error(
-    "TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET et NEXT_PUBLIC_APP_URL sont requis.",
+const startupMode = process.argv.includes("--startup");
+
+function readConfig(): TelegramSetupConfig {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (!botToken || !webhookSecret || !appUrl) {
+    throw new TelegramSetupConfigurationError(
+      "TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET et NEXT_PUBLIC_APP_URL sont requis.",
+    );
+  }
+  return { botToken, webhookSecret, appUrl };
+}
+
+function logSuccess(info: TelegramWebhookInfo): void {
+  console.log(
+    `Webhook Telegram vérifié sur ${info.url} (${info.pending_update_count} mise(s) à jour en attente).`,
   );
 }
 
-if (!/^[A-Za-z0-9_-]{1,256}$/.test(webhookSecret)) {
-  throw new Error("TELEGRAM_WEBHOOK_SECRET contient des caractères refusés par Telegram.");
+function logFailure(error: SanitizedTelegramSetupError): void {
+  console.error(
+    JSON.stringify({
+      level: "error",
+      message: "telegram_setup_failed",
+      context: {
+        mode: startupMode ? "startup" : "manual",
+        continuing: startupMode,
+        error,
+      },
+    }),
+  );
 }
 
-if (!appUrl.startsWith("https://") && process.env.NODE_ENV === "production") {
-  throw new Error("NEXT_PUBLIC_APP_URL doit utiliser HTTPS en production.");
-}
+const options = {
+  attempts: 3,
+  onRetry: (_error: unknown, attempt: number, delayMs: number) => {
+    console.warn(
+      `Configuration Telegram échouée (tentative ${attempt}), nouvel essai dans ${delayMs} ms.`,
+    );
+  },
+};
 
-const apiUrl = `https://api.telegram.org/bot${botToken}`;
-
-async function telegram(method: string, payload: Record<string, unknown>) {
-  const response = await fetch(`${apiUrl}/${method}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const result = (await response.json()) as { ok: boolean; description?: string };
-  if (!response.ok || !result.ok) {
-    throw new Error(`Telegram ${method}: ${result.description ?? response.statusText}`);
+async function main(): Promise<void> {
+  try {
+    const telegramConfig = readConfig();
+    if (startupMode) {
+      const result = await configureTelegramBotForStartup(telegramConfig, options);
+      if (result.ok) logSuccess(result.info);
+      else logFailure(result.error);
+    } else {
+      logSuccess(await configureTelegramBotWithRetry(telegramConfig, options));
+    }
+  } catch (error) {
+    logFailure(sanitizeTelegramSetupError(error));
+    if (!startupMode) process.exitCode = 1;
   }
 }
 
-await telegram("setWebhook", {
-  url: `${appUrl}/api/telegram/webhook`,
-  secret_token: webhookSecret,
-  allowed_updates: ["message", "callback_query"],
-  drop_pending_updates: false,
-});
-
-await telegram("setMyCommands", {
-  commands: [
-    { command: "start", description: "Accueil du Pokédex" },
-    { command: "app", description: "Ouvrir la Mini App" },
-    { command: "search", description: "Scanner le catalogue" },
-    { command: "latest", description: "Dernières captures" },
-    { command: "ranking", description: "Classements" },
-    { command: "profile", description: "Mon profil" },
-    { command: "partners", description: "Nos partenaires" },
-    { command: "help", description: "Aide" },
-    { command: "admin", description: "Administration (autorisés)" },
-  ],
-});
-
-await telegram("setChatMenuButton", {
-  menu_button: {
-    type: "web_app",
-    text: "Ouvrir le Pokédex",
-    web_app: { url: appUrl },
-  },
-});
-
-console.log(`Webhook Telegram configuré sur ${appUrl}/api/telegram/webhook`);
+void main();

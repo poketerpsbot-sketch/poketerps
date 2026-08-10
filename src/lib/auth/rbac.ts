@@ -87,3 +87,17 @@ export function assertPermission(role: UserRole, permission: Permission): void {
 export function isAdminRole(role: UserRole): boolean {
   return role === "OWNER" || role === "ADMIN" || role === "MODERATOR";
 }
+
+/**
+ * The full web console exposes cross-domain management data. Keep its entry
+ * point limited to roles that own all of the core management permissions.
+ * Individual API routes continue to enforce their own permission checks.
+ */
+export function canAccessWebAdmin(role: UserRole): boolean {
+  return (
+    (role === "OWNER" || role === "ADMIN") &&
+    hasPermission(role, "user:manage") &&
+    hasPermission(role, "settings:manage") &&
+    hasPermission(role, "audit:read")
+  );
+}

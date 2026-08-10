@@ -52,6 +52,7 @@ const serverEnvSchema = z.object({
   TELEGRAM_WEBHOOK_SECRET: z.string().regex(/^[A-Za-z0-9_-]{1,256}$/),
   TELEGRAM_OWNER_IDS: commaSeparatedTelegramIds,
   TELEGRAM_ADMIN_IDS: commaSeparatedTelegramIds,
+  TELEGRAM_MODERATOR_IDS: commaSeparatedTelegramIds,
   TELEGRAM_CHANNEL_ID: optionalString(z.string().trim().min(1)),
   TELEGRAM_CHANNEL_URL: optionalUrl,
   TELEGRAM_CHAT_URL: optionalUrl,

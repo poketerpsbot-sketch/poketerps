@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: npm ci --include=dev && npm run build
-    startCommand: npm run start
+    startCommand: npm run start:render
     healthCheckPath: /api/health
     autoDeployTrigger: commit
     maxShutdownDelaySeconds: 30
@@ -34,6 +34,8 @@ services:
       - key: TELEGRAM_OWNER_IDS
         sync: false
       - key: TELEGRAM_ADMIN_IDS
+        sync: false
+      - key: TELEGRAM_MODERATOR_IDS
         sync: false
       - key: TELEGRAM_CHANNEL_ID
         sync: false

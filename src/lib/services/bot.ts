@@ -327,9 +327,12 @@ async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promi
 
 export async function processTelegramUpdate(
   update: TelegramUpdate,
-  actor: CurrentUser,
+  actor: CurrentUser | null,
 ): Promise<void> {
   if (update.callback_query) {
+    if (!actor) {
+      throw new AppError("INVALID_TELEGRAM_USER", "Utilisateur Telegram invalide.", 401);
+    }
     await handleCallback(update, actor);
     return;
   }
@@ -347,7 +350,9 @@ export async function processTelegramUpdate(
     return;
   }
   if (command.name === "start") await sendWelcomeMessage(message.chat.id);
-  else if (command.name === "app")
+  else if (!actor) {
+    throw new AppError("INVALID_TELEGRAM_USER", "Utilisateur Telegram invalide.", 401);
+  } else if (command.name === "app")
     await sendTelegramMessage(message.chat.id, "Ouvre la Mini App :", appKeyboard());
   else if (command.name === "search") await sendSearch(message.chat.id, command.argument);
   else if (command.name === "latest") await sendLatest(message.chat.id);

@@ -121,6 +121,24 @@ Remplacer le marqueur de mot de passe dans chaque URL. Render utilise `DATABASE_
 uniquement `schema.sql`. Pour une installation existante, exécuter seulement les nouvelles
 migrations après sauvegarde.
 
+### Fiches et photos de démonstration
+
+Le schéma crée 20 fiches fictives publiées, soit deux par catégorie. La migration
+`supabase/migrations/002_enrich_demo_entries.sql` complète les descriptions et les champs dynamiques
+d'une base déjà installée. Les fiches portent `is_demo=true` et restent exclues des XP et des
+classements ; elles peuvent donc être supprimées plus tard sans toucher aux contributions réelles.
+
+Les 20 photos d'illustration proviennent de Wikimedia Commons. Vérifier d'abord les fichiers et leurs
+licences sans écrire dans Supabase :
+
+```bash
+npm run demo-media:sync
+```
+
+Après revue, `npm run demo-media:sync -- --apply` convertit les images en WebP, les charge dans le
+bucket `entry-images` et enregistre la source, le crédit et la licence affichés sur chaque fiche.
+Cette commande requiert les variables Supabase et PostgreSQL côté serveur.
+
 ## 2. Créer et configurer le bot Telegram
 
 1. Ouvrir [@BotFather](https://t.me/BotFather) dans Telegram.
@@ -144,8 +162,10 @@ curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates"
 ```
 
 Plusieurs identifiants se séparent par une virgule, sans espace. `TELEGRAM_OWNER_IDS` initialise les
-propriétaires et `TELEGRAM_ADMIN_IDS` les administrateurs. Les autorisations sont ensuite également
-conservées et relues en base ; masquer un bouton ne constitue jamais une sécurité.
+propriétaires, `TELEGRAM_ADMIN_IDS` les administrateurs et `TELEGRAM_MODERATOR_IDS` les modérateurs.
+Les propriétaires et administrateurs peuvent ouvrir la console web ; les modérateurs restent limités
+aux actions prévues par leurs permissions. Les autorisations sont toujours contrôlées côté serveur :
+masquer un bouton ne constitue jamais une sécurité.
 
 ### Générer les secrets
 
@@ -198,7 +218,8 @@ n’apparaît pas dans `git status`.
 5. Laisser Render générer `SESSION_SECRET` et `RATE_LIMIT_SECRET`. Pour
    `TELEGRAM_WEBHOOK_SECRET`, renseigner manuellement la valeur hexadécimale générée plus haut :
    Telegram n’accepte pour ce secret que les caractères `A-Z`, `a-z`, `0-9`, `_` et `-`.
-6. Lancer le déploiement. Render exécute `npm ci && npm run build`, puis `npm run start`.
+6. Lancer le déploiement. Render exécute le build, configure le webhook et le menu Telegram, puis
+   démarre Next.js avec `npm run start:render`.
 
 Le Blueprint utilise l’instance `free` pour faciliter un premier essai. Elle peut se mettre en veille
 après une période d’inactivité ; choisir une instance payante avant une ouverture publique si le
@@ -210,7 +231,7 @@ temps de réveil n’est pas acceptable.
 2. Connecter GitHub et choisir le dépôt.
 3. Runtime : **Node** ; branche : `main`.
 4. Build Command : `npm ci && npm run build`.
-5. Start Command : `npm run start`.
+5. Start Command : `npm run start:render`.
 6. Health Check Path : `/api/health`.
 7. Ajouter chaque variable de `.env.example`, sauf `PORT` que Render fournit.
 8. Cliquer **Create Web Service** et suivre les logs de build.

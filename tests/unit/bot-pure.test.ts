@@ -7,6 +7,7 @@ import {
   buildWelcomeMenu,
   confirmationCallback,
   isAdminActionAllowed,
+  isStartCommandUpdate,
   parseBotCallback,
   parseBotCommand,
 } from "@/lib/services/bot-pure";
@@ -36,6 +37,30 @@ describe("bot command parsing", () => {
   it("bounds user-provided search arguments", () => {
     const argument = "a".repeat(200);
     expect(parseBotCommand(`/search ${argument}`)?.argument).toHaveLength(120);
+  });
+
+  it("recognizes private /start webhook updates including bot-qualified payloads", () => {
+    expect(
+      isStartCommandUpdate(
+        { message: { text: "/start campaign", chat: { type: "private" } } },
+        "pokedex_test_bot",
+      ),
+    ).toBe(true);
+    expect(
+      isStartCommandUpdate(
+        { message: { text: "/start@pokedex_test_bot ref", chat: { type: "private" } } },
+        "pokedex_test_bot",
+      ),
+    ).toBe(true);
+    expect(
+      isStartCommandUpdate(
+        { message: { text: "/start@other_bot", chat: { type: "private" } } },
+        "pokedex_test_bot",
+      ),
+    ).toBe(false);
+    expect(isStartCommandUpdate({ message: { text: "/start", chat: { type: "group" } } })).toBe(
+      false,
+    );
   });
 
   it("documents every supported command exactly once", () => {
@@ -100,30 +125,34 @@ describe("bot menus", () => {
     const callbackButtons = buttons.filter(({ callback_data }) => callback_data);
     const webAppButtons = buttons.filter(({ web_app }) => web_app);
 
-    expect(buttons).toHaveLength(20);
-    expect(new Set(buttons.map(({ text }) => text))).toHaveLength(20);
+    expect(buttons).toHaveLength(21);
+    expect(new Set(buttons.map(({ text }) => text))).toHaveLength(21);
     expect(callbackButtons).toEqual([
       { text: "✅ Fiches à valider", callback_data: "menu:entries" },
       { text: "💬 Avis à valider", callback_data: "menu:reviews" },
       { text: "📨 Messages", callback_data: "menu:messages" },
     ]);
-    expect(webAppButtons).toHaveLength(17);
+    expect(webAppButtons).toHaveLength(18);
     expect(
       webAppButtons.every(({ web_app }) =>
         web_app?.url.startsWith("https://pokedex.example.test/"),
       ),
     ).toBe(true);
     expect(buttons).toContainEqual({
+      text: "🛡 Ouvrir la console web",
+      web_app: { url: "https://pokedex.example.test/admin" },
+    });
+    expect(buttons).toContainEqual({
       text: "➕ Ajouter une fiche",
       web_app: { url: "https://pokedex.example.test/capturer?mode=admin" },
     });
     expect(buttons).toContainEqual({
       text: "🚩 Signalements",
-      web_app: { url: "https://pokedex.example.test/admin?section=signalements" },
+      web_app: { url: "https://pokedex.example.test/admin/messages?type=REPORT" },
     });
     expect(buttons).toContainEqual({
       text: "⚙️ Paramètres",
-      web_app: { url: "https://pokedex.example.test/admin?section=parametres" },
+      web_app: { url: "https://pokedex.example.test/admin/parametres" },
     });
   });
 

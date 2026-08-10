@@ -15,6 +15,7 @@ test("la navigation s’adapte au mobile et au bureau", async ({ page }) => {
   if ((page.viewportSize()?.width ?? 0) >= 820) {
     const navigation = page.getByRole("navigation", { name: "Navigation du site" });
     await expect(navigation.getByRole("link", { name: "Explorer" })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Classements" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Partenaires" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Capturer" })).toBeVisible();
     return;
@@ -24,6 +25,7 @@ test("la navigation s’adapte au mobile et au bureau", async ({ page }) => {
   await expect(navigation.getByRole("link", { name: "Accueil" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Explorer" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: /Ajouter|Proposer/ })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Classement" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Partenaires" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Profil" })).toBeVisible();
 });

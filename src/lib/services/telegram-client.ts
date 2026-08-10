@@ -138,7 +138,13 @@ export async function notifyTelegramAdmins(
   replyMarkup?: InlineKeyboardMarkup,
 ): Promise<void> {
   const env = getEnv();
-  const recipients = [...new Set([...env.TELEGRAM_OWNER_IDS, ...env.TELEGRAM_ADMIN_IDS])];
+  const recipients = [
+    ...new Set([
+      ...env.TELEGRAM_OWNER_IDS,
+      ...env.TELEGRAM_ADMIN_IDS,
+      ...env.TELEGRAM_MODERATOR_IDS,
+    ]),
+  ];
   const results = await Promise.allSettled(
     recipients.map((chatId) => sendTelegramMessage(chatId, text, replyMarkup)),
   );

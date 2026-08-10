@@ -16,6 +16,7 @@ const difference = (left, right) => left.filter((value) => !right.includes(value
 
 const schema = read("./schema.sql");
 const migration = read("./migrations/001_initial_schema.sql");
+const demoEnrichmentMigration = read("./migrations/002_enrich_demo_entries.sql");
 const drizzle = read("../src/lib/db/schema.ts");
 
 assert(schema === migration, "001_initial_schema.sql must be an exact copy of schema.sql");
@@ -23,6 +24,15 @@ assert((schema.match(/^begin;$/gm) ?? []).length === 1, "schema must contain exa
 assert((schema.match(/^commit;$/gm) ?? []).length === 1, "schema must contain exactly one COMMIT");
 assert(schema.trimEnd().endsWith("commit;"), "schema transaction must end with COMMIT");
 assert((schema.match(/\$\$/g) ?? []).length % 2 === 0, "unbalanced dollar-quoted delimiters");
+assert(
+  (demoEnrichmentMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (demoEnrichmentMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "002_enrich_demo_entries.sql must contain one transaction",
+);
+assert(
+  (demoEnrichmentMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in demo enrichment migration",
+);
 
 const sqlTables = uniqueSorted(matches(schema, /create table if not exists public\.([a-z0-9_]+)/g));
 const drizzleTables = uniqueSorted(matches(drizzle, /pgTable\(\s*["']([a-z0-9_]+)["']/g));
@@ -135,6 +145,38 @@ for (const prefix of demoPrefixes) {
   const count = demoSeedKeys.filter((key) => key.startsWith(`demo.${prefix}.`)).length;
   assert(count === 2, `expected two demo entries for ${prefix}, found ${count}`);
 }
+const enrichmentPayload = demoEnrichmentMigration.match(/\$demo\$([\s\S]*?)\$demo\$/)?.[1];
+assert(enrichmentPayload, "demo enrichment JSON payload is missing");
+const enrichedDemos = JSON.parse(enrichmentPayload);
+const enrichedSeedKeys = uniqueSorted(enrichedDemos.map((entry) => entry.seed_key));
+assert(enrichedDemos.length === 20, `expected 20 enriched demos, found ${enrichedDemos.length}`);
+assert(
+  JSON.stringify(enrichedSeedKeys) === JSON.stringify(uniqueSorted(demoSeedKeys)),
+  "demo enrichment seed keys do not match the initial demo catalogue",
+);
+assert(
+  enrichedDemos.every(
+    (entry) =>
+      entry.short_description?.length >= 80 &&
+      entry.full_description?.includes("\n\n") &&
+      entry.declared_variety &&
+      entry.declared_producer &&
+      entry.method &&
+      entry.texture &&
+      Object.keys(entry.fields ?? {}).length >= 3,
+  ),
+  "demo descriptions or declared fields are incomplete",
+);
+assert(
+  /where e\.seed_key=content\.seed_key and e\.is_demo/i.test(demoEnrichmentMigration) &&
+    /on conflict\(entry_id,field_definition_id\) do update/i.test(demoEnrichmentMigration),
+  "demo enrichment must stay guarded and idempotent",
+);
+assert(
+  /entry_images_attribution_consistency/i.test(schema) &&
+    /sourceUrl: text\("source_url"\)/.test(drizzle),
+  "image attribution columns are missing from SQL or Drizzle",
+);
 assert(
   /\('entry-drafts','entry-drafts',false,/i.test(schema),
   "private entry-drafts Storage bucket is missing",

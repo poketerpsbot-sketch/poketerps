@@ -7,6 +7,7 @@ import { apiJson, handleApi, parseJson } from "@/lib/http";
 import { logger } from "@/lib/logger";
 import { upsertTrustedTelegramUser } from "@/lib/services/auth";
 import { processTelegramUpdate } from "@/lib/services/bot";
+import { isStartCommandUpdate } from "@/lib/services/bot-pure";
 import {
   claimTelegramUpdate,
   completeTelegramUpdate,
@@ -24,12 +25,29 @@ export async function POST(request: NextRequest): Promise<Response> {
       throw new AppError("INVALID_WEBHOOK_SECRET", "Webhook non autorisé.", 401);
     }
     const update = await parseJson(request, telegramUpdateSchema, 128_000);
-    const claimed = await claimTelegramUpdate(update.update_id);
+    const isStart = isStartCommandUpdate(update, getEnv().TELEGRAM_BOT_USERNAME);
+    let claimed: boolean;
+    try {
+      claimed = await claimTelegramUpdate(update.update_id);
+    } catch (claimError) {
+      if (!isStart) throw claimError;
+      logger.warn("telegram_start_idempotency_unavailable", {
+        updateId: update.update_id,
+        error: claimError,
+      });
+      await processTelegramUpdate(update, null);
+      return apiJson({ accepted: true, degraded: true });
+    }
     if (!claimed) return apiJson({ accepted: true, duplicate: true });
 
     try {
-      const sender = update.callback_query?.from ?? update.message?.from;
-      if (sender) {
+      if (isStart) {
+        await processTelegramUpdate(update, null);
+      } else {
+        const sender = update.callback_query?.from ?? update.message?.from;
+        if (!sender) {
+          throw new AppError("INVALID_TELEGRAM_USER", "Utilisateur Telegram invalide.", 401);
+        }
         const actor = await upsertTrustedTelegramUser(sender);
         await processTelegramUpdate(update, actor);
       }

@@ -65,10 +65,17 @@ beforeEach(() => {
 
 describe("Telegram command routing", () => {
   it("routes /start through the photo welcome workflow", async () => {
-    await processTelegramUpdate(commandUpdate("/start"), admin);
+    await processTelegramUpdate(commandUpdate("/start"), null);
 
     expect(telegram.sendWelcomeMessage).toHaveBeenCalledWith(42);
     expect(telegram.sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
+  it("requires a trusted actor for commands other than /start", async () => {
+    await expect(processTelegramUpdate(commandUpdate("/profile"), null)).rejects.toMatchObject({
+      code: "INVALID_TELEGRAM_USER",
+      status: 401,
+    });
   });
 
   it("returns the documented command list for /help", async () => {
@@ -111,7 +118,11 @@ describe("Telegram command routing", () => {
     ];
     const buttons = keyboard.inline_keyboard.flat();
     expect(heading).toBe("<b>Administration</b>");
-    expect(buttons).toHaveLength(20);
+    expect(buttons).toHaveLength(21);
+    expect(buttons[0]).toEqual({
+      text: "🛡 Ouvrir la console web",
+      web_app: { url: "https://pokedex.example.test/admin" },
+    });
     expect(
       buttons
         .filter(({ callback_data }) => callback_data)

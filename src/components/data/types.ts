@@ -12,7 +12,12 @@ export type EntryImageDto = {
   id?: Identifier;
   url: string;
   alt?: string | null;
+  altText?: string | null;
   isPrimary?: boolean;
+  sourceUrl?: string | null;
+  credit?: string | null;
+  licenseName?: string | null;
+  licenseUrl?: string | null;
 };
 
 export type EntrySummaryDto = {
@@ -39,6 +44,9 @@ export type EntrySummaryDto = {
   author?: PublicProfileDto | null;
   tags?: Array<{ id?: Identifier; name: string; slug?: string }>;
   metricValue?: number | string | null;
+  likedAt?: string | null;
+  favoritedAt?: string | null;
+  viewedAt?: string | null;
 };
 
 export type DynamicFieldValueDto = {
@@ -116,6 +124,10 @@ export type BadgeDto = {
   name: string;
   icon?: string | null;
   description?: string | null;
+  slug?: string | null;
+  kind?: string | null;
+  awardedAt?: string | null;
+  activeUntil?: string | null;
 };
 
 export type PublicProfileDto = {
@@ -143,6 +155,7 @@ export type PublicProfileDto = {
     totalCaptures?: number | null;
   } | null;
   profileVisibility?: string | null;
+  createdAt?: string | null;
   badges?: BadgeDto[];
   featuredEntry?: EntrySummaryDto | null;
 };
@@ -150,8 +163,17 @@ export type PublicProfileDto = {
 export type TrainerRankingDto = {
   rank: number;
   captures: number;
+  userId?: Identifier;
   periodCaptures?: number | null;
   totalCaptures?: number | null;
+  likesReceived?: number | null;
+  totalLikesReceived?: number | null;
+  viewsReceived?: number | null;
+  totalViewsReceived?: number | null;
+  level?: number | null;
+  experiencePoints?: number | null;
+  profilePhotoUrl?: string | null;
+  profileTitle?: string | null;
   user?: PublicProfileDto;
   profile?: PublicProfileDto;
   displayName?: string;
@@ -182,6 +204,8 @@ export type ReviewDto = {
   entry?: EntrySummaryDto | null;
   createdAt?: string | null;
   publishedAt?: string | null;
+  updatedAt?: string | null;
+  entrySlug?: string | null;
 };
 
 export type SubmissionDto = {
@@ -194,6 +218,9 @@ export type SubmissionDto = {
   createdAt?: string | null;
   updatedAt?: string | null;
   moderationReason?: string | null;
+  entrySlug?: string | null;
+  submittedAt?: string | null;
+  resolvedAt?: string | null;
 };
 
 export type PartnerDto = {

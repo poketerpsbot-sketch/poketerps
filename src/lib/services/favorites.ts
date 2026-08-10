@@ -40,10 +40,12 @@ export async function listFavorites(userId: string, limit: number, offset: numbe
       name: entries.name,
       shortDescription: entries.shortDescription,
       averageRating: entries.averageRating,
+      reviewCount: entries.reviewCount,
       viewCount: entries.viewCount,
       likeCount: entries.likeCount,
       favoriteCount: entries.favoriteCount,
       category: { id: categories.id, slug: categories.slug, name: categories.name },
+      publishedAt: entries.publishedAt,
       favoritedAt: favorites.createdAt,
       primaryImagePath: sql<string | null>`(
         select object_path from entry_images image where image.entry_id=${entries.id} and image.deleted_at is null

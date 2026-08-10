@@ -205,6 +205,10 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
         height: entryImages.height,
         sortOrder: entryImages.sortOrder,
         isPrimary: entryImages.isPrimary,
+        sourceUrl: entryImages.sourceUrl,
+        credit: entryImages.credit,
+        licenseName: entryImages.licenseName,
+        licenseUrl: entryImages.licenseUrl,
       })
       .from(entryImages)
       .where(and(eq(entryImages.entryId, row.id), isNull(entryImages.deletedAt)))

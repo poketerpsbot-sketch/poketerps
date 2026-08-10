@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assertPermission, hasPermission, isAdminRole } from "@/lib/auth/rbac";
+import { assertPermission, canAccessWebAdmin, hasPermission, isAdminRole } from "@/lib/auth/rbac";
 
 describe("RBAC", () => {
   it("grants every permission to the owner", () => {
@@ -36,5 +36,13 @@ describe("RBAC", () => {
     expect(isAdminRole("ADMIN")).toBe(true);
     expect(isAdminRole("MODERATOR")).toBe(true);
     expect(isAdminRole("EDITOR")).toBe(false);
+  });
+
+  it("shows the full web console only to owners and administrators", () => {
+    expect(canAccessWebAdmin("OWNER")).toBe(true);
+    expect(canAccessWebAdmin("ADMIN")).toBe(true);
+    expect(canAccessWebAdmin("MODERATOR")).toBe(false);
+    expect(canAccessWebAdmin("EDITOR")).toBe(false);
+    expect(canAccessWebAdmin("MEMBER")).toBe(false);
   });
 });

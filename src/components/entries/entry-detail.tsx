@@ -88,37 +88,48 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
   const author = contributor(entry);
   const fields = dynamicFields(entry);
   const micron = micronLabel(entry);
+  const heroImage = entry.images?.find((image) => image.isPrimary) ?? entry.images?.[0];
+  const heroImageUrl = entry.primaryImageUrl ?? heroImage?.url ?? null;
+  const hasImageAttribution = Boolean(
+    heroImage?.sourceUrl && heroImage.credit && heroImage.licenseName && heroImage.licenseUrl,
+  );
 
   return (
     <div className="page-shell page-stack">
       <ViewTracker entryId={String(entry.id)} />
       <article className="detail-hero">
-        <div className="detail-hero__visual">
-          {(entry.primaryImageUrl ??
-            entry.images?.find((image) => image.isPrimary)?.url ??
-            entry.images?.[0]?.url) && (
+        <figure className="detail-hero__visual">
+          {heroImageUrl && (
             <Image
               className="detail-hero__image"
-              src={
-                entry.primaryImageUrl ??
-                entry.images?.find((image) => image.isPrimary)?.url ??
-                entry.images?.[0]?.url ??
-                ""
-              }
-              alt={`Photo principale de ${entry.name}`}
+              src={heroImageUrl}
+              alt={heroImage?.altText ?? heroImage?.alt ?? `Photo principale de ${entry.name}`}
               fill
               sizes="(max-width: 819px) 100vw, 45vw"
               priority
             />
           )}
           <span className="detail-hero__number">CAPTURE {publicNumber(entry.publicNumber)}</span>
-          {!entry.primaryImageUrl && !entry.images?.length && (
+          {!heroImageUrl && (
             <span className="detail-hero__glyph" aria-hidden="true">
               {initials(entry.name)}
             </span>
           )}
           <span className="scanner-line" aria-hidden="true" />
-        </div>
+          {hasImageAttribution && heroImage && (
+            <figcaption className="detail-hero__attribution">
+              Photo d’illustration — Crédit : {heroImage.credit}. Licence :{" "}
+              <a href={heroImage.licenseUrl ?? undefined} target="_blank" rel="noreferrer">
+                {heroImage.licenseName}
+              </a>
+              .{" "}
+              <a href={heroImage.sourceUrl ?? undefined} target="_blank" rel="noreferrer">
+                Source Wikimedia Commons
+              </a>
+              . Image redimensionnée et convertie en WebP.
+            </figcaption>
+          )}
+        </figure>
         <div className="detail-hero__copy">
           <span className="type-badge">
             {entry.category?.name ?? entry.categoryName ?? "Non classée"}

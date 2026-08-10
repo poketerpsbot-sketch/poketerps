@@ -18,6 +18,7 @@ export function roleForTelegramId(telegramId: number): UserRole {
   const env = getEnv();
   if (env.TELEGRAM_OWNER_IDS.includes(telegramId)) return "OWNER";
   if (env.TELEGRAM_ADMIN_IDS.includes(telegramId)) return "ADMIN";
+  if (env.TELEGRAM_MODERATOR_IDS.includes(telegramId)) return "MODERATOR";
   return "MEMBER";
 }
 
@@ -62,7 +63,9 @@ export async function authenticateTelegram(initData: string, requestId?: string)
       lastSeenAt: new Date(),
       updatedAt: new Date(),
     };
-    if (role === "OWNER" || role === "ADMIN") updateValues.role = role;
+    if (role === "OWNER" || role === "ADMIN" || role === "MODERATOR") {
+      updateValues.role = role;
+    }
 
     const [user] = await tx
       .insert(users)
@@ -145,7 +148,7 @@ export async function upsertTrustedTelegramUser(sender: TelegramSender): Promise
       telegram_username_snapshot = excluded.telegram_username_snapshot,
       display_name = excluded.display_name,
       role = case
-        when excluded.role in ('OWNER', 'ADMIN') then excluded.role
+        when excluded.role in ('OWNER', 'ADMIN', 'MODERATOR') then excluded.role
         else users.role
       end,
       last_seen_at = now(),
