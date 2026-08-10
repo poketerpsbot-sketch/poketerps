@@ -7,12 +7,13 @@ import {
   categories,
   dynamicFieldDefinitions,
   dynamicFieldOptions,
+  entries,
   subcategories,
 } from "@/lib/db/schema";
 
 export async function listCategories() {
   const db = getDb();
-  const [categoryRows, subcategoryRows, fieldRows, optionRows] = await Promise.all([
+  const [categoryRows, subcategoryRows, fieldRows, optionRows, entryCountRows] = await Promise.all([
     db
       .select({
         id: categories.id,
@@ -21,13 +22,6 @@ export async function listCategories() {
         description: categories.description,
         icon: categories.icon,
         sortOrder: categories.sortOrder,
-        entryCount: sql<number>`(
-          select count(*)::integer
-          from public.entries category_entry
-          where category_entry.category_id = ${categories.id}
-            and category_entry.status = 'PUBLISHED'
-            and category_entry.deleted_at is null
-        )`,
       })
       .from(categories)
       .where(and(eq(categories.isVisible, true), isNull(categories.deletedAt)))
@@ -75,7 +69,19 @@ export async function listCategories() {
       .from(dynamicFieldOptions)
       .where(eq(dynamicFieldOptions.isActive, true))
       .orderBy(asc(dynamicFieldOptions.sortOrder)),
+    db
+      .select({
+        categoryId: entries.categoryId,
+        entryCount: sql<number>`count(*)::integer`,
+      })
+      .from(entries)
+      .where(and(eq(entries.status, "PUBLISHED"), isNull(entries.deletedAt)))
+      .groupBy(entries.categoryId),
   ]);
+
+  const entryCountByCategory = new Map(
+    entryCountRows.map((row) => [row.categoryId, Number(row.entryCount)]),
+  );
 
   const optionsByField = new Map<string, typeof optionRows>();
   for (const option of optionRows) {
@@ -101,6 +107,7 @@ export async function listCategories() {
 
   return categoryRows.map((category) => ({
     ...category,
+    entryCount: entryCountByCategory.get(category.id) ?? 0,
     subcategories: (subcategoriesByCategory.get(category.id) ?? []).map((subcategory) => ({
       ...subcategory,
       fields: (fieldsByCategory.get(category.id) ?? []).filter(
