@@ -22,6 +22,7 @@ const read = (relativePath: string) =>
 const schema = read("../../supabase/schema.sql");
 const initialMigration = read("../../supabase/migrations/001_initial_schema.sql");
 const enrichmentMigration = read("../../supabase/migrations/002_enrich_demo_entries.sql");
+const taxonomyMigration = read("../../supabase/migrations/004_taxonomy_measurements.sql");
 const mediaSources = read("../../docs/DEMO_MEDIA_SOURCES.md");
 const payload = enrichmentMigration.match(/\$demo\$([\s\S]*?)\$demo\$/)?.[1];
 if (!payload) throw new Error("Demo seed JSON is missing from the enrichment migration.");
@@ -33,9 +34,10 @@ function uniqueCount(values: readonly string[]): number {
 
 describe("demo catalogue enrichment", () => {
   it("keeps exactly two entries in every category", () => {
-    expect(demoSeeds).toHaveLength(20);
-    expect(DEMO_MEDIA_MANIFEST).toHaveLength(20);
-    expect(uniqueCount(demoSeeds.map((entry) => entry.seed_key))).toBe(20);
+    expect(DEMO_CATEGORY_SLUGS).toHaveLength(9);
+    expect(demoSeeds).toHaveLength(18);
+    expect(DEMO_MEDIA_MANIFEST).toHaveLength(18);
+    expect(uniqueCount(demoSeeds.map((entry) => entry.seed_key))).toBe(18);
     expect(new Set(DEMO_MEDIA_MANIFEST.map((item) => item.seedKey))).toEqual(
       new Set(demoSeeds.map((entry) => entry.seed_key)),
     );
@@ -67,19 +69,15 @@ describe("demo catalogue enrichment", () => {
       /étape\s+\d|température\s+de|pendant\s+\d+\s*(minute|heure)/i,
     );
 
-    const medicalContent = JSON.stringify(
-      demoSeeds.filter((entry) => entry.seed_key.startsWith("demo.medicinal.")),
-    );
-    expect(medicalContent).not.toMatch(
-      /soulage|guérit|traite|soigne|anti-inflammatoire|anxiété|douleur|insomnie/i,
-    );
+    expect(demoSeeds.some((entry) => entry.seed_key.startsWith("demo.medicinal."))).toBe(false);
+    expect(DEMO_CATEGORY_SLUGS).not.toContain("medicinal");
   });
 
   it("uses deterministic, reusable Wikimedia sources with complete attribution", () => {
-    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.entryId))).toBe(20);
-    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.imageId))).toBe(20);
-    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.objectPath))).toBe(20);
-    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.commonsFileTitle))).toBe(20);
+    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.entryId))).toBe(18);
+    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.imageId))).toBe(18);
+    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.objectPath))).toBe(18);
+    expect(uniqueCount(DEMO_MEDIA_MANIFEST.map((item) => item.commonsFileTitle))).toBe(18);
 
     for (const item of DEMO_MEDIA_MANIFEST) {
       expect(item.objectPath).toBe(`demo/${item.entryId}.webp`);
@@ -104,5 +102,10 @@ describe("demo catalogue enrichment", () => {
     expect(enrichmentMigration).toMatch(/add column if not exists source_url/i);
     expect(enrichmentMigration).toMatch(/entry_images_attribution_consistency/i);
     expect(enrichmentMigration).not.toMatch(/insert into public\.entries/i);
+    expect(taxonomyMigration).toMatch(/demo\.medicinal\.oil[\s\S]*demo\.medicinal\.capsules/i);
+    expect(taxonomyMigration).toMatch(/status = 'DELETED'::public\.entry_status/i);
+    expect(taxonomyMigration).toMatch(/where slug = 'medicinal'/i);
+    expect(taxonomyMigration).toMatch(/'mL'/);
+    expect(taxonomyMigration).not.toMatch(/'NUMBER','ml'/);
   });
 });

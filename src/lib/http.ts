@@ -80,9 +80,10 @@ function requestIdFrom(request: Request): string {
 }
 
 function isExpectedMissingSession(request: Request, error: AppError): boolean {
+  const pathname = new URL(request.url).pathname;
   return (
     request.method === "GET" &&
-    new URL(request.url).pathname === "/api/me" &&
+    (pathname === "/api/me" || pathname === "/api/auth/session") &&
     error.status === 401 &&
     error.code === "UNAUTHORIZED"
   );
@@ -105,7 +106,7 @@ function errorResponse(error: unknown, requestId: string, request: Request): Nex
       requestId,
       code: appError.code,
       status: appError.status,
-      path: "/api/me",
+      path: new URL(request.url).pathname,
     });
   } else {
     logger.warn("api_request_rejected", {

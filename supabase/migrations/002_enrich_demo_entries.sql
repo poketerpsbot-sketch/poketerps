@@ -233,7 +233,7 @@ begin
         "fields": {
           "format": {"value": "cartridge-510", "display": "Cartridge 510", "option": "cartridge-510"},
           "extract_type": {"value": "full-spectrum", "display": "Full Spectrum — classification fictive", "option": "full-spectrum"},
-          "declared_capacity": {"value": 0.5, "display": "0,5 ml — valeur fictive"},
+          "declared_capacity": {"value": 0.5, "display": "0,5 mL — valeur fictive"},
           "declared_cannabinoids": {"value": "Aucune donnée analytique déclarée — fiche fictive.", "display": "Aucune donnée analytique déclarée — fiche fictive."}
         }
       },
@@ -250,7 +250,7 @@ begin
         "fields": {
           "format": {"value": "disposable", "display": "Disposable", "option": "disposable"},
           "extract_type": {"value": "broad-spectrum", "display": "Broad Spectrum — classification fictive", "option": "broad-spectrum"},
-          "declared_capacity": {"value": 1.0, "display": "1,0 ml — valeur fictive"},
+          "declared_capacity": {"value": 1.0, "display": "1,0 mL — valeur fictive"},
           "declared_cannabinoids": {"value": "Aucune donnée analytique déclarée — fiche fictive.", "display": "Aucune donnée analytique déclarée — fiche fictive."}
         }
       },
@@ -286,38 +286,6 @@ begin
           "declared_composition": {"value": "Infusion végétale fictive; composition réelle non renseignée.", "display": "Infusion végétale fictive; composition réelle non renseignée."},
           "declared_cannabinoids": {"value": "Aucune teneur analytique déclarée — fiche fictive.", "display": "Aucune teneur analytique déclarée — fiche fictive."},
           "allergens": {"value": "Non renseignés — illustration uniquement.", "display": "Non renseignés — illustration uniquement."}
-        }
-      },
-      {
-        "seed_key": "demo.medicinal.oil",
-        "short_description": "Format huile fictif à la teinte dorée, documenté sans indication, effet ou teneur analytique.",
-        "full_description": "Cette fiche de démonstration illustre uniquement le format Huile dans la taxonomie médicinale. L’apparence dorée et la fluidité sont des observations visuelles fictives, sans lien avec une formulation existante.\n\nAucune composition, indication, posologie, efficacité ou propriété thérapeutique n’est déclarée. Cette entrée ne remplace pas une information médicale ou pharmaceutique.",
-        "declared_variety": "Composition fictive non attribuée",
-        "declared_producer": "Non attribué — fiche fictive",
-        "method": "Huile — classification descriptive",
-        "texture": "Fluide et dorée — illustration",
-        "country": null,
-        "region": null,
-        "fields": {
-          "format": {"value": "huile", "display": "Huile", "option": "huile"},
-          "declared_composition": {"value": "Huile support non spécifiée; données entièrement fictives.", "display": "Huile support non spécifiée; données entièrement fictives."},
-          "declared_cannabinoids": {"value": "Aucune teneur analytique déclarée — fiche fictive.", "display": "Aucune teneur analytique déclarée — fiche fictive."}
-        }
-      },
-      {
-        "seed_key": "demo.medicinal.capsules",
-        "short_description": "Capsules molles fictives de couleur ambrée, classées sans composition ni indication médicale.",
-        "full_description": "Cette entrée présente le format Capsules au moyen de capsules molles génériques et non identifiables. La couleur, l’enveloppe et la présentation sont décrites uniquement pour compléter l’exemple éditorial.\n\nAucune composition, indication, posologie, efficacité ou propriété thérapeutique n’est déclarée. Aucun produit pharmaceutique réel n’est représenté.",
-        "declared_variety": "Composition fictive non attribuée",
-        "declared_producer": "Non attribué — fiche fictive",
-        "method": "Capsules — classification descriptive",
-        "texture": "Capsule souple et translucide — illustration",
-        "country": null,
-        "region": null,
-        "fields": {
-          "format": {"value": "capsules", "display": "Capsules", "option": "capsules"},
-          "declared_composition": {"value": "Enveloppe et contenu non spécifiés; données entièrement fictives.", "display": "Enveloppe et contenu non spécifiés; données entièrement fictives."},
-          "declared_cannabinoids": {"value": "Aucune teneur analytique déclarée — fiche fictive.", "display": "Aucune teneur analytique déclarée — fiche fictive."}
         }
       },
       {

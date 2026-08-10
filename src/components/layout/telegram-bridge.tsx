@@ -45,9 +45,14 @@ export function TelegramBridge() {
         });
         if (!authResponse.ok) {
           const payload = (await authResponse.json().catch(() => null)) as {
-            error?: { message?: string };
+            error?: { code?: string; message?: string };
             message?: string;
           } | null;
+          if (payload?.error?.code === "EXPIRED_TELEGRAM_INIT_DATA") {
+            throw new Error(
+              "La session Telegram a expiré. Ferme cette fenêtre puis rouvre la Mini App depuis le bot.",
+            );
+          }
           throw new Error(
             payload?.error?.message ??
               payload?.message ??

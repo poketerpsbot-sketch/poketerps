@@ -1,7 +1,12 @@
+import { telegramCommandsForRole } from "@/lib/services/bot-pure";
+
 export type TelegramSetupConfig = {
   botToken: string;
   webhookSecret: string;
   appUrl: string;
+  ownerIds?: number[];
+  adminIds?: number[];
+  moderatorIds?: number[];
 };
 
 export type TelegramWebhookInfo = {
@@ -65,17 +70,7 @@ export function sanitizeTelegramSetupError(error: unknown): SanitizedTelegramSet
   return { name: "Error", message: "Telegram setup failed." };
 }
 
-export const telegramBotCommands = [
-  { command: "start", description: "Accueil du Pokédex" },
-  { command: "app", description: "Ouvrir la Mini App" },
-  { command: "search", description: "Scanner le catalogue" },
-  { command: "latest", description: "Dernières captures" },
-  { command: "ranking", description: "Classements" },
-  { command: "profile", description: "Mon profil" },
-  { command: "partners", description: "Nos partenaires" },
-  { command: "help", description: "Aide" },
-  { command: "admin", description: "Administration (autorisés)" },
-] as const;
+export const telegramBotCommands = telegramCommandsForRole("MEMBER");
 
 function normalizeConfig(config: TelegramSetupConfig): TelegramSetupConfig {
   if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(config.botToken)) {
@@ -96,6 +91,15 @@ function normalizeConfig(config: TelegramSetupConfig): TelegramSetupConfig {
     throw new TelegramSetupConfigurationError(
       "NEXT_PUBLIC_APP_URL doit utiliser HTTPS pour le webhook Telegram.",
     );
+  }
+  for (const id of [
+    ...(config.ownerIds ?? []),
+    ...(config.adminIds ?? []),
+    ...(config.moderatorIds ?? []),
+  ]) {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new TelegramSetupConfigurationError("Un identifiant Telegram d’équipe est invalide.");
+    }
   }
   return { ...config, appUrl: config.appUrl.replace(/\/+$/, "") };
 }
@@ -146,8 +150,22 @@ export async function configureTelegramBot(
     allowed_updates: ["message", "callback_query"],
     drop_pending_updates: false,
   });
+  const scopedRoles = new Map<number, "ADMIN" | "MODERATOR">();
+  for (const id of config.moderatorIds ?? []) scopedRoles.set(id, "MODERATOR");
+  for (const id of [...(config.adminIds ?? []), ...(config.ownerIds ?? [])]) {
+    scopedRoles.set(id, "ADMIN");
+  }
   await Promise.all([
-    request<boolean>("setMyCommands", { commands: telegramBotCommands }),
+    request<boolean>("setMyCommands", {
+      commands: telegramBotCommands,
+      scope: { type: "default" },
+    }),
+    ...[...scopedRoles].map(([chatId, role]) =>
+      request<boolean>("setMyCommands", {
+        commands: telegramCommandsForRole(role),
+        scope: { type: "chat", chat_id: chatId },
+      }),
+    ),
     request<boolean>("setChatMenuButton", {
       menu_button: {
         type: "web_app",

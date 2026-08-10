@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
 import {
@@ -21,6 +21,13 @@ export async function listCategories() {
         description: categories.description,
         icon: categories.icon,
         sortOrder: categories.sortOrder,
+        entryCount: sql<number>`(
+          select count(*)::integer
+          from public.entries category_entry
+          where category_entry.category_id = ${categories.id}
+            and category_entry.status = 'PUBLISHED'
+            and category_entry.deleted_at is null
+        )`,
       })
       .from(categories)
       .where(and(eq(categories.isVisible, true), isNull(categories.deletedAt)))
@@ -46,6 +53,7 @@ export async function listCategories() {
         label: dynamicFieldDefinitions.label,
         fieldType: dynamicFieldDefinitions.fieldType,
         helpText: dynamicFieldDefinitions.description,
+        unit: dynamicFieldDefinitions.unit,
         isRequired: dynamicFieldDefinitions.isRequired,
         isFilterable: dynamicFieldDefinitions.isFilterable,
         sortOrder: dynamicFieldDefinitions.sortOrder,

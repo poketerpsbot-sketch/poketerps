@@ -24,6 +24,9 @@ vi.mock("@/lib/services/reviews", () => ({ moderateReview: vi.fn() }));
 vi.mock("@/lib/services/telegram-client", () => ({
   ...telegram,
   escapeTelegramHtml: (value: string) => value,
+  telegramRoleBadge: (role: string) =>
+    ({ OWNER: "👑 Propriétaire", ADMIN: "🛡️ Administrateur", MODERATOR: "🔎 Modérateur" })[role] ??
+    "👤 Membre",
 }));
 
 import type { CurrentUser } from "@/lib/auth/current-user";
@@ -67,8 +70,24 @@ describe("Telegram command routing", () => {
   it("routes /start through the photo welcome workflow", async () => {
     await processTelegramUpdate(commandUpdate("/start"), null);
 
-    expect(telegram.sendWelcomeMessage).toHaveBeenCalledWith(42);
+    expect(telegram.sendWelcomeMessage).toHaveBeenCalledWith(42, {
+      displayName: "Ada",
+      role: "MEMBER",
+      username: "ada",
+    });
     expect(telegram.sendTelegramMessage).not.toHaveBeenCalled();
+  });
+
+  it("keeps the configured owner role when /start falls back during a database incident", async () => {
+    const update = commandUpdate("/start");
+    if (update.message?.from) update.message.from.id = 6_675_436_692;
+
+    await processTelegramUpdate(update, null);
+
+    expect(telegram.sendWelcomeMessage).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ role: "OWNER" }),
+    );
   });
 
   it("requires a trusted actor for commands other than /start", async () => {
@@ -94,6 +113,7 @@ describe("Telegram command routing", () => {
       "/search nom",
       "/latest",
       "/ranking",
+      "/contest",
       "/profile",
       "/partners",
       "/help",
@@ -117,8 +137,9 @@ describe("Telegram command routing", () => {
       },
     ];
     const buttons = keyboard.inline_keyboard.flat();
-    expect(heading).toBe("<b>Administration</b>");
-    expect(buttons).toHaveLength(21);
+    expect(heading).toContain("<b>Administration complète</b>");
+    expect(heading).toContain("Ada Admin · 🛡️ Administrateur");
+    expect(buttons).toHaveLength(22);
     expect(buttons[0]).toEqual({
       text: "🛡 Ouvrir la console web",
       web_app: { url: "https://pokedex.example.test/admin" },
@@ -128,6 +149,34 @@ describe("Telegram command routing", () => {
         .filter(({ callback_data }) => callback_data)
         .map(({ callback_data }) => callback_data),
     ).toEqual(["menu:entries", "menu:reviews", "menu:messages"]);
+  });
+
+  it("returns a restricted moderation keyboard for moderators", async () => {
+    await processTelegramUpdate(commandUpdate("/admin"), { ...admin, role: "MODERATOR" });
+
+    const [, heading, keyboard] = telegram.sendTelegramMessage.mock.calls[0] as [
+      number,
+      string,
+      { inline_keyboard: Array<Array<{ text: string; web_app?: { url: string } }>> },
+    ];
+    const buttons = keyboard.inline_keyboard.flat();
+    expect(heading).toContain("<b>Modération</b>");
+    expect(heading).toContain("🔎 Modérateur");
+    expect(buttons[0]).toEqual({
+      text: "🔎 Modération Mini App",
+      web_app: { url: "https://pokedex.example.test/admin/moderation" },
+    });
+    expect(buttons.map(({ text }) => text)).toEqual([
+      "🔎 Modération Mini App",
+      "✅ Fiches à valider",
+      "💬 Avis à valider",
+      "📨 Messages",
+      "🚩 Signalements",
+      "🎯 Concours",
+      "📱 Pokédex",
+      "👤 Mon profil",
+    ]);
+    expect(JSON.stringify(buttons)).not.toMatch(/parametres|utilisateurs|badges|categories/i);
   });
 
   it("keeps /admin protected for non-team members", async () => {

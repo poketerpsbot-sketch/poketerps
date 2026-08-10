@@ -1,26 +1,13 @@
 import type { ReactNode } from "react";
-import { getAdminDashboard } from "@/components/admin/admin-data";
 import { AdminShell } from "@/components/admin/admin-shell";
-import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { ErrorState } from "@/components/ui/states";
-import { canAccessWebAdmin } from "@/lib/auth/rbac";
-import type { UserRole } from "@/lib/db/schema";
-
-const roles: UserRole[] = ["OWNER", "ADMIN", "MODERATOR", "EDITOR", "MEMBER", "BANNED"];
+import { getOptionalCurrentUser } from "@/lib/auth/current-user";
+import { isAdminRole } from "@/lib/auth/rbac";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  const [access, session] = await Promise.all([
-    getAdminDashboard(),
-    serverApi<unknown>("/api/auth/session"),
-  ]);
-  const user = unwrapObject<Record<string, unknown>>(session.data, ["user"]);
-  const role =
-    typeof user?.role === "string" && roles.includes(user.role as UserRole)
-      ? (user.role as UserRole)
-      : null;
-  const canOpenConsole = role ? canAccessWebAdmin(role) : false;
+  const user = await getOptionalCurrentUser();
 
-  if (access.error || session.error || !canOpenConsole) {
+  if (!user || !isAdminRole(user.role)) {
     return (
       <div className="page-shell page-stack">
         <header className="page-header">
@@ -32,16 +19,16 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         </header>
         <ErrorState
           title="Accès administrateur impossible"
-          message={
-            access.error ??
-            session.error ??
-            "Le panneau complet est réservé aux propriétaires et administrateurs autorisés."
-          }
+          message="Ouvre cette page depuis le bot Telegram pour établir ta session d’équipe."
           retryHref="/admin"
         />
       </div>
     );
   }
 
-  return <AdminShell>{children}</AdminShell>;
+  return (
+    <AdminShell displayName={user.displayName} role={user.role}>
+      {children}
+    </AdminShell>
+  );
 }

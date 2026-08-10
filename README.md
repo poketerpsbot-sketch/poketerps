@@ -6,12 +6,12 @@ administration web et des workflows de modération persistés dans Supabase.
 
 > Le projet est informatif et communautaire. Il ne comporte ni vente, ni commande, ni paiement, ni
 > livraison, ni mise en relation commerciale. Les informations déclarées sur les produits ne sont
-> pas des garanties et les contenus médicinaux ne remplacent pas un avis médical.
+> pas des garanties.
 
 ## Ce que contient la V1
 
 - catalogue dynamique (catégories, sous-catégories, champs et microns) ;
-- seed initial avec 20 fiches éditoriales de démonstration (2 dans chacune des 10 catégories) ;
+- seed initial avec 18 fiches éditoriales de démonstration (2 dans chacune des 9 catégories) ;
 - profils Telegram, rôles serveur et sessions sécurisées ;
 - propositions, brouillons, validation et publication des captures ;
 - vues serveur dédupliquées, J’aime, favoris et compteurs agrégés ;
@@ -84,7 +84,7 @@ npx playwright install
 6. Cliquer **Run**. Il n’est pas nécessaire de créer les tables une par une.
 7. Dans **Table Editor**, vérifier notamment `users`, `entries`, `reviews`, `admin_messages`,
    `partners`, `audit_logs` et les tables de taxonomie.
-   Le seed crée un auteur système et 20 fiches publiées marquées `is_demo`, afin que chaque
+   Le seed crée un auteur système et 18 fiches publiées marquées `is_demo`, afin que chaque
    catégorie contienne immédiatement deux exemples. Ces fiches sont exclues de l’XP et du
    classement des dresseurs.
 8. Dans **Storage**, vérifier les buckets `entry-images`, `entry-drafts`, `partner-images`,
@@ -123,12 +123,12 @@ migrations après sauvegarde.
 
 ### Fiches et photos de démonstration
 
-Le schéma crée 20 fiches fictives publiées, soit deux par catégorie. La migration
+Le schéma crée 18 fiches fictives publiées, soit deux par catégorie. La migration
 `supabase/migrations/002_enrich_demo_entries.sql` complète les descriptions et les champs dynamiques
 d'une base déjà installée. Les fiches portent `is_demo=true` et restent exclues des XP et des
 classements ; elles peuvent donc être supprimées plus tard sans toucher aux contributions réelles.
 
-Les 20 photos d'illustration proviennent de Wikimedia Commons. Vérifier d'abord les fichiers et leurs
+Les 18 photos d'illustration proviennent de Wikimedia Commons. Vérifier d'abord les fichiers et leurs
 licences sans écrire dans Supabase :
 
 ```bash

@@ -14,14 +14,19 @@ describe("RBAC", () => {
     expect(hasPermission("ADMIN", "settings:manage")).toBe(true);
     expect(hasPermission("ADMIN", "badge:manage")).toBe(true);
     expect(hasPermission("ADMIN", "publication:manage")).toBe(true);
+    expect(hasPermission("ADMIN", "contest:manage")).toBe(true);
+    expect(hasPermission("ADMIN", "contest:moderate")).toBe(true);
     expect(hasPermission("MODERATOR", "publication:manage")).toBe(false);
     expect(hasPermission("MODERATOR", "user:manage")).toBe(false);
+    expect(hasPermission("MODERATOR", "contest:manage")).toBe(false);
   });
 
   it("keeps member and moderator capabilities scoped", () => {
     expect(hasPermission("MEMBER", "entry:create")).toBe(true);
     expect(hasPermission("MEMBER", "entry:moderate")).toBe(false);
     expect(hasPermission("MODERATOR", "review:moderate")).toBe(true);
+    expect(hasPermission("MODERATOR", "entry:moderate")).toBe(true);
+    expect(hasPermission("MODERATOR", "contest:moderate")).toBe(true);
     expect(hasPermission("MODERATOR", "partner:manage")).toBe(false);
   });
 

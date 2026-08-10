@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Camera, Save, Send, ShieldCheck } from "lucide-react";
 import type { CategoryDto, DynamicFieldDefinitionDto } from "@/components/data/types";
 import { submitJson, uploadImage, validateImage } from "@/components/forms/form-api";
+import { isMicronApplicable } from "@/lib/taxonomy/measurements";
 
 const micronModes = ["NONE", "SINGLE", "RANGE", "MULTIPLE", "FULL_SPECTRUM", "MIXED"] as const;
 
@@ -105,6 +106,10 @@ function DynamicFieldControl({
   const id = `capture-field-${definition.id}`;
   const describedBy = definition.helpText ? `${id}-help` : undefined;
   const type = definition.fieldType;
+  const numberRules = definition.validation ?? {};
+  const minimum = typeof numberRules.min === "number" ? numberRules.min : undefined;
+  const maximum = typeof numberRules.max === "number" ? numberRules.max : undefined;
+  const step = typeof numberRules.step === "number" ? numberRules.step : undefined;
   const common = {
     id,
     name: `field-${definition.id}`,
@@ -174,6 +179,10 @@ function DynamicFieldControl({
         type={
           type === "NUMBER" ? "number" : type === "URL" ? "url" : type === "DATE" ? "date" : "text"
         }
+        inputMode={type === "NUMBER" ? "decimal" : undefined}
+        min={type === "NUMBER" ? minimum : undefined}
+        max={type === "NUMBER" ? maximum : undefined}
+        step={type === "NUMBER" ? step : undefined}
         value={typeof value === "string" ? value : ""}
         placeholder={definition.placeholder ?? undefined}
         onChange={(event) => onChange(event.target.value)}
@@ -231,6 +240,7 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
   const subcategory = subcategories.find(
     (item) => String(item.id) === selectedSubcategory || item.slug === selectedSubcategory,
   );
+  const micronApplicable = isMicronApplicable(category?.slug, subcategory?.slug);
   const dynamicFields = uniqueFields([...(category?.fields ?? []), ...(subcategory?.fields ?? [])]);
 
   function serializedFields() {
@@ -252,7 +262,7 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
   }
 
   function micronPayload(values: CaptureValues) {
-    if (values.micronMode === "NONE") return null;
+    if (!micronApplicable || values.micronMode === "NONE") return null;
     const multipleValues =
       values.micronMode === "MULTIPLE"
         ? (values.micronMultiple ?? "")
@@ -479,119 +489,124 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
         </section>
       )}
 
-      <section className="form-section">
-        <h2>Microns déclarés</h2>
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="capture-micron-mode">Mode</label>
-            <select id="capture-micron-mode" {...register("micronMode")}>
-              <option value="NONE">Non précisé</option>
-              <option value="SINGLE">Valeur unique</option>
-              <option value="RANGE">Plage</option>
-              <option value="MULTIPLE">Plusieurs valeurs</option>
-              <option value="FULL_SPECTRUM">Full Spectrum</option>
-              <option value="MIXED">Mixed Micron</option>
-            </select>
-          </div>
-          {micronMode === "SINGLE" && (
+      {micronApplicable && (
+        <section className="form-section">
+          <h2>Microns déclarés</h2>
+          <p>Indique uniquement la maille de tamis ou du sac filtrant déclarée pour ce produit.</p>
+          <div className="form-grid">
             <div className="field">
-              <label htmlFor="capture-micron-single">Valeur (µm)</label>
-              <Controller
-                control={control}
-                name="micronSingle"
-                render={({ field }) => (
-                  <input
-                    id="capture-micron-single"
-                    type="number"
-                    min="1"
-                    max="1000"
-                    inputMode="numeric"
-                    value={field.value ?? ""}
-                    onChange={(event) => field.onChange(numberValue(event.target.value))}
-                    aria-invalid={Boolean(errors.micronSingle)}
-                  />
+              <label htmlFor="capture-micron-mode">Mode</label>
+              <select id="capture-micron-mode" {...register("micronMode")}>
+                <option value="NONE">Non précisé</option>
+                <option value="SINGLE">Valeur unique</option>
+                <option value="RANGE">Plage</option>
+                <option value="MULTIPLE">Plusieurs valeurs</option>
+                <option value="FULL_SPECTRUM">Full Spectrum</option>
+                <option value="MIXED">Mixed Micron</option>
+              </select>
+            </div>
+            {micronMode === "SINGLE" && (
+              <div className="field">
+                <label htmlFor="capture-micron-single">Valeur (µm)</label>
+                <Controller
+                  control={control}
+                  name="micronSingle"
+                  render={({ field }) => (
+                    <input
+                      id="capture-micron-single"
+                      type="number"
+                      min="1"
+                      max="1000"
+                      inputMode="numeric"
+                      value={field.value ?? ""}
+                      onChange={(event) => field.onChange(numberValue(event.target.value))}
+                      aria-invalid={Boolean(errors.micronSingle)}
+                    />
+                  )}
+                />
+                {errors.micronSingle && (
+                  <p className="field__error">{errors.micronSingle.message}</p>
                 )}
-              />
-              {errors.micronSingle && <p className="field__error">{errors.micronSingle.message}</p>}
-            </div>
-          )}
-          {micronMode === "RANGE" && (
-            <>
-              <div className="field">
-                <label htmlFor="capture-micron-min">Minimum (µm)</label>
-                <Controller
-                  control={control}
-                  name="micronMin"
-                  render={({ field }) => (
-                    <input
-                      id="capture-micron-min"
-                      type="number"
-                      min="1"
-                      max="1000"
-                      inputMode="numeric"
-                      value={field.value ?? ""}
-                      onChange={(event) => field.onChange(numberValue(event.target.value))}
-                      aria-invalid={Boolean(errors.micronMin)}
-                    />
-                  )}
-                />
-                {errors.micronMin && <p className="field__error">{errors.micronMin.message}</p>}
               </div>
-              <div className="field">
-                <label htmlFor="capture-micron-max">Maximum (µm)</label>
-                <Controller
-                  control={control}
-                  name="micronMax"
-                  render={({ field }) => (
-                    <input
-                      id="capture-micron-max"
-                      type="number"
-                      min="1"
-                      max="1000"
-                      inputMode="numeric"
-                      value={field.value ?? ""}
-                      onChange={(event) => field.onChange(numberValue(event.target.value))}
-                      aria-invalid={Boolean(errors.micronMax)}
-                    />
-                  )}
-                />
-                {errors.micronMax && <p className="field__error">{errors.micronMax.message}</p>}
-              </div>
-            </>
-          )}
-          {micronMode === "MULTIPLE" && (
-            <div className="field field--wide">
-              <label htmlFor="capture-micron-multiple">Valeurs séparées par des virgules</label>
-              <input
-                id="capture-micron-multiple"
-                inputMode="numeric"
-                placeholder="45, 73, 90"
-                {...register("micronMultiple")}
-                aria-invalid={Boolean(errors.micronMultiple)}
-              />
-              {errors.micronMultiple && (
-                <p className="field__error">{errors.micronMultiple.message}</p>
-              )}
-            </div>
-          )}
-          {micronMode !== "NONE" && (
-            <>
-              <div className="field">
-                <label htmlFor="capture-micron-label">Libellé affiché</label>
+            )}
+            {micronMode === "RANGE" && (
+              <>
+                <div className="field">
+                  <label htmlFor="capture-micron-min">Minimum (µm)</label>
+                  <Controller
+                    control={control}
+                    name="micronMin"
+                    render={({ field }) => (
+                      <input
+                        id="capture-micron-min"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        inputMode="numeric"
+                        value={field.value ?? ""}
+                        onChange={(event) => field.onChange(numberValue(event.target.value))}
+                        aria-invalid={Boolean(errors.micronMin)}
+                      />
+                    )}
+                  />
+                  {errors.micronMin && <p className="field__error">{errors.micronMin.message}</p>}
+                </div>
+                <div className="field">
+                  <label htmlFor="capture-micron-max">Maximum (µm)</label>
+                  <Controller
+                    control={control}
+                    name="micronMax"
+                    render={({ field }) => (
+                      <input
+                        id="capture-micron-max"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        inputMode="numeric"
+                        value={field.value ?? ""}
+                        onChange={(event) => field.onChange(numberValue(event.target.value))}
+                        aria-invalid={Boolean(errors.micronMax)}
+                      />
+                    )}
+                  />
+                  {errors.micronMax && <p className="field__error">{errors.micronMax.message}</p>}
+                </div>
+              </>
+            )}
+            {micronMode === "MULTIPLE" && (
+              <div className="field field--wide">
+                <label htmlFor="capture-micron-multiple">Valeurs séparées par des virgules</label>
                 <input
-                  id="capture-micron-label"
-                  placeholder="Ex. 73–159 µm déclaré"
-                  {...register("micronLabel")}
+                  id="capture-micron-multiple"
+                  inputMode="numeric"
+                  placeholder="45, 73, 90"
+                  {...register("micronMultiple")}
+                  aria-invalid={Boolean(errors.micronMultiple)}
                 />
+                {errors.micronMultiple && (
+                  <p className="field__error">{errors.micronMultiple.message}</p>
+                )}
               </div>
-              <div className="field">
-                <label htmlFor="capture-micron-notes">Notes</label>
-                <input id="capture-micron-notes" {...register("micronNotes")} />
-              </div>
-            </>
-          )}
-        </div>
-      </section>
+            )}
+            {micronMode !== "NONE" && (
+              <>
+                <div className="field">
+                  <label htmlFor="capture-micron-label">Libellé affiché</label>
+                  <input
+                    id="capture-micron-label"
+                    placeholder="Ex. 73–159 µm déclaré"
+                    {...register("micronLabel")}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="capture-micron-notes">Notes</label>
+                  <input id="capture-micron-notes" {...register("micronNotes")} />
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="form-section">
         <h2>Rapport et média</h2>

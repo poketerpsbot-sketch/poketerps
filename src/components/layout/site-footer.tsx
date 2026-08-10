@@ -4,7 +4,6 @@ const links = [
   { href: "/a-propos", label: "À propos" },
   { href: "/reglement", label: "Règlement" },
   { href: "/confidentialite", label: "Confidentialité" },
-  { href: "/mentions-legales", label: "Mentions légales" },
   { href: "/avertissements", label: "Avertissements" },
   { href: "/contact", label: "Contacter l’équipe" },
 ] as const;

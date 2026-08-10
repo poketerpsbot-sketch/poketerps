@@ -44,7 +44,7 @@ services:
       - key: TELEGRAM_CHAT_URL
         sync: false
       - key: TELEGRAM_AUTH_MAX_AGE_SECONDS
-        value: "300"
+        value: "900"
       - key: INSTAGRAM_URL
         sync: false
       - key: SESSION_SECRET

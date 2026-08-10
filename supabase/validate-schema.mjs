@@ -17,6 +17,8 @@ const difference = (left, right) => left.filter((value) => !right.includes(value
 const schema = read("./schema.sql");
 const migration = read("./migrations/001_initial_schema.sql");
 const demoEnrichmentMigration = read("./migrations/002_enrich_demo_entries.sql");
+const contestMigration = read("./migrations/003_contests.sql");
+const taxonomyMeasurementMigration = read("./migrations/004_taxonomy_measurements.sql");
 const drizzle = read("../src/lib/db/schema.ts");
 
 assert(schema === migration, "001_initial_schema.sql must be an exact copy of schema.sql");
@@ -32,6 +34,24 @@ assert(
 assert(
   (demoEnrichmentMigration.match(/\$\$/g) ?? []).length % 2 === 0,
   "unbalanced delimiters in demo enrichment migration",
+);
+assert(
+  (contestMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (contestMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "003_contests.sql must contain one transaction",
+);
+assert(
+  (contestMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in contest migration",
+);
+assert(
+  (taxonomyMeasurementMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (taxonomyMeasurementMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "004_taxonomy_measurements.sql must contain one transaction",
+);
+assert(
+  (taxonomyMeasurementMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in taxonomy measurement migration",
 );
 
 const sqlTables = uniqueSorted(matches(schema, /create table if not exists public\.([a-z0-9_]+)/g));
@@ -119,7 +139,6 @@ const categories = [
   "extractions-solvants",
   "vape",
   "edibles",
-  "medicinal",
   "topiques",
   "concentres-sans-solvant",
 ];
@@ -135,12 +154,11 @@ const demoPrefixes = [
   "solvent",
   "vape",
   "edibles",
-  "medicinal",
   "topical",
   "solventless",
 ];
 const demoSeedKeys = matches(schema, /'(demo\.[a-z0-9.-]+)'/g);
-assert(demoSeedKeys.length === 20, `expected 20 demo seed keys, found ${demoSeedKeys.length}`);
+assert(demoSeedKeys.length === 18, `expected 18 demo seed keys, found ${demoSeedKeys.length}`);
 for (const prefix of demoPrefixes) {
   const count = demoSeedKeys.filter((key) => key.startsWith(`demo.${prefix}.`)).length;
   assert(count === 2, `expected two demo entries for ${prefix}, found ${count}`);
@@ -149,7 +167,7 @@ const enrichmentPayload = demoEnrichmentMigration.match(/\$demo\$([\s\S]*?)\$dem
 assert(enrichmentPayload, "demo enrichment JSON payload is missing");
 const enrichedDemos = JSON.parse(enrichmentPayload);
 const enrichedSeedKeys = uniqueSorted(enrichedDemos.map((entry) => entry.seed_key));
-assert(enrichedDemos.length === 20, `expected 20 enriched demos, found ${enrichedDemos.length}`);
+assert(enrichedDemos.length === 18, `expected 18 enriched demos, found ${enrichedDemos.length}`);
 assert(
   JSON.stringify(enrichedSeedKeys) === JSON.stringify(uniqueSorted(demoSeedKeys)),
   "demo enrichment seed keys do not match the initial demo catalogue",
@@ -172,6 +190,27 @@ assert(
     /on conflict\(entry_id,field_definition_id\) do update/i.test(demoEnrichmentMigration),
   "demo enrichment must stay guarded and idempotent",
 );
+assert(!schema.includes("('medicinal',"), "fresh taxonomy must not seed the medicinal category");
+assert(
+  /seed_key in \('demo\.medicinal\.oil', 'demo\.medicinal\.capsules'\)/i.test(
+    taxonomyMeasurementMigration,
+  ) &&
+    /status = 'DELETED'::public\.entry_status/i.test(taxonomyMeasurementMigration) &&
+    /where slug = 'medicinal'/i.test(taxonomyMeasurementMigration),
+  "004 must soft-delete the old medicinal category and its two demo entries",
+);
+assert(
+  /create temporary table if not exists pokedex_expected_measurement_fields/i.test(
+    taxonomyMeasurementMigration,
+  ) &&
+    /on conflict do nothing/i.test(taxonomyMeasurementMigration) &&
+    /measurement taxonomy is incomplete/i.test(taxonomyMeasurementMigration),
+  "004 measurement taxonomy must stay idempotent and self-validating",
+);
+for (const unit of ["g", "mg/g", "%", "mL", "mg/mL", "unité(s)", "mg/unité", "mg/emballage"]) {
+  assert(schema.includes(`'${unit}'`), `measurement unit is missing ${unit}`);
+}
+assert(!/'ml'/.test(schema), "invalid lowercase ml unit remains in fresh schema");
 assert(
   /entry_images_attribution_consistency/i.test(schema) &&
     /sourceUrl: text\("source_url"\)/.test(drizzle),
@@ -186,6 +225,39 @@ assert(
   "private message-attachments Storage bucket is missing",
 );
 assert(schema.includes("('badge.manage',"), "badge.manage permission seed is missing");
+assert(schema.includes("('contest.manage',"), "contest.manage permission seed is missing");
+assert(schema.includes("('contest.moderate',"), "contest.moderate permission seed is missing");
+assert(
+  /\('MODERATOR','contest\.moderate'\)/.test(schema) &&
+    /\('MODERATOR','entry\.moderate'\)/.test(schema),
+  "moderator contest/entry permissions are missing",
+);
+assert(
+  /contest_winners_participation_contest_fk[\s\S]*references public\.contest_participations\(id,contest_id\)/i.test(
+    schema,
+  ),
+  "contest winner must reference a participation from the same contest",
+);
+assert(
+  /create policy public_contests_read[\s\S]*for select to anon,authenticated/i.test(schema) &&
+    /create policy public_contest_participations_read[\s\S]*status='APPROVED'/i.test(schema),
+  "public contest RLS policies are missing or too broad",
+);
+assert(
+  /create or replace function public\.award_contest_winner_badge\(\)[\s\S]*security definer set search_path=''/i.test(
+    schema,
+  ) &&
+    /revoke execute on function public\.award_contest_winner_badge\(\) from public,anon,authenticated/i.test(
+      schema,
+    ),
+  "automatic contest badge function is not secured",
+);
+assert(
+  /create table if not exists public\.contests/i.test(contestMigration) &&
+    /drop policy if exists public_contests_read/i.test(contestMigration) &&
+    /on conflict\(code\) do update/i.test(contestMigration),
+  "003_contests.sql must remain idempotent",
+);
 assert(
   /account_kind='SYSTEM'[\s\S]*telegram_id is null/i.test(schema),
   "system-account identity guard missing",

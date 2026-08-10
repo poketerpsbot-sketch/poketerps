@@ -31,6 +31,7 @@ import {
   type EntryImagePromotion,
 } from "@/lib/services/storage";
 import { slugify } from "@/lib/validation/common";
+import { isMicronApplicable } from "@/lib/taxonomy/measurements";
 import type {
   createEntrySchema,
   moderateEntrySchema,
@@ -66,7 +67,7 @@ async function validateTaxonomy(
   subcategoryId?: string | null,
 ) {
   const [category] = await executor
-    .select({ id: categories.id })
+    .select({ id: categories.id, slug: categories.slug })
     .from(categories)
     .where(
       and(
@@ -77,9 +78,10 @@ async function validateTaxonomy(
     )
     .limit(1);
   if (!category) throw new AppError("INVALID_CATEGORY", "Catégorie invalide.", 400);
+  let subcategorySlug: string | null = null;
   if (subcategoryId) {
     const [subcategory] = await executor
-      .select({ id: subcategories.id })
+      .select({ id: subcategories.id, slug: subcategories.slug })
       .from(subcategories)
       .where(
         and(
@@ -91,14 +93,25 @@ async function validateTaxonomy(
       )
       .limit(1);
     if (!subcategory) throw new AppError("INVALID_SUBCATEGORY", "Sous-catégorie invalide.", 400);
+    subcategorySlug = subcategory.slug;
   }
+  return { categorySlug: category.slug, subcategorySlug };
 }
 
 async function validateReferences(
   executor: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
-  input: Pick<CreateEntry, "categoryId" | "subcategoryId" | "fields" | "tagIds">,
+  input: Pick<CreateEntry, "categoryId" | "subcategoryId" | "fields" | "tagIds"> & {
+    hasMicron?: boolean;
+  },
 ) {
-  await validateTaxonomy(executor, input.categoryId, input.subcategoryId);
+  const taxonomy = await validateTaxonomy(executor, input.categoryId, input.subcategoryId);
+  if (input.hasMicron && !isMicronApplicable(taxonomy.categorySlug, taxonomy.subcategorySlug)) {
+    throw new AppError(
+      "MICRON_NOT_APPLICABLE",
+      "Les microns ne s’appliquent pas à ce type de produit.",
+      400,
+    );
+  }
   const fieldIds = Object.keys(input.fields);
   if (fieldIds.length > 0) {
     const fieldRows = await executor
@@ -140,7 +153,10 @@ async function validateReferences(
 
 export async function createEntry(input: CreateEntry, actor: CurrentUser, requestId?: string) {
   return getDb().transaction(async (tx) => {
-    await validateReferences(tx, input);
+    await validateReferences(tx, {
+      ...input,
+      hasMicron: Boolean(input.micron && input.micron.mode !== "NONE"),
+    });
     const [entry] = await tx
       .insert(entries)
       .values({
@@ -232,13 +248,27 @@ export async function updateEntry(
       input.categoryId !== undefined ||
       input.subcategoryId !== undefined ||
       input.fields ||
-      input.tagIds
+      input.tagIds ||
+      input.micron !== undefined
     ) {
+      let hasMicron = Boolean(input.micron && input.micron.mode !== "NONE");
+      if (
+        input.micron === undefined &&
+        (input.categoryId !== undefined || input.subcategoryId !== undefined)
+      ) {
+        const [existingMicron] = await tx
+          .select({ entryId: micronSpecifications.entryId })
+          .from(micronSpecifications)
+          .where(eq(micronSpecifications.entryId, id))
+          .limit(1);
+        hasMicron = Boolean(existingMicron);
+      }
       await validateReferences(tx, {
         categoryId,
         subcategoryId,
         fields: input.fields ?? {},
         tagIds: input.tagIds ?? [],
+        hasMicron,
       });
     }
     const set: Partial<typeof entries.$inferInsert> = { updatedAt: new Date() };

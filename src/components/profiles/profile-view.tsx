@@ -25,8 +25,13 @@ import type {
   SubmissionDto,
 } from "@/components/data/types";
 import { EntryGrid } from "@/components/entries/entry-card";
+import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, SectionHeading, StatusPill, formatDate } from "@/components/ui/states";
-import { canAccessWebAdmin } from "@/lib/auth/rbac";
+import {
+  canAccessFullAdminConsole,
+  canAccessModerationConsole,
+  roleLabels,
+} from "@/lib/auth/ui-access";
 import type { UserRole } from "@/lib/db/schema";
 
 export type ProfileStats = {
@@ -146,15 +151,6 @@ function normalizedRole(value?: string | null): UserRole {
   return userRoles.includes(value as UserRole) ? (value as UserRole) : "MEMBER";
 }
 
-const roleLabels: Record<UserRole, string> = {
-  OWNER: "Propriétaire",
-  ADMIN: "Administrateur",
-  MODERATOR: "Modérateur",
-  EDITOR: "Éditeur",
-  MEMBER: "Membre",
-  BANNED: "Compte suspendu",
-};
-
 export function ProfileHero({ profile }: { profile: PublicProfileDto }) {
   const username = profileUsername(profile);
   const avatarUrl = safeAvatarUrl(profile.profilePhotoUrl);
@@ -178,7 +174,7 @@ export function ProfileHero({ profile }: { profile: PublicProfileDto }) {
             <h1>{profile.displayName}</h1>
             <div className="profile-identity__meta">
               <span>{username ? `@${username}` : profileTitle(profile)}</span>
-              {role && <span className="profile-role">{roleLabels[role]}</span>}
+              {role && <RoleBadge role={role} compact />}
               <span>Niveau {profile.level ?? 1}</span>
             </div>
           </div>
@@ -479,6 +475,8 @@ export function MyProfileView({ profile }: { profile: ProfilePayload }) {
     telegramUsername,
     profilePhotoUrl: identity.profilePhotoUrl ?? profile.profilePhotoUrl,
   };
+  const canAdminister = canAccessFullAdminConsole(role);
+  const canModerate = canAccessModerationConsole(role);
 
   const statCards = [
     { label: "Niveau", value: profile.level ?? 1 },
@@ -498,18 +496,28 @@ export function MyProfileView({ profile }: { profile: ProfilePayload }) {
     <div className="page-shell page-stack profile-dashboard">
       <ProfileHero profile={profileWithIdentity} />
 
-      {canAccessWebAdmin(role) && (
+      {canModerate && (
         <aside className="profile-admin-access" aria-labelledby="profile-admin-title">
           <span className="profile-admin-access__icon" aria-hidden="true">
             <ShieldCheck />
           </span>
           <div>
             <p className="eyebrow">Accès autorisé</p>
-            <h2 id="profile-admin-title">Panneau d’administration</h2>
-            <p>Gère les contenus, les utilisateurs et les réglages selon tes permissions.</p>
+            <h2 id="profile-admin-title">
+              {canAdminister ? "Panneau d’administration" : "Espace de modération"}
+            </h2>
+            <p>
+              {canAdminister
+                ? "Gère les contenus, les utilisateurs et les réglages selon tes permissions."
+                : "Valide les fiches, les avis, les messages et les participations selon tes permissions."}
+            </p>
           </div>
-          <Link className="button button--dark" href="/admin">
-            Ouvrir le panneau <ChevronRight size={17} aria-hidden="true" />
+          <Link
+            className="button button--dark"
+            href={canAdminister ? "/admin" : "/admin/moderation"}
+          >
+            {canAdminister ? "Ouvrir le panneau" : "Ouvrir la modération"}{" "}
+            <ChevronRight size={17} aria-hidden="true" />
           </Link>
         </aside>
       )}

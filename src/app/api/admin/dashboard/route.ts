@@ -8,7 +8,7 @@ import { getAdminDashboard } from "@/lib/services/admin";
 
 export async function GET(request: NextRequest): Promise<Response> {
   return handleApi(request, async () => {
-    const actor = await requireAdminUser();
+    const actor = await requireAdminUser("audit:read");
     await enforceRateLimit(rateLimits.admin, actor.id);
     return apiJson(await getAdminDashboard());
   });

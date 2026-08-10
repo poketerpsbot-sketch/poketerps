@@ -41,16 +41,24 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!claimed) return apiJson({ accepted: true, duplicate: true });
 
     try {
-      if (isStart) {
-        await processTelegramUpdate(update, null);
-      } else {
-        const sender = update.callback_query?.from ?? update.message?.from;
-        if (!sender) {
-          throw new AppError("INVALID_TELEGRAM_USER", "Utilisateur Telegram invalide.", 401);
-        }
-        const actor = await upsertTrustedTelegramUser(sender);
-        await processTelegramUpdate(update, actor);
+      const sender = update.callback_query?.from ?? update.message?.from;
+      if (!sender) {
+        throw new AppError("INVALID_TELEGRAM_USER", "Utilisateur Telegram invalide.", 401);
       }
+      let actor: Awaited<ReturnType<typeof upsertTrustedTelegramUser>> | null = null;
+      try {
+        actor = await upsertTrustedTelegramUser(sender);
+      } catch (actorError) {
+        if (!isStart) throw actorError;
+        // /start remains available during a temporary database incident. The
+        // bot can still derive bootstrap roles from the trusted Telegram ID,
+        // while every protected callback re-authenticates its actor normally.
+        logger.warn("telegram_start_actor_unavailable", {
+          updateId: update.update_id,
+          error: actorError,
+        });
+      }
+      await processTelegramUpdate(update, actor);
       await completeTelegramUpdate(update.update_id);
       return apiJson({ accepted: true });
     } catch (error) {

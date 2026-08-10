@@ -49,14 +49,23 @@ describe("profile dashboard", () => {
     expect(html).toContain("Panneau d’administration");
   });
 
-  it.each(["MODERATOR", "EDITOR", "MEMBER"] as const)(
-    "does not advertise the web admin entry point to %s",
-    (role) => {
-      const profile: ProfilePayload = { displayName: "Membre", role };
-      const html = renderToStaticMarkup(<MyProfileView profile={profile} />);
+  it("shows the restricted moderation entry point to MODERATOR", () => {
+    const profile: ProfilePayload = { displayName: "Modérateur", role: "MODERATOR" };
+    const html = renderToStaticMarkup(<MyProfileView profile={profile} />);
 
-      expect(html).not.toContain('href="/admin"');
-      expect(html).not.toContain("Panneau d’administration");
-    },
-  );
+    expect(html).toContain('href="/admin/moderation"');
+    expect(html).toContain("Espace de modération");
+    expect(html).not.toContain('href="/admin"');
+    expect(html).not.toContain("Panneau d’administration");
+  });
+
+  it.each(["EDITOR", "MEMBER"] as const)("does not advertise a staff entry point to %s", (role) => {
+    const profile: ProfilePayload = { displayName: "Membre", role };
+    const html = renderToStaticMarkup(<MyProfileView profile={profile} />);
+
+    expect(html).not.toContain('href="/admin"');
+    expect(html).not.toContain('href="/admin/moderation"');
+    expect(html).not.toContain("Panneau d’administration");
+    expect(html).not.toContain("Espace de modération");
+  });
 });

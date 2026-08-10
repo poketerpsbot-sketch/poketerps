@@ -1,17 +1,42 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import {
+  Candy,
+  ChevronRight,
+  Cigarette,
+  CircleDot,
+  Cloud,
+  Droplet,
+  FlaskConical,
+  Flower2,
+  Gem,
+  Sparkles,
+  SprayCan,
+  type LucideIcon,
+} from "lucide-react";
 import type { CategoryDto } from "@/components/data/types";
 import { formatCount } from "@/components/ui/states";
 
+const categoryIcons: Record<string, LucideIcon> = {
+  fleur: Flower2,
+  "pre-roll": Cigarette,
+  hash: Gem,
+  rosin: Droplet,
+  "extractions-solvants": FlaskConical,
+  vape: Cloud,
+  edibles: Candy,
+  topiques: SprayCan,
+  "concentres-sans-solvant": Sparkles,
+};
+
 export function CategoryCard({ category }: { category: CategoryDto }) {
-  const letter = category.icon || category.name.charAt(0).toLocaleUpperCase("fr-FR");
+  const Icon = categoryIcons[category.slug ?? ""] ?? CircleDot;
   return (
     <Link
       className="category-card"
       href={`/categories/${encodeURIComponent(category.slug ?? String(category.id))}`}
     >
       <span className="category-card__icon" aria-hidden="true">
-        {letter}
+        <Icon size={25} strokeWidth={2.4} />
       </span>
       <span style={{ minWidth: 0, flex: 1 }}>
         <h3>{category.name}</h3>

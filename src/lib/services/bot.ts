@@ -4,14 +4,16 @@ import { assertPermission, isAdminRole } from "@/lib/auth/rbac";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
+import { roleForTelegramId } from "@/lib/services/auth";
 import { listAdminEntries, listAdminReviews } from "@/lib/services/admin";
 import {
-  buildAdminMenu,
   buildHelpMessage,
+  buildTeamMenu,
   confirmationCallback,
   isAdminActionAllowed,
   parseBotCallback,
   parseBotCommand,
+  telegramRoleBadge,
   type AdminAction,
   type AdminEntity,
 } from "@/lib/services/bot-pure";
@@ -44,8 +46,13 @@ const adminActionLabels: Record<AdminAction, string> = {
   archive: "Archiver",
 };
 
-function adminMenu(): InlineKeyboardMarkup {
-  return buildAdminMenu(getEnv().NEXT_PUBLIC_APP_URL);
+function adminMenu(actor: CurrentUser): InlineKeyboardMarkup {
+  return buildTeamMenu(getEnv().NEXT_PUBLIC_APP_URL, actor.role);
+}
+
+function teamHeading(actor: CurrentUser): string {
+  const title = actor.role === "MODERATOR" ? "Modération" : "Administration complète";
+  return `<b>${title}</b>\n${escapeTelegramHtml(actor.displayName)} · ${telegramRoleBadge(actor.role)}\n\nChoisis une action correspondant à tes autorisations.`;
 }
 
 function entityActions(entity: AdminEntity, id: string): InlineKeyboardMarkup {
@@ -141,6 +148,23 @@ async function sendPartners(chatId: number): Promise<void> {
   });
 }
 
+async function sendContest(chatId: number): Promise<void> {
+  await sendTelegramMessage(
+    chatId,
+    "<b>🎯 Concours communautaires</b>\n\nDécouvre les concours en cours, leurs règles, les dates importantes et les participations de la communauté.",
+    {
+      inline_keyboard: [
+        [
+          {
+            text: "Voir les concours",
+            web_app: { url: `${getEnv().NEXT_PUBLIC_APP_URL}/concours` },
+          },
+        ],
+      ],
+    },
+  );
+}
+
 async function sendProfile(chatId: number, actor: CurrentUser): Promise<void> {
   const profile = await getMyProfile(actor);
   const total = Object.values(profile.counts.entries).reduce(
@@ -149,7 +173,7 @@ async function sendProfile(chatId: number, actor: CurrentUser): Promise<void> {
   );
   await sendTelegramMessage(
     chatId,
-    `<b>${escapeTelegramHtml(actor.displayName)}</b>\nNiveau ${profile.level ?? 1} · ${total} fiche(s)`,
+    `<b>${escapeTelegramHtml(actor.displayName)}</b> · ${telegramRoleBadge(actor.role)}\nNiveau ${profile.level ?? 1} · ${total} fiche(s)`,
     {
       inline_keyboard: [
         [{ text: "Mon profil", web_app: { url: `${getEnv().NEXT_PUBLIC_APP_URL}/profil` } }],
@@ -158,10 +182,10 @@ async function sendProfile(chatId: number, actor: CurrentUser): Promise<void> {
   );
 }
 
-async function sendAdminEntries(chatId: number): Promise<void> {
+async function sendAdminEntries(chatId: number, actor: CurrentUser): Promise<void> {
   const result = await listAdminEntries({ status: "PENDING_REVIEW", limit: 5, offset: 0 });
   if (!result.entries.length) {
-    await sendTelegramMessage(chatId, "Aucune fiche en attente.", adminMenu());
+    await sendTelegramMessage(chatId, "Aucune fiche en attente.", adminMenu(actor));
     return;
   }
   for (const entry of result.entries) {
@@ -173,10 +197,10 @@ async function sendAdminEntries(chatId: number): Promise<void> {
   }
 }
 
-async function sendAdminReviews(chatId: number): Promise<void> {
+async function sendAdminReviews(chatId: number, actor: CurrentUser): Promise<void> {
   const result = await listAdminReviews({ status: "PENDING_REVIEW", limit: 5, offset: 0 });
   if (!result.reviews.length) {
-    await sendTelegramMessage(chatId, "Aucun avis en attente.", adminMenu());
+    await sendTelegramMessage(chatId, "Aucun avis en attente.", adminMenu(actor));
     return;
   }
   for (const review of result.reviews) {
@@ -188,13 +212,13 @@ async function sendAdminReviews(chatId: number): Promise<void> {
   }
 }
 
-async function sendAdminMessages(chatId: number): Promise<void> {
+async function sendAdminMessages(chatId: number, actor: CurrentUser): Promise<void> {
   const result = await listAdminMessages({ limit: 5, offset: 0 });
   const messages = result.messages.filter((message) =>
     ["NEW", "READ", "IN_PROGRESS"].includes(message.status),
   );
   if (!messages.length) {
-    await sendTelegramMessage(chatId, "Aucun message ouvert.", adminMenu());
+    await sendTelegramMessage(chatId, "Aucun message ouvert.", adminMenu(actor));
     return;
   }
   for (const message of messages) {
@@ -288,10 +312,19 @@ async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promi
     else {
       assertBotAdmin(actor);
       if (parsed.value === "admin")
-        await sendTelegramMessage(chatId, "<b>Administration</b>", adminMenu());
-      if (parsed.value === "entries") await sendAdminEntries(chatId);
-      if (parsed.value === "reviews") await sendAdminReviews(chatId);
-      if (parsed.value === "messages") await sendAdminMessages(chatId);
+        await sendTelegramMessage(chatId, teamHeading(actor), adminMenu(actor));
+      if (parsed.value === "entries") {
+        assertBotAdmin(actor, "entry");
+        await sendAdminEntries(chatId, actor);
+      }
+      if (parsed.value === "reviews") {
+        assertBotAdmin(actor, "review");
+        await sendAdminReviews(chatId, actor);
+      }
+      if (parsed.value === "messages") {
+        assertBotAdmin(actor, "message");
+        await sendAdminMessages(chatId, actor);
+      }
     }
     await answerTelegramCallback(callback.id);
     return;
@@ -321,7 +354,7 @@ async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promi
   await sendTelegramMessage(
     chatId,
     `✅ ${escapeTelegramHtml(adminActionLabels[parsed.action])} : terminé.`,
-    adminMenu(),
+    adminMenu(actor),
   );
 }
 
@@ -349,21 +382,34 @@ export async function processTelegramUpdate(
     );
     return;
   }
-  if (command.name === "start") await sendWelcomeMessage(message.chat.id);
-  else if (!actor) {
+  if (command.name === "start") {
+    const displayName =
+      actor?.displayName ??
+      [message.from.first_name, message.from.last_name].filter(Boolean).join(" ").slice(0, 120);
+    await sendWelcomeMessage(message.chat.id, {
+      displayName,
+      username: actor?.username ?? message.from.username ?? null,
+      role: actor?.role ?? roleForTelegramId(message.from.id),
+    });
+  } else if (!actor) {
     throw new AppError("INVALID_TELEGRAM_USER", "Utilisateur Telegram invalide.", 401);
   } else if (command.name === "app")
-    await sendTelegramMessage(message.chat.id, "Ouvre la Mini App :", appKeyboard());
+    await sendTelegramMessage(
+      message.chat.id,
+      `<b>${escapeTelegramHtml(actor.displayName)}</b> · ${telegramRoleBadge(actor.role)}\n\nOuvre la Mini App :`,
+      appKeyboard(),
+    );
   else if (command.name === "search") await sendSearch(message.chat.id, command.argument);
   else if (command.name === "latest") await sendLatest(message.chat.id);
   else if (command.name === "ranking") await sendRanking(message.chat.id);
+  else if (command.name === "contest") await sendContest(message.chat.id);
   else if (command.name === "profile") await sendProfile(message.chat.id, actor);
   else if (command.name === "partners") await sendPartners(message.chat.id);
   else if (command.name === "admin") {
     assertBotAdmin(actor);
-    await sendTelegramMessage(message.chat.id, "<b>Administration</b>", adminMenu());
+    await sendTelegramMessage(message.chat.id, teamHeading(actor), adminMenu(actor));
   } else if (command.name === "help") {
-    await sendTelegramMessage(message.chat.id, buildHelpMessage(), appKeyboard());
+    await sendTelegramMessage(message.chat.id, buildHelpMessage(actor.role), appKeyboard());
   }
 }
 

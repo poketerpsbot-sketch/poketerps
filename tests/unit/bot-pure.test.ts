@@ -4,12 +4,15 @@ import {
   botCommandHelp,
   buildAdminMenu,
   buildHelpMessage,
+  buildModeratorMenu,
   buildWelcomeMenu,
   confirmationCallback,
   isAdminActionAllowed,
   isStartCommandUpdate,
   parseBotCallback,
   parseBotCommand,
+  telegramCommandsForRole,
+  telegramRoleBadge,
 } from "@/lib/services/bot-pure";
 
 const id = "550e8400-e29b-41d4-a716-446655440000";
@@ -70,15 +73,28 @@ describe("bot command parsing", () => {
       "search",
       "latest",
       "ranking",
+      "contest",
       "profile",
       "partners",
       "help",
       "admin",
     ]);
-    const message = buildHelpMessage();
-    for (const { usage, description } of botCommandHelp) {
-      expect(message).toContain(`<code>${usage}</code> — ${description}`);
+    const memberMessage = buildHelpMessage();
+    const adminMessage = buildHelpMessage("ADMIN");
+    for (const { name, usage, description } of botCommandHelp) {
+      if (name !== "admin")
+        expect(memberMessage).toContain(`<code>${usage}</code> — ${description}`);
+      expect(adminMessage).toContain(`<code>${usage}</code> — ${description}`);
     }
+    expect(memberMessage).not.toContain("<code>/admin</code>");
+    expect(telegramCommandsForRole("MEMBER").some(({ command }) => command === "admin")).toBe(
+      false,
+    );
+    expect(telegramCommandsForRole("MODERATOR").at(-1)).toEqual({
+      command: "admin",
+      description: "Modération (équipe autorisée)",
+    });
+    expect(telegramRoleBadge("OWNER")).toBe("👑 Propriétaire");
   });
 });
 
@@ -125,14 +141,14 @@ describe("bot menus", () => {
     const callbackButtons = buttons.filter(({ callback_data }) => callback_data);
     const webAppButtons = buttons.filter(({ web_app }) => web_app);
 
-    expect(buttons).toHaveLength(21);
-    expect(new Set(buttons.map(({ text }) => text))).toHaveLength(21);
+    expect(buttons).toHaveLength(22);
+    expect(new Set(buttons.map(({ text }) => text))).toHaveLength(22);
     expect(callbackButtons).toEqual([
       { text: "✅ Fiches à valider", callback_data: "menu:entries" },
       { text: "💬 Avis à valider", callback_data: "menu:reviews" },
       { text: "📨 Messages", callback_data: "menu:messages" },
     ]);
-    expect(webAppButtons).toHaveLength(18);
+    expect(webAppButtons).toHaveLength(19);
     expect(
       webAppButtons.every(({ web_app }) =>
         web_app?.url.startsWith("https://pokedex.example.test/"),
@@ -154,6 +170,25 @@ describe("bot menus", () => {
       text: "⚙️ Paramètres",
       web_app: { url: "https://pokedex.example.test/admin/parametres" },
     });
+    expect(buttons).toContainEqual({
+      text: "🎯 Gérer les concours",
+      web_app: { url: "https://pokedex.example.test/admin/concours" },
+    });
+  });
+
+  it("exposes a separate moderator menu without privileged administration links", () => {
+    const buttons = buildModeratorMenu("https://pokedex.example.test/").inline_keyboard.flat();
+
+    expect(buttons[0]).toEqual({
+      text: "🔎 Modération Mini App",
+      web_app: { url: "https://pokedex.example.test/admin/moderation" },
+    });
+    expect(
+      buttons
+        .filter(({ callback_data }) => callback_data)
+        .map(({ callback_data }) => callback_data),
+    ).toEqual(["menu:entries", "menu:reviews", "menu:messages"]);
+    expect(JSON.stringify(buttons)).not.toMatch(/parametres|utilisateurs|badges|categories/i);
   });
 
   it("builds the complete /start menu from configured community links", () => {
@@ -171,6 +206,7 @@ describe("bot menus", () => {
       "💬 Rejoindre le chat",
       "📸 Instagram",
       "🏆 Classements",
+      "🎯 Concours",
       "🤝 Nos partenaires",
       "👤 Mon profil",
       "ℹ️ À propos",
@@ -183,6 +219,26 @@ describe("bot menus", () => {
       text: "👤 Mon profil",
       web_app: { url: "https://pokedex.example.test/profil" },
     });
+    expect(JSON.stringify(menu)).not.toMatch(/mentions? l[ée]gales?/i);
+  });
+
+  it("adds the team entry only to role-aware welcome menus", () => {
+    const memberButtons = buildWelcomeMenu(
+      { appUrl: "https://pokedex.example.test" },
+      "MEMBER",
+    ).inline_keyboard.flat();
+    const adminButtons = buildWelcomeMenu(
+      { appUrl: "https://pokedex.example.test" },
+      "ADMIN",
+    ).inline_keyboard.flat();
+    const moderatorButtons = buildWelcomeMenu(
+      { appUrl: "https://pokedex.example.test" },
+      "MODERATOR",
+    ).inline_keyboard.flat();
+
+    expect(memberButtons.some(({ callback_data }) => callback_data === "menu:admin")).toBe(false);
+    expect(adminButtons).toContainEqual({ text: "🛡 Administration", callback_data: "menu:admin" });
+    expect(moderatorButtons).toContainEqual({ text: "🔎 Modération", callback_data: "menu:admin" });
   });
 
   it("omits unconfigured external links without producing empty rows", () => {
@@ -190,7 +246,7 @@ describe("bot menus", () => {
     const buttons = menu.inline_keyboard.flat();
 
     expect(menu.inline_keyboard.every((row) => row.length > 0)).toBe(true);
-    expect(buttons).toHaveLength(5);
+    expect(buttons).toHaveLength(6);
     expect(buttons.some(({ url }) => url)).toBe(false);
   });
 });

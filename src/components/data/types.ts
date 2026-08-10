@@ -81,6 +81,7 @@ export type DynamicFieldDefinitionDto = {
   unit?: string | null;
   placeholder?: string | null;
   isRequired?: boolean;
+  validation?: Record<string, unknown> | null;
   options?: DynamicFieldOptionDto[];
 };
 

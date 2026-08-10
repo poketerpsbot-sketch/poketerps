@@ -36,6 +36,39 @@ describe("Telegram welcome message", () => {
     expect(String(body.caption)).toContain("Bienvenue dans");
   });
 
+  it("personalizes the welcome and native command menu without exposing an ID", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(telegramSuccess(3)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendWelcomeMessage(42, {
+      displayName: "Ada <Admin>",
+      username: "ada",
+      role: "ADMIN",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const commandBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as {
+      commands: Array<{ command: string }>;
+      scope: { type: string; chat_id: number };
+    };
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/setMyCommands$/);
+    expect(commandBody.scope).toEqual({ type: "chat", chat_id: 42 });
+    expect(commandBody.commands.some(({ command }) => command === "admin")).toBe(true);
+
+    const welcomeBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      caption: string;
+      reply_markup: { inline_keyboard: Array<Array<{ text: string; callback_data?: string }>> };
+    };
+    expect(welcomeBody.caption).toContain("<b>Ada &lt;Admin&gt;</b> (@ada) · 🛡️ Administrateur");
+    expect(welcomeBody.caption).toContain("Participe");
+    expect(welcomeBody.caption).not.toContain("42");
+    expect(welcomeBody.caption).not.toMatch(/mentions? l[ée]gales?/i);
+    expect(welcomeBody.reply_markup.inline_keyboard.flat()).toContainEqual({
+      text: "🛡 Administration",
+      callback_data: "menu:admin",
+    });
+  });
+
   it("falls back to sendMessage when Telegram cannot fetch the image", async () => {
     const fetchMock = vi
       .fn()

@@ -33,6 +33,16 @@ const startUpdate = {
   },
 };
 
+const trustedActor = {
+  id: "550e8400-e29b-41d4-a716-446655440000",
+  telegramId: 42,
+  username: "ada",
+  displayName: "Ada",
+  publicSlug: "ada",
+  profilePhotoUrl: null,
+  role: "ADMIN",
+};
+
 function webhookRequest() {
   return new NextRequest("https://pokedex.example.test/api/telegram/webhook", {
     method: "POST",
@@ -50,19 +60,20 @@ beforeEach(() => {
   receipts.completeTelegramUpdate.mockResolvedValue(undefined);
   receipts.failTelegramUpdate.mockResolvedValue(undefined);
   bot.processTelegramUpdate.mockResolvedValue(undefined);
+  auth.upsertTrustedTelegramUser.mockResolvedValue(trustedActor);
 });
 
 describe("POST /api/telegram/webhook /start", () => {
-  it("sends the welcome without waiting for a user upsert", async () => {
+  it("identifies the actor before building the role-aware welcome", async () => {
     const response = await POST(webhookRequest());
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ data: { accepted: true } });
     expect(bot.processTelegramUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ update_id: 99 }),
-      null,
+      trustedActor,
     );
-    expect(auth.upsertTrustedTelegramUser).not.toHaveBeenCalled();
+    expect(auth.upsertTrustedTelegramUser).toHaveBeenCalledWith(startUpdate.message.from);
     expect(receipts.completeTelegramUpdate).toHaveBeenCalledWith(99);
   });
 
@@ -80,6 +91,22 @@ describe("POST /api/telegram/webhook /start", () => {
     expect(auth.upsertTrustedTelegramUser).not.toHaveBeenCalled();
     expect(log.warn).toHaveBeenCalledWith(
       "telegram_start_idempotency_unavailable",
+      expect.objectContaining({ updateId: 99 }),
+    );
+  });
+
+  it("keeps /start available when actor storage is temporarily unavailable", async () => {
+    auth.upsertTrustedTelegramUser.mockRejectedValue(new Error("database unavailable"));
+
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(200);
+    expect(bot.processTelegramUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ update_id: 99 }),
+      null,
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      "telegram_start_actor_unavailable",
       expect.objectContaining({ updateId: 99 }),
     );
   });

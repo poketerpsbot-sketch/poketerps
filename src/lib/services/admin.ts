@@ -74,11 +74,11 @@ export async function getAdminDashboard() {
       select now() as current_time, ${timezone}::text as timezone
     ), boundaries as (
       select
-        current_time - interval '30 days' as rolling_30d,
-        date_trunc('day', current_time at time zone timezone) at time zone timezone as today_start,
-        date_trunc('week', current_time at time zone timezone) at time zone timezone as week_start,
-        date_trunc('month', current_time at time zone timezone) at time zone timezone as month_start
-      from settings
+        s.current_time - interval '30 days' as rolling_30d,
+        date_trunc('day', s.current_time at time zone s.timezone) at time zone s.timezone as today_start,
+        date_trunc('week', s.current_time at time zone s.timezone) at time zone s.timezone as week_start,
+        date_trunc('month', s.current_time at time zone s.timezone) at time zone s.timezone as month_start
+      from settings s
     ), user_stats as (
       select
         count(*) filter (

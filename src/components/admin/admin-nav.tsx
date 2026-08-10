@@ -9,6 +9,7 @@ import {
   Handshake,
   LayoutDashboard,
   Mail,
+  Medal,
   MessageSquare,
   Plus,
   ScrollText,
@@ -17,29 +18,36 @@ import {
   Tags,
   Users,
 } from "lucide-react";
+import type { UserRole } from "@/lib/db/schema";
 
 const links = [
-  { href: "/admin", label: "Tableau de bord", icon: LayoutDashboard },
+  { href: "/admin", label: "Tableau de bord", icon: LayoutDashboard, fullAdmin: true },
+  { href: "/admin/moderation", label: "Vue modération", icon: LayoutDashboard },
   { href: "/admin/fiches", label: "Fiches à valider", icon: BookOpen },
   { href: "/admin/avis", label: "Avis à valider", icon: MessageSquare },
   { href: "/admin/messages", label: "Messages & signalements", icon: Mail },
-  { href: "/admin/categories", label: "Catégories", icon: Tags },
-  { href: "/admin/publications", label: "Publications", icon: Send },
-  { href: "/admin/utilisateurs", label: "Utilisateurs & équipe", icon: Users },
-  { href: "/admin/badges", label: "Badges", icon: Award },
-  { href: "/admin/partenaires", label: "Partenaires", icon: Handshake },
-  { href: "/admin/statistiques", label: "Statistiques", icon: BarChart3 },
-  { href: "/admin/journal", label: "Journal", icon: ScrollText },
-  { href: "/admin/parametres", label: "Paramètres", icon: Settings },
-  { href: "/capturer", label: "Ajouter une fiche", icon: Plus },
+  { href: "/admin/concours", label: "Concours", icon: Medal },
+  { href: "/admin/categories", label: "Catégories", icon: Tags, fullAdmin: true },
+  { href: "/admin/publications", label: "Publications", icon: Send, fullAdmin: true },
+  { href: "/admin/utilisateurs", label: "Utilisateurs & équipe", icon: Users, fullAdmin: true },
+  { href: "/admin/badges", label: "Badges", icon: Award, fullAdmin: true },
+  { href: "/admin/partenaires", label: "Partenaires", icon: Handshake, fullAdmin: true },
+  { href: "/admin/statistiques", label: "Statistiques", icon: BarChart3, fullAdmin: true },
+  { href: "/admin/journal", label: "Journal", icon: ScrollText, fullAdmin: true },
+  { href: "/admin/parametres", label: "Paramètres", icon: Settings, fullAdmin: true },
+  { href: "/capturer", label: "Ajouter une fiche", icon: Plus, fullAdmin: true },
 ] as const;
 
-export function AdminNav() {
+export function AdminNav({ role }: { role: UserRole }) {
   const pathname = usePathname();
+  const fullAdmin = role === "OWNER" || role === "ADMIN";
+  const visibleLinks = links.filter(
+    (link) => !("fullAdmin" in link && link.fullAdmin) || fullAdmin,
+  );
 
   return (
     <nav className="admin-nav" aria-label="Administration">
-      {links.map(({ href, label, icon: Icon }) => {
+      {visibleLinks.map(({ href, label, icon: Icon }) => {
         const active =
           href === "/admin"
             ? pathname === href

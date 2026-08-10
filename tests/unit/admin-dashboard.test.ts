@@ -121,9 +121,10 @@ describe("admin dashboard statistics", () => {
     const statement = fragments.join("$timezone");
 
     expect(timezone).toBe("Europe/Zurich");
-    expect(statement).toContain("date_trunc('day', current_time at time zone timezone)");
-    expect(statement).toContain("date_trunc('week', current_time at time zone timezone)");
-    expect(statement).toContain("date_trunc('month', current_time at time zone timezone)");
+    expect(statement).toContain("date_trunc('day', s.current_time at time zone s.timezone)");
+    expect(statement).toContain("date_trunc('week', s.current_time at time zone s.timezone)");
+    expect(statement).toContain("date_trunc('month', s.current_time at time zone s.timezone)");
+    expect(statement).toContain("from settings s");
     expect(statement.match(/e\.is_demo = false/g)).toHaveLength(4);
     expect(statement).toContain("u.account_kind = 'TELEGRAM' and u.is_system = false");
     expect(statement).toContain(

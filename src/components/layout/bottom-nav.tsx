@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Handshake, Home, Plus, ScanSearch, Trophy, UserRound } from "lucide-react";
+import { Handshake, Home, Medal, Plus, ScanSearch, Trophy, UserRound } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 function sessionRole(payload: unknown) {
@@ -48,6 +48,13 @@ export function BottomNav() {
       matches: ["/explorer", "/catalogue", "/recherche", "/categories", "/fiches"],
     },
     {
+      href: "/concours",
+      label: "Concours",
+      icon: Medal,
+      primary: false,
+      matches: ["/concours"],
+    },
+    {
       href: "/capturer",
       label: canManage ? "Ajouter" : "Proposer",
       icon: Plus,
@@ -66,7 +73,7 @@ export function BottomNav() {
       label: "Partenaires",
       icon: Handshake,
       primary: false,
-      matches: ["/partenaires", "/partners"],
+      matches: ["/partenaires"],
     },
     {
       href: "/profil",

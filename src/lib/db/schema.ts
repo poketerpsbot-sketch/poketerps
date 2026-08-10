@@ -181,6 +181,29 @@ export const partnerCategoryKindEnum = pgEnum("partner_category_kind", [
   "BRAND",
   "OTHER",
 ]);
+export const contestStatusEnum = pgEnum("contest_status", [
+  "DRAFT",
+  "SCHEDULED",
+  "ACTIVE",
+  "PAUSED",
+  "ENDED",
+  "CANCELLED",
+]);
+export const contestScoringModeEnum = pgEnum("contest_scoring_mode", [
+  "MANUAL",
+  "ENTRY_LIKES",
+  "ENTRY_VIEWS",
+  "ENTRY_FAVORITES",
+  "ENTRY_RATING",
+  "COMPOSITE",
+]);
+export const contestParticipationStatusEnum = pgEnum("contest_participation_status", [
+  "PENDING_REVIEW",
+  "APPROVED",
+  "REJECTED",
+  "WITHDRAWN",
+  "DISQUALIFIED",
+]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -597,6 +620,156 @@ export const entryLikes = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique("entry_likes_entry_user_unique").on(table.entryId, table.userId)],
+);
+
+export const contests = pgTable(
+  "contests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull().unique(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    description: text("description").notNull(),
+    rules: text("rules").notNull(),
+    imageUrl: text("image_url"),
+    status: contestStatusEnum("status").notNull().default("DRAFT"),
+    isFeatured: boolean("is_featured").notNull().default(false),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    scoringMode: contestScoringModeEnum("scoring_mode").notNull().default("MANUAL"),
+    criteria: jsonb("criteria").$type<Record<string, unknown>>().notNull().default({}),
+    reward: jsonb("reward").$type<Record<string, unknown>>().notNull().default({}),
+    rewardBadgeId: uuid("reward_badge_id").references(() => badges.id, {
+      onDelete: "set null",
+    }),
+    maxParticipants: integer("max_participants"),
+    requireEntry: boolean("require_entry").notNull().default(true),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    updatedById: uuid("updated_by_id").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    check("contests_slug_format", sql`${table.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    check("contests_title_length", sql`char_length(${table.title}) between 2 and 180`),
+    check("contests_summary_length", sql`char_length(${table.summary}) between 2 and 320`),
+    check(
+      "contests_description_length",
+      sql`char_length(${table.description}) between 2 and 20000`,
+    ),
+    check("contests_rules_length", sql`char_length(${table.rules}) between 2 and 20000`),
+    check(
+      "contests_image_url_http",
+      sql`${table.imageUrl} is null or ${table.imageUrl} ~ '^https?://'`,
+    ),
+    check("contests_dates_order", sql`${table.endsAt} > ${table.startsAt}`),
+    check(
+      "contests_json_objects",
+      sql`jsonb_typeof(${table.criteria})='object' and jsonb_typeof(${table.reward})='object'`,
+    ),
+    check(
+      "contests_max_participants_positive",
+      sql`${table.maxParticipants} is null or ${table.maxParticipants} > 0`,
+    ),
+    index("contests_public_schedule_idx")
+      .on(table.status, table.startsAt, table.endsAt, table.isFeatured)
+      .where(sql`${table.deletedAt} is null`),
+    index("contests_reward_badge_idx")
+      .on(table.rewardBadgeId)
+      .where(sql`${table.rewardBadgeId} is not null`),
+  ],
+);
+
+export const contestParticipations = pgTable(
+  "contest_participations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contestId: uuid("contest_id")
+      .notNull()
+      .references(() => contests.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    entryId: uuid("entry_id").references(() => entries.id, { onDelete: "set null" }),
+    status: contestParticipationStatusEnum("status").notNull().default("PENDING_REVIEW"),
+    statement: text("statement"),
+    manualScore: numeric("manual_score", { precision: 14, scale: 4 }).notNull().default("0"),
+    scoreBreakdown: jsonb("score_breakdown").$type<Record<string, unknown>>().notNull().default({}),
+    moderatedById: uuid("moderated_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    moderatedAt: timestamp("moderated_at", { withTimezone: true }),
+    moderationNote: text("moderation_note"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("contest_participations_contest_user_unique").on(table.contestId, table.userId),
+    unique("contest_participations_id_contest_unique").on(table.id, table.contestId),
+    check(
+      "contest_participations_statement_length",
+      sql`${table.statement} is null or char_length(${table.statement})<=2000`,
+    ),
+    check(
+      "contest_participations_note_length",
+      sql`${table.moderationNote} is null or char_length(${table.moderationNote})<=2000`,
+    ),
+    check(
+      "contest_participations_score_object",
+      sql`jsonb_typeof(${table.scoreBreakdown})='object'`,
+    ),
+    check(
+      "contest_participations_withdrawal_consistency",
+      sql`(${table.status}='WITHDRAWN' and ${table.withdrawnAt} is not null) or (${table.status}<>'WITHDRAWN' and ${table.withdrawnAt} is null)`,
+    ),
+    index("contest_participations_contest_status_idx").on(
+      table.contestId,
+      table.status,
+      table.submittedAt,
+    ),
+    index("contest_participations_entry_idx")
+      .on(table.entryId)
+      .where(sql`${table.entryId} is not null`),
+    index("contest_participations_user_idx").on(table.userId, table.submittedAt),
+  ],
+);
+
+export const contestWinners = pgTable(
+  "contest_winners",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contestId: uuid("contest_id")
+      .notNull()
+      .references(() => contests.id, { onDelete: "cascade" }),
+    participationId: uuid("participation_id").notNull(),
+    rank: smallint("rank").notNull(),
+    label: text("label"),
+    prize: jsonb("prize").$type<Record<string, unknown>>().notNull().default({}),
+    selectedById: uuid("selected_by_id").references(() => users.id, { onDelete: "set null" }),
+    awardedAt: timestamp("awarded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: "contest_winners_participation_contest_fk",
+      columns: [table.participationId, table.contestId],
+      foreignColumns: [contestParticipations.id, contestParticipations.contestId],
+    }).onDelete("cascade"),
+    unique("contest_winners_contest_rank_unique").on(table.contestId, table.rank),
+    unique("contest_winners_contest_participation_unique").on(
+      table.contestId,
+      table.participationId,
+    ),
+    check("contest_winners_rank_positive", sql`${table.rank} > 0`),
+    check(
+      "contest_winners_label_length",
+      sql`${table.label} is null or char_length(${table.label})<=180`,
+    ),
+    check("contest_winners_prize_object", sql`jsonb_typeof(${table.prize})='object'`),
+    index("contest_winners_participation_idx").on(table.participationId),
+  ],
 );
 
 export const entryFieldValues = pgTable(
@@ -1184,6 +1357,9 @@ export type Review = typeof reviews.$inferSelect;
 export type Submission = typeof submissions.$inferSelect;
 export type Partner = typeof partners.$inferSelect;
 export type AdminMessage = typeof adminMessages.$inferSelect;
+export type Contest = typeof contests.$inferSelect;
+export type ContestParticipation = typeof contestParticipations.$inferSelect;
+export type ContestWinner = typeof contestWinners.$inferSelect;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type EntryStatus = (typeof entryStatusEnum.enumValues)[number];
 export type ContentStatus = EntryStatus;

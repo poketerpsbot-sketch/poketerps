@@ -781,6 +781,47 @@ end $$;
 drop trigger if exists ensure_user_profile_settings on public.users;
 create trigger ensure_user_profile_settings after insert on public.users
   for each row execute function public.ensure_user_profile_settings();
+create or replace function public.sync_user_role_badge() returns trigger language plpgsql
+security definer set search_path='' as $$
+declare desired_slug text; desired_badge_id uuid;
+begin
+  desired_slug:=case new.role::text
+    when 'OWNER' then 'role-owner'
+    when 'ADMIN' then 'role-admin'
+    when 'MODERATOR' then 'role-moderator'
+    when 'EDITOR' then 'role-editor'
+    else null end;
+  update public.user_badges ub set
+    is_active=false,revoked_at=coalesce(ub.revoked_at,now()),
+    revoke_reason='Rôle Telegram modifié',
+    metadata=ub.metadata||jsonb_build_object('source','role-sync','revokedForRole',new.role::text)
+  from public.badges b
+  where ub.user_id=new.id and ub.badge_id=b.id
+    and b.slug in ('role-owner','role-admin','role-moderator','role-editor')
+    and (desired_slug is null or b.slug<>desired_slug)
+    and ub.is_active and ub.revoked_at is null;
+  if desired_slug is null then return new; end if;
+  select b.id into desired_badge_id from public.badges b
+    where b.slug=desired_slug and b.is_active;
+  if desired_badge_id is null then return new; end if;
+  update public.user_badges ub set
+    active_from=coalesce(least(ub.active_from,now()),now()),active_until=null,
+    metadata=ub.metadata||jsonb_build_object(
+      'source','role-sync','role',new.role::text,'automatic',true)
+  where ub.user_id=new.id and ub.badge_id=desired_badge_id
+    and ub.is_active and ub.revoked_at is null;
+  if not found then
+    insert into public.user_badges(user_id,badge_id,is_active,active_from,metadata)
+    values(new.id,desired_badge_id,true,now(),jsonb_build_object(
+      'source','role-sync','role',new.role::text,'automatic',true));
+  end if;
+  return new;
+end $$;
+revoke all on function public.sync_user_role_badge() from public,anon,authenticated;
+grant execute on function public.sync_user_role_badge() to service_role;
+drop trigger if exists sync_user_role_badge on public.users;
+create trigger sync_user_role_badge after insert or update of role on public.users
+  for each row execute function public.sync_user_role_badge();
 create or replace function public.prevent_original_contributor_change() returns trigger language plpgsql
 set search_path='' as $$ begin
   if new.original_contributor_id is distinct from old.original_contributor_id then
@@ -1132,7 +1173,6 @@ insert into public.categories(slug,name,icon,description,disclaimer,sort_order,i
   ('extractions-solvants','Extractions avec solvants','💎','Catalogue informatif des formats déclarés','Aucun tutoriel ou procédé de fabrication n’est fourni.',50,true),
   ('vape','Vape','🔋','Formats de vape décrits à titre informatif',null,60,true),
   ('edibles','Edibles','🍬','Produits comestibles présentés sans offre commerciale',null,70,true),
-  ('medicinal','Médicinal','💊','Présentations descriptives de formats déclarés','Les informations publiées ne remplacent pas un avis médical.',80,true),
   ('topiques','Topiques','🧴','Formats topiques présentés à titre descriptif',null,90,true),
   ('concentres-sans-solvant','Concentrés sans solvant','🌱','Catalogue informatif de concentrés déclarés',null,100,true)
 on conflict(slug) do update set name=excluded.name,icon=excluded.icon,
@@ -1177,10 +1217,6 @@ from (values
   ('edibles','brownies','Brownies',50),('edibles','boissons','Boissons',60),
   ('edibles','capsules','Capsules',70),('edibles','pastilles','Pastilles',80),
   ('edibles','chewing-gum','Chewing-gum',90),('edibles','autre','Autre',100),
-  ('medicinal','capsules','Capsules',10),('medicinal','huile','Huile',20),
-  ('medicinal','spray','Spray',30),('medicinal','tincture','Tincture',40),
-  ('medicinal','patch','Patch',50),('medicinal','suppositoire','Suppositoire',60),
-  ('medicinal','autre','Autre',70),
   ('topiques','creme','Crème',10),('topiques','baume','Baume',20),
   ('topiques','lotion','Lotion',30),('topiques','huile','Huile',40),
   ('topiques','gel','Gel',50),('topiques','patch','Patch',60),('topiques','autre','Autre',70),
@@ -1245,7 +1281,7 @@ from (values
   ('extractions-solvants','lab_report','Rapport d’analyse','Lien HTTPS facultatif','URL',null,false,false,false,60),
   ('vape','format','Format','Format du dispositif','SELECT',null,true,true,false,10),
   ('vape','extract_type','Type d’extrait déclaré','Information déclarée','SELECT',null,false,true,false,20),
-  ('vape','declared_capacity','Capacité déclarée','Capacité indiquée','NUMBER','ml',false,true,false,30),
+  ('vape','declared_capacity','Volume déclaré','Volume indiqué sur l’emballage','NUMBER','mL',false,true,false,30),
   ('vape','declared_cannabinoids','Cannabinoïdes déclarés','Informations déclarées','LONG_TEXT',null,false,true,true,40),
   ('vape','lab_report','Rapport d’analyse','Lien HTTPS facultatif','URL',null,false,false,false,50),
   ('edibles','format','Format','Format comestible','SELECT',null,true,true,false,10),
@@ -1253,10 +1289,6 @@ from (values
   ('edibles','declared_cannabinoids','Cannabinoïdes déclarés','Informations déclarées','LONG_TEXT',null,false,true,true,30),
   ('edibles','servings','Portions déclarées','Nombre déclaré','NUMBER',null,false,true,false,40),
   ('edibles','allergens','Allergènes déclarés','Informations déclarées','LONG_TEXT',null,false,false,true,50),
-  ('medicinal','format','Format','Format déclaré','SELECT',null,true,true,false,10),
-  ('medicinal','declared_composition','Composition déclarée','Information descriptive','LONG_TEXT',null,false,true,true,20),
-  ('medicinal','declared_cannabinoids','Cannabinoïdes déclarés','Informations déclarées','LONG_TEXT',null,false,true,true,30),
-  ('medicinal','lab_report','Rapport d’analyse','Lien HTTPS facultatif','URL',null,false,false,false,40),
   ('topiques','format','Format','Format topique','SELECT',null,true,true,false,10),
   ('topiques','declared_composition','Composition déclarée','Information descriptive','LONG_TEXT',null,false,true,true,20),
   ('topiques','texture','Texture','Description de texture','TEXT',null,false,true,true,30),
@@ -1267,6 +1299,75 @@ from (values
 ) as v(category_slug,key,label,description,field_type,unit,is_required,is_filterable,is_searchable,sort_order)
 join public.categories c on c.slug=v.category_slug
 on conflict do nothing;
+
+-- Product measurements use the unit printed on the label or analysis. Micron
+-- data remains in micron_specifications and is only offered for filtered
+-- products by the application.
+create temporary table pokedex_seed_measurement_fields (
+  category_slug text not null, field_key text not null, label text not null,
+  description text not null, unit text not null, sort_order integer not null,
+  max_value numeric not null, step_value numeric not null,
+  primary key(category_slug,field_key)
+) on commit drop;
+
+insert into pokedex_seed_measurement_fields
+select category.category_slug,field.field_key,field.label,field.description,field.unit,
+  category.base_sort + field.sort_offset,field.max_value,field.step_value
+from (values
+  ('fleur',150),('hash',70),('rosin',60),
+  ('extractions-solvants',70),('concentres-sans-solvant',50)
+) category(category_slug,base_sort)
+cross join (values
+  ('declared_net_weight','Poids net déclaré','Poids net indiqué sur l’emballage.','g',0,100000::numeric,0.01::numeric),
+  ('declared_thc_mg_g','THC déclaré','Teneur par gramme indiquée sur l’étiquette ou un rapport d’analyse.','mg/g',10,1000::numeric,0.1::numeric),
+  ('declared_cbd_mg_g','CBD déclaré','Teneur par gramme indiquée sur l’étiquette ou un rapport d’analyse.','mg/g',20,1000::numeric,0.1::numeric),
+  ('declared_thc_percent','THC déclaré','Pourcentage indiqué sur l’étiquette ou un rapport d’analyse.','%',30,100::numeric,0.1::numeric),
+  ('declared_cbd_percent','CBD déclaré','Pourcentage indiqué sur l’étiquette ou un rapport d’analyse.','%',40,100::numeric,0.1::numeric)
+) field(field_key,label,description,unit,sort_offset,max_value,step_value);
+
+insert into pokedex_seed_measurement_fields values
+  ('pre-roll','declared_weight','Poids net total déclaré','Poids net total indiqué sur l’emballage.','g',60,100000,0.01),
+  ('pre-roll','declared_unit_count','Nombre de pré-rolls','Nombre d’unités indiqué sur l’emballage.','unité(s)',70,10000,1),
+  ('pre-roll','declared_unit_weight','Poids déclaré par pré-roll','Poids indiqué pour une unité.','g',80,1000,0.01),
+  ('pre-roll','declared_thc_per_unit','THC déclaré par pré-roll','Quantité indiquée pour une unité.','mg/unité',90,100000,0.1),
+  ('pre-roll','declared_cbd_per_unit','CBD déclaré par pré-roll','Quantité indiquée pour une unité.','mg/unité',100,100000,0.1),
+  ('vape','declared_capacity','Volume déclaré','Volume indiqué sur l’emballage.','mL',60,100000,0.01),
+  ('vape','declared_fill_weight','Poids de remplissage déclaré','Poids de remplissage indiqué sur l’emballage.','g',70,100000,0.01),
+  ('vape','declared_unit_count','Nombre de dispositifs','Nombre d’unités indiqué sur l’emballage.','unité(s)',80,10000,1),
+  ('vape','declared_thc_mg_ml','THC déclaré','Concentration indiquée sur l’étiquette ou un rapport d’analyse.','mg/mL',90,10000,0.1),
+  ('vape','declared_cbd_mg_ml','CBD déclaré','Concentration indiquée sur l’étiquette ou un rapport d’analyse.','mg/mL',100,10000,0.1),
+  ('edibles','declared_net_weight','Poids net déclaré','Poids net indiqué sur l’emballage pour un produit solide.','g',60,100000,0.01),
+  ('edibles','declared_volume','Volume net déclaré','Volume net indiqué sur l’emballage pour une boisson.','mL',70,100000,0.01),
+  ('edibles','servings','Nombre d’unités','Nombre d’unités indiqué sur l’emballage.','unité(s)',80,10000,1),
+  ('edibles','declared_thc_per_unit','THC déclaré par unité','Quantité indiquée pour une unité.','mg/unité',90,100000,0.1),
+  ('edibles','declared_cbd_per_unit','CBD déclaré par unité','Quantité indiquée pour une unité.','mg/unité',100,100000,0.1),
+  ('edibles','declared_thc_per_package','THC déclaré par emballage','Quantité totale indiquée pour l’emballage.','mg/emballage',110,1000000,0.1),
+  ('edibles','declared_cbd_per_package','CBD déclaré par emballage','Quantité totale indiquée pour l’emballage.','mg/emballage',120,1000000,0.1),
+  ('topiques','declared_net_weight','Poids net déclaré','Poids net indiqué sur l’emballage pour un produit solide.','g',40,100000,0.01),
+  ('topiques','declared_volume','Volume net déclaré','Volume net indiqué sur l’emballage pour un produit liquide.','mL',50,100000,0.01),
+  ('topiques','declared_thc_mg_g','THC déclaré','Concentration massique indiquée sur l’étiquette ou un rapport d’analyse.','mg/g',60,1000,0.1),
+  ('topiques','declared_cbd_mg_g','CBD déclaré','Concentration massique indiquée sur l’étiquette ou un rapport d’analyse.','mg/g',70,1000,0.1),
+  ('topiques','declared_thc_mg_ml','THC déclaré','Concentration volumique indiquée sur l’étiquette ou un rapport d’analyse.','mg/mL',80,10000,0.1),
+  ('topiques','declared_cbd_mg_ml','CBD déclaré','Concentration volumique indiquée sur l’étiquette ou un rapport d’analyse.','mg/mL',90,10000,0.1);
+
+insert into public.dynamic_field_definitions(
+  category_id,key,label,description,field_type,unit,validation_rules,
+  is_required,is_filterable,is_searchable,is_visible,sort_order,deleted_at
+)
+select c.id,v.field_key,v.label,v.description,'NUMBER'::public.dynamic_field_type,v.unit,
+  jsonb_build_object('min',0,'max',v.max_value,'step',v.step_value),
+  false,true,false,true,v.sort_order,null
+from pokedex_seed_measurement_fields v
+join public.categories c on c.slug=v.category_slug
+on conflict do nothing;
+
+update public.dynamic_field_definitions d
+set label=v.label,description=v.description,field_type='NUMBER'::public.dynamic_field_type,
+  unit=v.unit,validation_rules=jsonb_build_object('min',0,'max',v.max_value,'step',v.step_value),
+  is_filterable=true,is_visible=true,sort_order=v.sort_order,deleted_at=null,updated_at=now()
+from pokedex_seed_measurement_fields v
+join public.categories c on c.slug=v.category_slug
+where d.category_id=c.id and d.subcategory_id is null and d.key=v.field_key;
 
 insert into public.dynamic_field_options(field_definition_id,value,label,sort_order)
 select d.id,v.value,v.label,v.sort_order
@@ -1311,9 +1412,6 @@ from (values
   ('edibles','format','gummies','Gummies',10),('edibles','format','chocolat','Chocolat',20),
   ('edibles','format','bonbons','Bonbons',30),('edibles','format','cookies','Cookies',40),
   ('edibles','format','boissons','Boissons',50),('edibles','format','capsules','Capsules',60),
-  ('medicinal','format','capsules','Capsules',10),('medicinal','format','huile','Huile',20),
-  ('medicinal','format','spray','Spray',30),('medicinal','format','tincture','Tincture',40),
-  ('medicinal','format','patch','Patch',50),
   ('topiques','format','creme','Crème',10),('topiques','format','baume','Baume',20),
   ('topiques','format','lotion','Lotion',30),('topiques','format','huile','Huile',40),
   ('topiques','format','gel','Gel',50),('topiques','format','patch','Patch',60),
@@ -1385,6 +1483,14 @@ insert into public.app_settings(key,value,value_type,description,is_public) valu
 on conflict(key) do nothing;
 
 insert into public.badges(slug,name,description,icon,kind,criteria,is_active,sort_order) values
+  ('role-owner','Propriétaire','Propriétaire officiel de la communauté','👑','ACTIVE',
+    '{"system":"telegram-role","role":"OWNER","automatic":true}'::jsonb,true,1),
+  ('role-admin','Administration','Membre de l’équipe d’administration','🛡️','ACTIVE',
+    '{"system":"telegram-role","role":"ADMIN","automatic":true}'::jsonb,true,2),
+  ('role-moderator','Modération','Membre de l’équipe de modération','🔎','ACTIVE',
+    '{"system":"telegram-role","role":"MODERATOR","automatic":true}'::jsonb,true,3),
+  ('role-editor','Rédaction','Membre de l’équipe éditoriale','✍️','ACTIVE',
+    '{"system":"telegram-role","role":"EDITOR","automatic":true}'::jsonb,true,4),
   ('trainer-of-the-week','Dresseur de la semaine','Première place hebdomadaire','🥇','ACTIVE',
     '{"ranking":"trainer","period":"week","rank":1}'::jsonb,true,10),
   ('trainer-of-the-month','Dresseur du mois','Première place mensuelle','🏆','HISTORICAL',
@@ -1485,12 +1591,6 @@ from (values
   ('10000000-0000-4000-8000-000000000014','demo.edibles.drink','demo-edibles-boisson','Démonstration — Boisson',
     'Exemple générique d’un format boisson.',
     'Fiche fictive sans composition réelle, dosage, marque, prix ou disponibilité commerciale.','edibles','boissons','2026-01-15 12:00:00+00'),
-  ('10000000-0000-4000-8000-000000000015','demo.medicinal.oil','demo-medicinal-huile','Démonstration — Huile médicinale',
-    'Exemple descriptif d’un format huile.',
-    'Les informations sont fictives et ne remplacent en aucun cas un avis médical ou pharmaceutique.','medicinal','huile','2026-01-16 12:00:00+00'),
-  ('10000000-0000-4000-8000-000000000016','demo.medicinal.capsules','demo-medicinal-capsules','Démonstration — Capsules médicinales',
-    'Exemple descriptif d’un format capsules.',
-    'Contenu de démonstration sans posologie, allégation thérapeutique ni produit réel. Demander conseil à un professionnel de santé.','medicinal','capsules','2026-01-17 12:00:00+00'),
   ('10000000-0000-4000-8000-000000000017','demo.topical.cream','demo-topique-creme','Démonstration — Crème topique',
     'Exemple générique d’un format crème.',
     'Présentation fictive sans composition réelle, indication médicale ou offre commerciale.','topiques','creme','2026-01-18 12:00:00+00'),
@@ -1737,7 +1837,7 @@ begin
         "fields": {
           "format": {"value": "cartridge-510", "display": "Cartridge 510", "option": "cartridge-510"},
           "extract_type": {"value": "full-spectrum", "display": "Full Spectrum — classification fictive", "option": "full-spectrum"},
-          "declared_capacity": {"value": 0.5, "display": "0,5 ml — valeur fictive"},
+          "declared_capacity": {"value": 0.5, "display": "0,5 mL — valeur fictive"},
           "declared_cannabinoids": {"value": "Aucune donnée analytique déclarée — fiche fictive.", "display": "Aucune donnée analytique déclarée — fiche fictive."}
         }
       },
@@ -1754,7 +1854,7 @@ begin
         "fields": {
           "format": {"value": "disposable", "display": "Disposable", "option": "disposable"},
           "extract_type": {"value": "broad-spectrum", "display": "Broad Spectrum — classification fictive", "option": "broad-spectrum"},
-          "declared_capacity": {"value": 1.0, "display": "1,0 ml — valeur fictive"},
+          "declared_capacity": {"value": 1.0, "display": "1,0 mL — valeur fictive"},
           "declared_cannabinoids": {"value": "Aucune donnée analytique déclarée — fiche fictive.", "display": "Aucune donnée analytique déclarée — fiche fictive."}
         }
       },
@@ -1790,38 +1890,6 @@ begin
           "declared_composition": {"value": "Infusion végétale fictive; composition réelle non renseignée.", "display": "Infusion végétale fictive; composition réelle non renseignée."},
           "declared_cannabinoids": {"value": "Aucune teneur analytique déclarée — fiche fictive.", "display": "Aucune teneur analytique déclarée — fiche fictive."},
           "allergens": {"value": "Non renseignés — illustration uniquement.", "display": "Non renseignés — illustration uniquement."}
-        }
-      },
-      {
-        "seed_key": "demo.medicinal.oil",
-        "short_description": "Format huile fictif à la teinte dorée, documenté sans indication, effet ou teneur analytique.",
-        "full_description": "Cette fiche de démonstration illustre uniquement le format Huile dans la taxonomie médicinale. L’apparence dorée et la fluidité sont des observations visuelles fictives, sans lien avec une formulation existante.\n\nAucune composition, indication, posologie, efficacité ou propriété thérapeutique n’est déclarée. Cette entrée ne remplace pas une information médicale ou pharmaceutique.",
-        "declared_variety": "Composition fictive non attribuée",
-        "declared_producer": "Non attribué — fiche fictive",
-        "method": "Huile — classification descriptive",
-        "texture": "Fluide et dorée — illustration",
-        "country": null,
-        "region": null,
-        "fields": {
-          "format": {"value": "huile", "display": "Huile", "option": "huile"},
-          "declared_composition": {"value": "Huile support non spécifiée; données entièrement fictives.", "display": "Huile support non spécifiée; données entièrement fictives."},
-          "declared_cannabinoids": {"value": "Aucune teneur analytique déclarée — fiche fictive.", "display": "Aucune teneur analytique déclarée — fiche fictive."}
-        }
-      },
-      {
-        "seed_key": "demo.medicinal.capsules",
-        "short_description": "Capsules molles fictives de couleur ambrée, classées sans composition ni indication médicale.",
-        "full_description": "Cette entrée présente le format Capsules au moyen de capsules molles génériques et non identifiables. La couleur, l’enveloppe et la présentation sont décrites uniquement pour compléter l’exemple éditorial.\n\nAucune composition, indication, posologie, efficacité ou propriété thérapeutique n’est déclarée. Aucun produit pharmaceutique réel n’est représenté.",
-        "declared_variety": "Composition fictive non attribuée",
-        "declared_producer": "Non attribué — fiche fictive",
-        "method": "Capsules — classification descriptive",
-        "texture": "Capsule souple et translucide — illustration",
-        "country": null,
-        "region": null,
-        "fields": {
-          "format": {"value": "capsules", "display": "Capsules", "option": "capsules"},
-          "declared_composition": {"value": "Enveloppe et contenu non spécifiés; données entièrement fictives.", "display": "Enveloppe et contenu non spécifiés; données entièrement fictives."},
-          "declared_cannabinoids": {"value": "Aucune teneur analytique déclarée — fiche fictive.", "display": "Aucune teneur analytique déclarée — fiche fictive."}
         }
       },
       {
@@ -1983,8 +2051,13 @@ do $$ declare table_name text; begin
     'user_collections','collection_entries','submissions','submission_changes','partner_categories',
     'partners','partner_click_events','reports','report_attachments','admin_messages',
     'admin_message_attachments','audit_logs','app_settings','home_sections','telegram_publications',
-    'bot_conversation_states','telegram_auth_replays','telegram_update_receipts','rate_limit_buckets'
-  ] loop execute format('alter table public.%I enable row level security',table_name); end loop;
+    'bot_conversation_states','telegram_auth_replays','telegram_update_receipts','rate_limit_buckets',
+    'contests','contest_participations','contest_winners'
+  ] loop
+    if to_regclass(format('public.%I',table_name)) is not null then
+      execute format('alter table public.%I enable row level security',table_name);
+    end if;
+  end loop;
 end $$;
 
 drop policy if exists public_profiles_read on public.users;
@@ -2102,5 +2175,180 @@ on conflict(id) do update set name=excluded.name,public=excluded.public,
 drop policy if exists public_published_media_read on storage.objects;
 -- Public buckets are read through their public object URLs. No INSERT, UPDATE or
 -- DELETE policy is created on storage.objects: uploads and promotions use service_role.
+
+-- Concours communautaires, participations, classements et gagnants. This block
+-- mirrors migrations/003_contests.sql for a fresh database bootstrap.
+do $$ begin create type public.contest_status as enum
+  ('DRAFT','SCHEDULED','ACTIVE','PAUSED','ENDED','CANCELLED');
+exception when duplicate_object then null; end $$;
+do $$ begin create type public.contest_scoring_mode as enum
+  ('MANUAL','ENTRY_LIKES','ENTRY_VIEWS','ENTRY_FAVORITES','ENTRY_RATING','COMPOSITE');
+exception when duplicate_object then null; end $$;
+do $$ begin create type public.contest_participation_status as enum
+  ('PENDING_REVIEW','APPROVED','REJECTED','WITHDRAWN','DISQUALIFIED');
+exception when duplicate_object then null; end $$;
+
+create table if not exists public.contests (
+  id uuid primary key default extensions.gen_random_uuid(), slug text not null unique,
+  title text not null, summary text not null, description text not null, rules text not null,
+  image_url text, status public.contest_status not null default 'DRAFT',
+  is_featured boolean not null default false, starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  scoring_mode public.contest_scoring_mode not null default 'MANUAL',
+  criteria jsonb not null default '{}'::jsonb, reward jsonb not null default '{}'::jsonb,
+  reward_badge_id uuid references public.badges(id) on delete set null,
+  max_participants integer, require_entry boolean not null default true,
+  created_by_id uuid not null references public.users(id) on delete restrict,
+  updated_by_id uuid references public.users(id) on delete set null,
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  constraint contests_slug_format check (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'),
+  constraint contests_title_length check (char_length(title) between 2 and 180),
+  constraint contests_summary_length check (char_length(summary) between 2 and 320),
+  constraint contests_description_length check (char_length(description) between 2 and 20000),
+  constraint contests_rules_length check (char_length(rules) between 2 and 20000),
+  constraint contests_image_url_http check (image_url is null or image_url ~ '^https?://'),
+  constraint contests_dates_order check (ends_at > starts_at),
+  constraint contests_json_objects check
+    (jsonb_typeof(criteria)='object' and jsonb_typeof(reward)='object'),
+  constraint contests_max_participants_positive check
+    (max_participants is null or max_participants > 0)
+);
+create table if not exists public.contest_participations (
+  id uuid primary key default extensions.gen_random_uuid(),
+  contest_id uuid not null references public.contests(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
+  entry_id uuid references public.entries(id) on delete set null,
+  status public.contest_participation_status not null default 'PENDING_REVIEW',
+  statement text, manual_score numeric(14,4) not null default 0,
+  score_breakdown jsonb not null default '{}'::jsonb,
+  moderated_by_id uuid references public.users(id) on delete set null,
+  moderated_at timestamptz, moderation_note text,
+  submitted_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  withdrawn_at timestamptz,
+  constraint contest_participations_contest_user_unique unique(contest_id,user_id),
+  constraint contest_participations_id_contest_unique unique(id,contest_id),
+  constraint contest_participations_statement_length check
+    (statement is null or char_length(statement)<=2000),
+  constraint contest_participations_note_length check
+    (moderation_note is null or char_length(moderation_note)<=2000),
+  constraint contest_participations_score_object check(jsonb_typeof(score_breakdown)='object'),
+  constraint contest_participations_withdrawal_consistency check
+    ((status='WITHDRAWN' and withdrawn_at is not null)
+      or (status<>'WITHDRAWN' and withdrawn_at is null))
+);
+create table if not exists public.contest_winners (
+  id uuid primary key default extensions.gen_random_uuid(),
+  contest_id uuid not null references public.contests(id) on delete cascade,
+  participation_id uuid not null, rank smallint not null, label text,
+  prize jsonb not null default '{}'::jsonb,
+  selected_by_id uuid references public.users(id) on delete set null,
+  awarded_at timestamptz not null default now(),
+  constraint contest_winners_participation_contest_fk
+    foreign key(participation_id,contest_id)
+    references public.contest_participations(id,contest_id) on delete cascade,
+  constraint contest_winners_contest_rank_unique unique(contest_id,rank),
+  constraint contest_winners_contest_participation_unique unique(contest_id,participation_id),
+  constraint contest_winners_rank_positive check(rank>0),
+  constraint contest_winners_label_length check(label is null or char_length(label)<=180),
+  constraint contest_winners_prize_object check(jsonb_typeof(prize)='object')
+);
+create index if not exists contests_public_schedule_idx
+  on public.contests(status,starts_at,ends_at,is_featured) where deleted_at is null;
+create index if not exists contests_reward_badge_idx on public.contests(reward_badge_id)
+  where reward_badge_id is not null;
+create index if not exists contest_participations_contest_status_idx
+  on public.contest_participations(contest_id,status,submitted_at desc);
+create index if not exists contest_participations_entry_idx
+  on public.contest_participations(entry_id) where entry_id is not null;
+create index if not exists contest_participations_user_idx
+  on public.contest_participations(user_id,submitted_at desc);
+create index if not exists contest_winners_participation_idx
+  on public.contest_winners(participation_id);
+drop trigger if exists set_updated_at on public.contests;
+create trigger set_updated_at before update on public.contests
+  for each row execute function public.set_updated_at();
+drop trigger if exists set_updated_at on public.contest_participations;
+create trigger set_updated_at before update on public.contest_participations
+  for each row execute function public.set_updated_at();
+create or replace function public.award_contest_winner_badge()
+returns trigger language plpgsql security definer set search_path='' as $$
+declare badge_to_award uuid; winning_user uuid;
+  participation_status public.contest_participation_status; begin
+  select c.reward_badge_id,p.user_id,p.status
+    into badge_to_award,winning_user,participation_status
+  from public.contests c join public.contest_participations p
+    on p.id=new.participation_id and p.contest_id=c.id
+  where c.id=new.contest_id;
+  if participation_status is distinct from 'APPROVED' then
+    raise exception 'contest winner participation must be approved' using errcode='23514';
+  end if;
+  if badge_to_award is not null and exists(
+    select 1 from public.badges b where b.id=badge_to_award and b.is_active
+  ) then
+    insert into public.user_badges(user_id,badge_id,awarded_by_id,metadata)
+    select winning_user,badge_to_award,new.selected_by_id,
+      jsonb_build_object('contestId',new.contest_id,'winnerId',new.id,'rank',new.rank)
+    where not exists(select 1 from public.user_badges ub
+      where ub.user_id=winning_user and ub.badge_id=badge_to_award
+        and ub.is_active and ub.revoked_at is null) on conflict do nothing;
+  end if;
+  return new;
+end $$;
+revoke execute on function public.award_contest_winner_badge() from public,anon,authenticated;
+grant execute on function public.award_contest_winner_badge() to service_role;
+drop trigger if exists award_contest_winner_badge on public.contest_winners;
+create trigger award_contest_winner_badge after insert or update of participation_id,rank
+  on public.contest_winners for each row execute function public.award_contest_winner_badge();
+insert into public.permissions(code,name,description) values
+  ('contest.manage','Gérer les concours','Créer, configurer et désigner les gagnants'),
+  ('contest.moderate','Modérer les concours','Examiner et noter les participations')
+on conflict(code) do update set name=excluded.name,description=excluded.description;
+insert into public.role_permissions(role,permission_code) values
+  ('OWNER','contest.manage'),('OWNER','contest.moderate'),
+  ('ADMIN','contest.manage'),('ADMIN','contest.moderate'),
+  ('MODERATOR','contest.moderate'),('MODERATOR','entry.moderate')
+on conflict do nothing;
+alter table public.contests enable row level security;
+alter table public.contest_participations enable row level security;
+alter table public.contest_winners enable row level security;
+drop policy if exists public_contests_read on public.contests;
+create policy public_contests_read on public.contests for select to anon,authenticated
+  using(deleted_at is null and status in ('SCHEDULED','ACTIVE','PAUSED','ENDED'));
+drop policy if exists public_contest_participations_read on public.contest_participations;
+create policy public_contest_participations_read on public.contest_participations
+  for select to anon,authenticated using(
+    status='APPROVED'
+    and exists(select 1 from public.contests c where c.id=contest_participations.contest_id and c.deleted_at is null
+      and c.status in ('SCHEDULED','ACTIVE','PAUSED','ENDED'))
+    and exists(select 1 from public.users u where u.id=contest_participations.user_id
+      and u.account_kind='TELEGRAM' and not u.is_system
+      and u.profile_visibility='PUBLIC' and not u.is_banned and u.role<>'BANNED')
+    and (entry_id is null or exists(select 1 from public.entries e where e.id=contest_participations.entry_id
+      and e.status='PUBLISHED' and e.deleted_at is null))
+  );
+drop policy if exists public_contest_winners_read on public.contest_winners;
+create policy public_contest_winners_read on public.contest_winners
+  for select to anon,authenticated using(
+    exists(select 1 from public.contest_participations p join public.users u on u.id=p.user_id
+      where p.id=contest_winners.participation_id
+        and p.contest_id=contest_winners.contest_id and p.status='APPROVED'
+        and u.account_kind='TELEGRAM' and not u.is_system
+        and u.profile_visibility='PUBLIC' and not u.is_banned and u.role<>'BANNED')
+    and exists(select 1 from public.contests c where c.id=contest_winners.contest_id and c.deleted_at is null
+      and c.status in ('SCHEDULED','ACTIVE','PAUSED','ENDED'))
+  );
+revoke all privileges on public.contests,public.contest_participations,public.contest_winners
+  from anon,authenticated;
+grant select(id,slug,title,summary,description,rules,image_url,status,is_featured,starts_at,
+  ends_at,scoring_mode,criteria,reward,reward_badge_id,max_participants,require_entry,
+  created_at,updated_at) on public.contests to anon,authenticated;
+grant select(id,contest_id,user_id,entry_id,status,manual_score,score_breakdown,submitted_at,
+  updated_at) on public.contest_participations to anon,authenticated;
+grant select(id,contest_id,participation_id,rank,label,prize,awarded_at)
+  on public.contest_winners to anon,authenticated;
+grant select(account_kind,is_system) on public.users to anon,authenticated;
+grant all privileges on public.contests,public.contest_participations,public.contest_winners
+  to service_role;
 
 commit;

@@ -1,6 +1,17 @@
+import type { UserRole } from "@/lib/db/schema";
+
 export type BotCommand = {
   name:
-    "start" | "app" | "search" | "latest" | "ranking" | "profile" | "partners" | "help" | "admin";
+    | "start"
+    | "app"
+    | "search"
+    | "latest"
+    | "ranking"
+    | "contest"
+    | "profile"
+    | "partners"
+    | "help"
+    | "admin";
   argument: string;
 };
 
@@ -14,6 +25,7 @@ export const botCommandHelp: ReadonlyArray<{
   { name: "search", usage: "/search nom", description: "Rechercher une fiche" },
   { name: "latest", usage: "/latest", description: "Voir les dernières fiches" },
   { name: "ranking", usage: "/ranking", description: "Voir le classement" },
+  { name: "contest", usage: "/contest", description: "Voir les concours" },
   { name: "profile", usage: "/profile", description: "Ouvrir mon profil" },
   { name: "partners", usage: "/partners", description: "Voir les partenaires" },
   { name: "help", usage: "/help", description: "Afficher cette aide" },
@@ -22,8 +34,41 @@ export const botCommandHelp: ReadonlyArray<{
 
 const commandNames = new Set<BotCommand["name"]>(botCommandHelp.map(({ name }) => name));
 
-export function buildHelpMessage(): string {
+export function isTelegramTeamRole(role: UserRole): boolean {
+  return role === "OWNER" || role === "ADMIN" || role === "MODERATOR";
+}
+
+export function telegramRoleBadge(role: UserRole): string {
+  const badges: Record<UserRole, string> = {
+    OWNER: "👑 Propriétaire",
+    ADMIN: "🛡️ Administrateur",
+    MODERATOR: "🔎 Modérateur",
+    EDITOR: "✍️ Éditeur",
+    MEMBER: "👤 Membre",
+    BANNED: "⛔ Compte suspendu",
+  };
+  return badges[role];
+}
+
+export function telegramCommandsForRole(
+  role: UserRole,
+): Array<{ command: BotCommand["name"]; description: string }> {
+  return botCommandHelp
+    .filter(({ name }) => name !== "admin" || isTelegramTeamRole(role))
+    .map(({ name, description }) => ({
+      command: name,
+      description:
+        name === "admin"
+          ? role === "MODERATOR"
+            ? "Modération (équipe autorisée)"
+            : "Administration complète"
+          : description,
+    }));
+}
+
+export function buildHelpMessage(role: UserRole = "MEMBER"): string {
   const commands = botCommandHelp
+    .filter(({ name }) => name !== "admin" || isTelegramTeamRole(role))
     .map(({ usage, description }) => `<code>${usage}</code> — ${description}`)
     .join("\n");
   return `<b>Commandes</b>\n\n${commands}`;
@@ -53,7 +98,10 @@ export type AdminAction =
   "approve" | "publish" | "changes" | "reject" | "hide" | "read" | "assign" | "resolve" | "archive";
 
 export type BotCallback =
-  | { kind: "menu"; value: "latest" | "ranking" | "admin" | "entries" | "reviews" | "messages" }
+  | {
+      kind: "menu";
+      value: "latest" | "ranking" | "admin" | "entries" | "reviews" | "messages";
+    }
   | { kind: "request" | "confirm"; entity: AdminEntity; action: AdminAction; id: string };
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -128,7 +176,7 @@ function appUrl(baseUrl: string, path = ""): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
 
-export function buildAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
+export function buildFullAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [
@@ -194,6 +242,12 @@ export function buildAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
       ],
       [
         {
+          text: "🎯 Gérer les concours",
+          web_app: { url: appUrl(baseUrl, "/admin/concours") },
+        },
+      ],
+      [
+        {
           text: "🤝 Partenaires",
           web_app: { url: appUrl(baseUrl, "/admin/partenaires") },
         },
@@ -216,6 +270,47 @@ export function buildAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
   };
 }
 
+export function buildModeratorMenu(baseUrl: string): PureInlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "🔎 Modération Mini App",
+          web_app: { url: appUrl(baseUrl, "/admin/moderation") },
+        },
+      ],
+      [
+        { text: "✅ Fiches à valider", callback_data: "menu:entries" },
+        { text: "💬 Avis à valider", callback_data: "menu:reviews" },
+      ],
+      [{ text: "📨 Messages", callback_data: "menu:messages" }],
+      [
+        {
+          text: "🚩 Signalements",
+          web_app: { url: appUrl(baseUrl, "/admin/messages?type=REPORT") },
+        },
+        {
+          text: "🎯 Concours",
+          web_app: { url: appUrl(baseUrl, "/admin/concours") },
+        },
+      ],
+      [
+        { text: "📱 Pokédex", web_app: { url: appUrl(baseUrl) } },
+        { text: "👤 Mon profil", web_app: { url: appUrl(baseUrl, "/profil") } },
+      ],
+    ],
+  };
+}
+
+export function buildTeamMenu(baseUrl: string, role: UserRole): PureInlineKeyboardMarkup {
+  return role === "MODERATOR" ? buildModeratorMenu(baseUrl) : buildFullAdminMenu(baseUrl);
+}
+
+/** @deprecated Use buildTeamMenu when the actor role is available. */
+export function buildAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
+  return buildFullAdminMenu(baseUrl);
+}
+
 export type WelcomeLinks = {
   appUrl: string;
   channelUrl?: string;
@@ -231,12 +326,10 @@ function rowsOfTwo(buttons: PureInlineKeyboardButton[]): PureInlineKeyboardButto
   return rows;
 }
 
-export function buildWelcomeMenu({
-  appUrl: baseUrl,
-  channelUrl,
-  chatUrl,
-  instagramUrl,
-}: WelcomeLinks): PureInlineKeyboardMarkup {
+export function buildWelcomeMenu(
+  { appUrl: baseUrl, channelUrl, chatUrl, instagramUrl }: WelcomeLinks,
+  role: UserRole = "MEMBER",
+): PureInlineKeyboardMarkup {
   const communityLinks: PureInlineKeyboardButton[] = [];
   if (channelUrl) communityLinks.push({ text: "📢 Suivre le canal", url: channelUrl });
   if (chatUrl) communityLinks.push({ text: "💬 Rejoindre le chat", url: chatUrl });
@@ -248,6 +341,9 @@ export function buildWelcomeMenu({
       ...rowsOfTwo(communityLinks),
       [
         { text: "🏆 Classements", callback_data: "menu:ranking" },
+        { text: "🎯 Concours", web_app: { url: appUrl(baseUrl, "/concours") } },
+      ],
+      [
         {
           text: "🤝 Nos partenaires",
           web_app: { url: appUrl(baseUrl, "/partenaires") },
@@ -257,6 +353,16 @@ export function buildWelcomeMenu({
         { text: "👤 Mon profil", web_app: { url: appUrl(baseUrl, "/profil") } },
         { text: "ℹ️ À propos", web_app: { url: appUrl(baseUrl, "/a-propos") } },
       ],
+      ...(isTelegramTeamRole(role)
+        ? [
+            [
+              {
+                text: role === "MODERATOR" ? "🔎 Modération" : "🛡 Administration",
+                callback_data: "menu:admin",
+              },
+            ],
+          ]
+        : []),
     ],
   };
 }

@@ -18,6 +18,8 @@ export type Permission =
   | "settings:manage"
   | "badge:manage"
   | "publication:manage"
+  | "contest:manage"
+  | "contest:moderate"
   | "storage:upload:entry"
   | "storage:upload:partner"
   | "storage:upload:message"
@@ -41,6 +43,8 @@ const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
     "settings:manage",
     "badge:manage",
     "publication:manage",
+    "contest:manage",
+    "contest:moderate",
     "storage:upload:entry",
     "storage:upload:partner",
     "storage:upload:message",
@@ -48,6 +52,7 @@ const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
     "audit:read",
   ]),
   MODERATOR: new Set([
+    "entry:moderate",
     "entry:update:own",
     "review:create",
     "review:moderate",
@@ -55,6 +60,7 @@ const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
     "message:manage",
     "storage:upload:message",
     "telegram:admin",
+    "contest:moderate",
   ]),
   EDITOR: new Set([
     "entry:create",

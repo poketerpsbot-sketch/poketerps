@@ -136,7 +136,7 @@ function usage(): string {
   return [
     "Usage: npm run demo-media:sync -- [--apply]",
     "",
-    "Sans --apply : vérifie les 20 sources et licences Wikimedia Commons, sans écrire.",
+    `Sans --apply : vérifie les ${DEMO_MEDIA_MANIFEST.length} sources et licences Wikimedia Commons, sans écrire.`,
     "Avec --apply : convertit en WebP, charge dans Supabase Storage et associe les images.",
   ].join("\n");
 }

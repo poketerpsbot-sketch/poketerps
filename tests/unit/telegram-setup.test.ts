@@ -59,6 +59,43 @@ describe("Telegram deployment setup", () => {
         web_app: { url: "https://pokedex.example.test" },
       },
     });
+    const defaultCommands = calls.find(({ method }) => method === "setMyCommands")?.body as {
+      commands: Array<{ command: string }>;
+      scope: { type: string };
+    };
+    expect(defaultCommands.scope).toEqual({ type: "default" });
+    expect(defaultCommands.commands.some(({ command }) => command === "admin")).toBe(false);
+    expect(defaultCommands.commands.some(({ command }) => command === "contest")).toBe(true);
+  });
+
+  it("registers private role-scoped command menus for configured team accounts", async () => {
+    const fetchImpl = successfulTelegramFetch();
+
+    await configureTelegramBot(
+      { ...config, ownerIds: [10], adminIds: [11], moderatorIds: [12] },
+      { fetchImpl },
+    );
+
+    const commandBodies = fetchImpl.mock.calls
+      .filter(([input]) => String(input).endsWith("/setMyCommands"))
+      .map(
+        ([, init]) =>
+          JSON.parse(String(init?.body)) as {
+            commands: Array<{ command: string; description: string }>;
+            scope: { type: string; chat_id?: number };
+          },
+      );
+    expect(commandBodies).toHaveLength(4);
+    const owner = commandBodies.find(({ scope }) => scope.chat_id === 10);
+    const moderator = commandBodies.find(({ scope }) => scope.chat_id === 12);
+    expect(owner?.commands.at(-1)).toEqual({
+      command: "admin",
+      description: "Administration complète",
+    });
+    expect(moderator?.commands.at(-1)).toEqual({
+      command: "admin",
+      description: "Modération (équipe autorisée)",
+    });
   });
 
   it("retries transient setup failures with bounded backoff", async () => {

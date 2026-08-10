@@ -1,9 +1,14 @@
 import "server-only";
 
+import type { UserRole } from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { buildWelcomeMenu } from "@/lib/services/bot-pure";
+import {
+  buildWelcomeMenu,
+  telegramCommandsForRole,
+  telegramRoleBadge,
+} from "@/lib/services/bot-pure";
 
 export type InlineKeyboardButton = {
   text: string;
@@ -111,15 +116,44 @@ export function escapeTelegramHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-export async function sendWelcomeMessage(chatId: number): Promise<void> {
-  const env = getEnv();
-  const caption = `<b>🌿 Bienvenue dans ${escapeTelegramHtml(env.APP_DISPLAY_NAME)}</b>\n\nDécouvre les dernières captures, complète ton Pokédex et retrouve toute la communauté.`;
-  const keyboard: InlineKeyboardMarkup = buildWelcomeMenu({
-    appUrl: env.NEXT_PUBLIC_APP_URL,
-    ...(env.TELEGRAM_CHANNEL_URL ? { channelUrl: env.TELEGRAM_CHANNEL_URL } : {}),
-    ...(env.TELEGRAM_CHAT_URL ? { chatUrl: env.TELEGRAM_CHAT_URL } : {}),
-    ...(env.INSTAGRAM_URL ? { instagramUrl: env.INSTAGRAM_URL } : {}),
+export type TelegramWelcomeIdentity = {
+  displayName: string;
+  username?: string | null;
+  role: UserRole;
+};
+
+export async function setTelegramCommandMenuForRole(chatId: number, role: UserRole): Promise<void> {
+  await telegramRequest("setMyCommands", {
+    commands: telegramCommandsForRole(role),
+    scope: { type: "chat", chat_id: chatId },
   });
+}
+
+export async function sendWelcomeMessage(
+  chatId: number,
+  identity?: TelegramWelcomeIdentity,
+): Promise<void> {
+  const env = getEnv();
+  const identityLine = identity
+    ? `\n<b>${escapeTelegramHtml(identity.displayName)}</b>${identity.username ? ` (@${escapeTelegramHtml(identity.username)})` : ""} · ${telegramRoleBadge(identity.role)}\n`
+    : "";
+  const caption = `<b>🌿 Bienvenue dans ${escapeTelegramHtml(env.APP_DISPLAY_NAME)}</b>${identityLine}\nLe Pokédex communautaire où chaque découverte compte.\n\n🔎 <b>Explore</b> les fiches détaillées et retrouve rapidement une capture.\n📸 <b>Propose</b> tes propres découvertes à l’équipe de validation.\n🏆 <b>Progresse</b> dans les classements, gagne de l’XP et collectionne des badges.\n🎯 <b>Participe</b> aux concours organisés par la communauté.\n🤝 <b>Échange</b> avec les autres Dresseurs et découvre nos partenaires.\n\nChoisis une action ci-dessous pour commencer.`;
+  const keyboard: InlineKeyboardMarkup = buildWelcomeMenu(
+    {
+      appUrl: env.NEXT_PUBLIC_APP_URL,
+      ...(env.TELEGRAM_CHANNEL_URL ? { channelUrl: env.TELEGRAM_CHANNEL_URL } : {}),
+      ...(env.TELEGRAM_CHAT_URL ? { chatUrl: env.TELEGRAM_CHAT_URL } : {}),
+      ...(env.INSTAGRAM_URL ? { instagramUrl: env.INSTAGRAM_URL } : {}),
+    },
+    identity?.role,
+  );
+  if (identity) {
+    try {
+      await setTelegramCommandMenuForRole(chatId, identity.role);
+    } catch (error) {
+      logger.warn("telegram_scoped_commands_failed", { chatId, role: identity.role, error });
+    }
+  }
   try {
     await sendTelegramPhoto(
       chatId,

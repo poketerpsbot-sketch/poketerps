@@ -24,7 +24,25 @@ function readConfig(): TelegramSetupConfig {
       "TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET et NEXT_PUBLIC_APP_URL sont requis.",
     );
   }
-  return { botToken, webhookSecret, appUrl };
+  const telegramIds = (value: string | undefined): number[] =>
+    value
+      ? [
+          ...new Set(
+            value
+              .split(",")
+              .map((item) => Number(item.trim()))
+              .filter(Number.isSafeInteger),
+          ),
+        ]
+      : [];
+  return {
+    botToken,
+    webhookSecret,
+    appUrl,
+    ownerIds: telegramIds(process.env.TELEGRAM_OWNER_IDS),
+    adminIds: telegramIds(process.env.TELEGRAM_ADMIN_IDS),
+    moderatorIds: telegramIds(process.env.TELEGRAM_MODERATOR_IDS),
+  };
 }
 
 function logSuccess(info: TelegramWebhookInfo): void {

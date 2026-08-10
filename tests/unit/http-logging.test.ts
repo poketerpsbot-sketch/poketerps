@@ -20,20 +20,23 @@ beforeEach(() => {
 });
 
 describe("API rejection logging", () => {
-  it("logs a missing /api/me session as expected informational traffic", async () => {
-    const response = await handleApi(request("/api/me"), async () => {
-      throw unauthorized();
-    });
+  it.each(["/api/me", "/api/auth/session"])(
+    "logs a missing %s session as expected informational traffic",
+    async (path) => {
+      const response = await handleApi(request(path), async () => {
+        throw unauthorized();
+      });
 
-    expect(response.status).toBe(401);
-    expect(log.info).toHaveBeenCalledWith("api_session_missing", {
-      requestId: "request_123",
-      code: "UNAUTHORIZED",
-      status: 401,
-      path: "/api/me",
-    });
-    expect(log.warn).not.toHaveBeenCalled();
-  });
+      expect(response.status).toBe(401);
+      expect(log.info).toHaveBeenCalledWith("api_session_missing", {
+        requestId: "request_123",
+        code: "UNAUTHORIZED",
+        status: 401,
+        path,
+      });
+      expect(log.warn).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ["a real 403", "/api/me", forbidden()],

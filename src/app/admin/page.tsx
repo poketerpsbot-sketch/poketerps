@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   BookOpen,
   Handshake,
@@ -20,6 +21,7 @@ import type {
 } from "@/components/data/types";
 import { serverApi, unwrapList, unwrapObject } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
+import { getOptionalCurrentUser } from "@/lib/auth/current-user";
 
 export const metadata: Metadata = { title: "Administration" };
 
@@ -28,6 +30,8 @@ function queueCount(value: unknown) {
 }
 
 export default async function AdminDashboardPage() {
+  const currentUser = await getOptionalCurrentUser();
+  if (currentUser?.role === "MODERATOR") redirect("/admin/moderation");
   const [result, entriesResult, reviewsResult, messagesResult] = await Promise.all([
     getAdminDashboard(),
     serverApi<unknown>("/api/admin/entries?status=PENDING_REVIEW&limit=5&offset=0"),
