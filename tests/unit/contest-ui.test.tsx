@@ -196,6 +196,7 @@ describe("contest administration UI", () => {
     expect(markup).toContain("Nouveau concours");
     expect(markup).toContain("Gérer le concours");
     expect(markup).toContain("À modérer");
+    expect(markup).toContain("Supprimer");
   });
 
   it("shows moderation without leaking creation controls to moderators", () => {
@@ -204,6 +205,7 @@ describe("contest administration UI", () => {
     );
 
     expect(markup).not.toContain("Nouveau concours");
+    expect(markup).not.toContain("Supprimer");
     expect(markup).toContain("Modérer les participants");
   });
 

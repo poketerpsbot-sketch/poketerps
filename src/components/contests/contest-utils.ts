@@ -23,6 +23,7 @@ export const contestStatusLabels: Record<ContestStatus, string> = {
   PAUSED: "En pause",
   ENDED: "Terminé",
   CANCELLED: "Annulé",
+  ENDED_PENDING_RESULT: "Terminé · résultat à publier",
 };
 
 export const scoringLabels: Record<ContestScoringMode, string> = {
@@ -44,7 +45,7 @@ export function safeContestImage(value?: string | null) {
   }
 }
 
-export function formatContestDate(value: string | Date) {
+export function formatContestDate(value: string | Date, timeZone = "Europe/Zurich") {
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "Date à confirmer";
   return new Intl.DateTimeFormat("fr-CH", {
@@ -53,6 +54,7 @@ export function formatContestDate(value: string | Date) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   }).format(date);
 }
 
@@ -103,6 +105,29 @@ export function adminContestValue(contest: AdminContest): ContestFormValue {
     registrationsOpen: contest.registrationsOpen ?? contest.registrations_open ?? true,
     registrationStartsAt: contest.registrationStartsAt ?? contest.registration_starts_at ?? null,
     registrationEndsAt: contest.registrationEndsAt ?? contest.registration_ends_at ?? null,
+    shortDescription: contest.shortDescription ?? contest.summary ?? null,
+    publicIntro: contest.publicIntro ?? contest.description ?? null,
+    participantInstructions: contest.participantInstructions ?? contest.instructions ?? null,
+    shortRules: contest.shortRules ?? null,
+    fullRules: contest.fullRules ?? contest.rules ?? null,
+    longDescription: contest.longDescription ?? contest.description ?? null,
+    mainImageUrl: contest.mainImageUrl ?? contest.imageUrl ?? contest.image_url ?? null,
+    resultImageUrl: contest.resultImageUrl ?? null,
+    resultText: contest.resultText ?? null,
+    registrationsManuallyClosed: contest.registrationsManuallyClosed ?? false,
+    resultPublicationMode: contest.resultPublicationMode ?? "MANUAL",
+    resultPublishedAt: contest.resultPublishedAt ?? null,
+    secretWeight:
+      contest.secretWeight === null || contest.secretWeight === undefined
+        ? null
+        : Number(contest.secretWeight),
+    weightUnit: contest.weightUnit ?? null,
+    customWeightUnit: contest.customWeightUnit ?? null,
+    allowGuessEditing: contest.allowGuessEditing ?? false,
+    tieBreakerMode: contest.tieBreakerMode ?? "MANUAL",
+    notifyTelegramOnPublish: contest.notifyTelegramOnPublish ?? false,
+    notifyParticipantsOnResult: contest.notifyParticipantsOnResult ?? false,
+    links: contest.links ?? [],
   };
 }
 

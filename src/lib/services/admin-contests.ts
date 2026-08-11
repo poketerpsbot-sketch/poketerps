@@ -8,19 +8,24 @@ import { getDb, getSqlClient } from "@/lib/db";
 import {
   auditLogs,
   badges,
+  contestLinks,
   contestParticipations,
+  contestWinnerHistory,
   contests,
   contestWinners,
   entries,
   userBadges,
+  userNotifications,
 } from "@/lib/db/schema";
 import { conflict, notFound } from "@/lib/errors";
 import { auditValues } from "@/lib/services/audit";
+import { slugify } from "@/lib/validation/common";
 import type {
   adminContestParticipationsQuerySchema,
   adminContestsQuerySchema,
   createContestSchema,
   moderateContestParticipationSchema,
+  publishContestResultSchema,
   selectContestWinnerSchema,
   updateContestSchema,
 } from "@/lib/validation/contests";
@@ -31,6 +36,7 @@ type ContestInput = z.infer<typeof createContestSchema>;
 type ContestUpdate = z.infer<typeof updateContestSchema>;
 type ModerationInput = z.infer<typeof moderateContestParticipationSchema>;
 type WinnerInput = z.infer<typeof selectContestWinnerSchema>;
+type PublishResultInput = z.infer<typeof publishContestResultSchema>;
 
 const contestSelection = {
   id: contests.id,
@@ -62,6 +68,30 @@ const contestSelection = {
   registrationStartsAt: contests.registrationStartsAt,
   registrationEndsAt: contests.registrationEndsAt,
   registrationsClosedAt: contests.registrationsClosedAt,
+  shortDescription: contests.shortDescription,
+  publicIntro: contests.publicIntro,
+  participantInstructions: contests.participantInstructions,
+  shortRules: contests.shortRules,
+  fullRules: contests.fullRules,
+  longDescription: contests.longDescription,
+  mainImageUrl: contests.mainImageUrl,
+  resultImageUrl: contests.resultImageUrl,
+  mainImageBucket: contests.mainImageBucket,
+  mainImagePath: contests.mainImagePath,
+  resultImageBucket: contests.resultImageBucket,
+  resultImagePath: contests.resultImagePath,
+  resultText: contests.resultText,
+  registrationsManuallyClosed: contests.registrationsManuallyClosed,
+  resultPublicationMode: contests.resultPublicationMode,
+  resultPublishedAt: contests.resultPublishedAt,
+  publishedAt: contests.publishedAt,
+  secretWeight: contests.secretWeight,
+  weightUnit: contests.weightUnit,
+  customWeightUnit: contests.customWeightUnit,
+  allowGuessEditing: contests.allowGuessEditing,
+  tieBreakerMode: contests.tieBreakerMode,
+  notifyTelegramOnPublish: contests.notifyTelegramOnPublish,
+  notifyParticipantsOnResult: contests.notifyParticipantsOnResult,
   createdById: contests.createdById,
   updatedById: contests.updatedById,
   createdAt: contests.createdAt,
@@ -111,27 +141,59 @@ async function assertRewardBadge(badgeId?: string | null) {
   if (!badge) throw notFound("Badge de récompense");
 }
 
+function optionalText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+async function replaceContestLinks(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  contestId: string,
+  links: ContestInput["links"] | ContestUpdate["links"],
+) {
+  await tx.delete(contestLinks).where(eq(contestLinks.contestId, contestId));
+  if (!links?.length) return;
+  await tx.insert(contestLinks).values(
+    links.map((link, index) => ({
+      contestId,
+      label: link.label,
+      url: link.url,
+      type: link.type,
+      visibility: link.visibility,
+      displayOrder: link.displayOrder ?? index,
+    })),
+  );
+}
+
 export async function listAdminContests(query: AdminContestsQuery) {
   const sqlClient = getSqlClient();
   const [envelope] = await sqlClient.unsafe<
     { items: Record<string, unknown>[] | null; total: number | string }[]
   >(
-    `with filtered as (
+    `with enriched as (
       select c.*,
         (select count(*)::int from contest_participations p
           where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) participation_count,
         (select count(*)::int from contest_participations p
-          where p.contest_id=c.id and p.status='PENDING_REVIEW') pending_count
+          where p.contest_id=c.id and p.status='PENDING_REVIEW') pending_count,
+        public.contest_effective_status(c.id,now()) effective_status
       from contests c
       where c.deleted_at is null
-        and ($1::contest_status is null or c.status=$1::contest_status)
+    ), filtered as (
+      select * from enriched c where
+        ($1::contest_status is null or c.status=$1::contest_status)
         and ($2::text is null or c.title ilike '%' || $2 || '%' or c.slug ilike '%' || $2 || '%')
+        and ($3::text='all'
+          or ($3='draft' and c.effective_status='DRAFT')
+          or ($3='upcoming' and c.effective_status='UPCOMING')
+          or ($3='active' and c.effective_status in ('OPEN','FULL','CLOSED'))
+          or ($3='ended' and c.effective_status in ('ENDED','ENDED_PENDING_RESULT')))
     ), page as (
-      select * from filtered order by is_featured desc,starts_at desc limit $3 offset $4
+      select * from filtered order by is_featured desc,starts_at desc limit $4 offset $5
     )
     select coalesce((select jsonb_agg(to_jsonb(page)) from page),'[]'::jsonb) items,
       (select count(*)::int from filtered) total`,
-    [query.status ?? null, query.query ?? null, query.limit, query.offset],
+    [query.status ?? null, query.query ?? null, query.phase, query.limit, query.offset],
   );
   return { contests: envelope?.items ?? [], total: Number(envelope?.total ?? 0) };
 }
@@ -143,7 +205,7 @@ export async function getAdminContest(id: string) {
     .where(and(eq(contests.id, id), isNull(contests.deletedAt)))
     .limit(1);
   if (!contest) throw notFound("Concours");
-  const [[counts], winners] = await Promise.all([
+  const [[counts], winners, links, analytics, guessRanking, winnerHistory] = await Promise.all([
     getDb()
       .select({
         total: sql<number>`count(*) filter (where ${contestParticipations.status} in ('PENDING_REVIEW','APPROVED'))::int`,
@@ -157,6 +219,54 @@ export async function getAdminContest(id: string) {
       .from(contestWinners)
       .where(eq(contestWinners.contestId, id))
       .orderBy(contestWinners.rank),
+    getDb()
+      .select()
+      .from(contestLinks)
+      .where(eq(contestLinks.contestId, id))
+      .orderBy(contestLinks.displayOrder),
+    getSqlClient()<
+      Array<{
+        page_views: number;
+        join_clicks: number;
+        link_clicks: number;
+        telegram_sent: number;
+        telegram_failed: number;
+        mini_app_notifications: number;
+        guess_count: number;
+        modified_guess_count: number;
+        average_guess: number | null;
+        minimum_guess: number | null;
+        maximum_guess: number | null;
+      }>
+    >`
+      select
+        (select count(*)::int from contest_view_events where contest_id=${id}::uuid and event_type='PAGE_VIEW') page_views,
+        (select count(*)::int from contest_view_events where contest_id=${id}::uuid and event_type='JOIN_CLICK') join_clicks,
+        (select count(*)::int from contest_view_events where contest_id=${id}::uuid and event_type='LINK_CLICK') link_clicks,
+        coalesce((select sum(sent_count)::int from telegram_broadcasts where contest_id=${id}::uuid),0) telegram_sent,
+        coalesce((select sum(failed_count)::int from telegram_broadcasts where contest_id=${id}::uuid),0) telegram_failed,
+        (select count(*)::int from user_notifications where related_contest_id=${id}::uuid) mini_app_notifications,
+        (select count(*)::int from contest_guesses where contest_id=${id}::uuid) guess_count,
+        (select count(*)::int from contest_guesses where contest_id=${id}::uuid and submission_count>1) modified_guess_count,
+        (select avg(numeric_value)::float8 from contest_guesses where contest_id=${id}::uuid) average_guess,
+        (select min(numeric_value)::float8 from contest_guesses where contest_id=${id}::uuid) minimum_guess,
+        (select max(numeric_value)::float8 from contest_guesses where contest_id=${id}::uuid) maximum_guess
+    `,
+    getSqlClient()<Array<Record<string, unknown>>>`
+      select g.id,g.user_id,g.numeric_value::float8 numeric_value,g.unit,g.submitted_at,g.updated_at,
+        abs(g.numeric_value-c.secret_weight)::float8 difference,
+        u.display_name,u.telegram_username,u.profile_photo_url,p.id participation_id,
+        dense_rank() over(order by abs(g.numeric_value-c.secret_weight),g.submitted_at)::int calculated_rank
+      from contest_guesses g join contests c on c.id=g.contest_id
+      join users u on u.id=g.user_id join contest_participations p on p.id=g.participation_id
+      where g.contest_id=${id}::uuid and c.secret_weight is not null
+      order by calculated_rank,g.submitted_at limit 100
+    `,
+    getDb()
+      .select()
+      .from(contestWinnerHistory)
+      .where(eq(contestWinnerHistory.contestId, id))
+      .orderBy(sql`${contestWinnerHistory.createdAt} desc`),
   ]);
   return {
     ...contest,
@@ -164,6 +274,10 @@ export async function getAdminContest(id: string) {
     pendingCount: Number(counts?.pending ?? 0),
     approvedCount: Number(counts?.approved ?? 0),
     winners,
+    links,
+    analytics: analytics[0] ?? null,
+    guessRanking,
+    winnerHistory,
   };
 }
 
@@ -171,22 +285,75 @@ export async function createContest(input: ContestInput, actor: CurrentUser, req
   await assertRewardBadge(input.rewardBadgeId);
   return contestMutation(() =>
     getDb().transaction(async (tx) => {
+      const startsAt = new Date(input.startsAt);
+      const endsAt = new Date(input.endsAt);
+      const registrationStartsAt = new Date(input.registrationStartsAt ?? input.startsAt);
+      const registrationEndsAt = new Date(input.registrationEndsAt ?? input.endsAt);
+      const status = input.status;
+      const publishedAt = status === "DRAFT" ? null : new Date();
       const [created] = await tx
         .insert(contests)
         .values({
-          ...input,
-          startsAt: new Date(input.startsAt),
-          endsAt: new Date(input.endsAt),
-          registrationStartsAt: input.registrationStartsAt
-            ? new Date(input.registrationStartsAt)
-            : null,
-          registrationEndsAt: input.registrationEndsAt ? new Date(input.registrationEndsAt) : null,
+          slug: input.slug ?? `${slugify(input.title)}-${Date.now().toString(36)}`,
+          title: input.title,
+          summary: optionalText(input.shortDescription ?? input.summary),
+          description: optionalText(input.longDescription ?? input.description),
+          rules: optionalText(input.fullRules ?? input.rules),
+          imageUrl: input.mainImageUrl ?? input.imageUrl ?? null,
+          status,
+          contestType: input.contestType,
+          instructions: optionalText(input.participantInstructions ?? input.instructions) ?? "",
+          participationSteps: input.participationSteps,
+          externalUrl: input.externalUrl ?? null,
+          telegramUrl: input.telegramUrl ?? null,
+          instagramUrl: input.instagramUrl ?? null,
+          terms: optionalText(input.terms),
+          additionalInformation: optionalText(input.additionalInformation),
+          registrationsOpen: input.registrationsOpen,
+          registrationsManuallyClosed: input.registrationsManuallyClosed,
+          shortDescription: optionalText(input.shortDescription ?? input.summary),
+          publicIntro: optionalText(input.publicIntro),
+          participantInstructions: optionalText(
+            input.participantInstructions ?? input.instructions,
+          ),
+          shortRules: optionalText(input.shortRules),
+          fullRules: optionalText(input.fullRules ?? input.rules),
+          longDescription: optionalText(input.longDescription ?? input.description),
+          mainImageUrl: input.mainImageUrl ?? input.imageUrl ?? null,
+          mainImageBucket: input.mainImageBucket ?? null,
+          mainImagePath: input.mainImagePath ?? null,
+          resultImageUrl: input.resultImageUrl ?? null,
+          resultImageBucket: input.resultImageBucket ?? null,
+          resultImagePath: input.resultImagePath ?? null,
+          resultText: optionalText(input.resultText),
+          resultPublicationMode: input.resultPublicationMode,
+          resultPublishedAt: input.resultPublishedAt ? new Date(input.resultPublishedAt) : null,
+          publishedAt,
+          secretWeight: input.secretWeight == null ? null : String(input.secretWeight),
+          weightUnit: input.weightUnit ?? null,
+          customWeightUnit: optionalText(input.customWeightUnit),
+          allowGuessEditing: input.allowGuessEditing,
+          tieBreakerMode: input.tieBreakerMode,
+          notifyTelegramOnPublish: input.notifyTelegramOnPublish,
+          notifyParticipantsOnResult: input.notifyParticipantsOnResult,
+          isFeatured: input.isFeatured,
+          startsAt,
+          endsAt,
+          scoringMode: input.scoringMode,
+          criteria: input.criteria,
+          reward: input.reward,
+          rewardBadgeId: input.rewardBadgeId ?? null,
+          maxParticipants: input.maxParticipants ?? null,
+          requireEntry: input.requireEntry,
+          registrationStartsAt,
+          registrationEndsAt,
           registrationsClosedAt: input.registrationsOpen ? null : new Date(),
           createdById: actor.id,
           updatedById: actor.id,
         })
         .returning(contestSelection);
       if (!created) throw new Error("Contest insert failed");
+      await replaceContestLinks(tx, created.id, input.links);
       await tx.insert(auditLogs).values(
         auditValues({
           actorUserId: actor.id,
@@ -199,7 +366,7 @@ export async function createContest(input: ContestInput, actor: CurrentUser, req
           after: created,
         }),
       );
-      return created;
+      return { ...created, links: input.links };
     }),
   );
 }
@@ -220,47 +387,142 @@ export async function updateContest(
         .limit(1)
         .for("update");
       if (!existing) throw notFound("Concours");
-      const {
-        startsAt: startsAtInput,
-        endsAt: endsAtInput,
-        registrationStartsAt: registrationStartsAtInput,
-        registrationEndsAt: registrationEndsAtInput,
-        ...otherInput
-      } = input;
+      const startsAtInput = input.startsAt;
+      const endsAtInput = input.endsAt;
+      const registrationStartsAtInput = input.registrationStartsAt;
+      const registrationEndsAtInput = input.registrationEndsAt;
       const startsAt = startsAtInput ? new Date(startsAtInput) : existing.startsAt;
       const endsAt = endsAtInput ? new Date(endsAtInput) : existing.endsAt;
       if (endsAt <= startsAt) {
         throw conflict("La fin du concours doit suivre son début.", "CONTEST_DATES_INVALID");
       }
+      const updates: Partial<typeof contests.$inferInsert> = {
+        updatedById: actor.id,
+        updatedAt: new Date(),
+      };
+      const set = <K extends keyof typeof updates>(key: K, value: (typeof updates)[K]) => {
+        updates[key] = value;
+      };
+      if (input.slug !== undefined) set("slug", input.slug);
+      if (input.title !== undefined) set("title", input.title);
+      if (input.shortDescription !== undefined || input.summary !== undefined) {
+        const value = optionalText(input.shortDescription ?? input.summary);
+        set("shortDescription", value);
+        set("summary", value);
+      }
+      if (input.longDescription !== undefined || input.description !== undefined) {
+        const value = optionalText(input.longDescription ?? input.description);
+        set("longDescription", value);
+        set("description", value);
+      }
+      if (input.fullRules !== undefined || input.rules !== undefined) {
+        const value = optionalText(input.fullRules ?? input.rules);
+        set("fullRules", value);
+        set("rules", value);
+      }
+      if (input.imageUrl !== undefined || input.mainImageUrl !== undefined) {
+        const value = input.mainImageUrl ?? input.imageUrl ?? null;
+        set("mainImageUrl", value);
+        set("imageUrl", value);
+      }
+      if (input.status !== undefined) {
+        set("status", input.status);
+        if (input.status !== "DRAFT" && !existing.publishedAt) set("publishedAt", new Date());
+      }
+      if (input.isFeatured !== undefined) set("isFeatured", input.isFeatured);
+      if (input.scoringMode !== undefined) set("scoringMode", input.scoringMode);
+      if (input.criteria !== undefined) set("criteria", input.criteria);
+      if (input.reward !== undefined) set("reward", input.reward);
+      if (input.rewardBadgeId !== undefined) set("rewardBadgeId", input.rewardBadgeId);
+      if (input.maxParticipants !== undefined) set("maxParticipants", input.maxParticipants);
+      if (input.requireEntry !== undefined) set("requireEntry", input.requireEntry);
+      if (input.contestType !== undefined) set("contestType", input.contestType);
+      if (input.instructions !== undefined || input.participantInstructions !== undefined) {
+        const value = optionalText(input.participantInstructions ?? input.instructions);
+        set("participantInstructions", value);
+        set("instructions", value ?? "");
+      }
+      if (input.participationSteps !== undefined)
+        set("participationSteps", input.participationSteps);
+      if (input.externalUrl !== undefined) set("externalUrl", input.externalUrl);
+      if (input.telegramUrl !== undefined) set("telegramUrl", input.telegramUrl);
+      if (input.instagramUrl !== undefined) set("instagramUrl", input.instagramUrl);
+      if (input.terms !== undefined) set("terms", optionalText(input.terms));
+      if (input.additionalInformation !== undefined) {
+        set("additionalInformation", optionalText(input.additionalInformation));
+      }
+      if (input.publicIntro !== undefined) set("publicIntro", optionalText(input.publicIntro));
+      if (input.shortRules !== undefined) set("shortRules", optionalText(input.shortRules));
+      if (input.resultImageUrl !== undefined) set("resultImageUrl", input.resultImageUrl);
+      if (input.mainImageBucket !== undefined) set("mainImageBucket", input.mainImageBucket);
+      if (input.mainImagePath !== undefined)
+        set("mainImagePath", optionalText(input.mainImagePath));
+      if (input.resultImageBucket !== undefined) set("resultImageBucket", input.resultImageBucket);
+      if (input.resultImagePath !== undefined)
+        set("resultImagePath", optionalText(input.resultImagePath));
+      if (input.resultText !== undefined) set("resultText", optionalText(input.resultText));
+      if (input.registrationsOpen !== undefined) {
+        set("registrationsOpen", input.registrationsOpen);
+        set("registrationsClosedAt", input.registrationsOpen ? null : new Date());
+      }
+      if (input.registrationsManuallyClosed !== undefined) {
+        set("registrationsManuallyClosed", input.registrationsManuallyClosed);
+      }
+      if (input.resultPublicationMode !== undefined) {
+        set("resultPublicationMode", input.resultPublicationMode);
+      }
+      if (input.resultPublishedAt !== undefined) {
+        set(
+          "resultPublishedAt",
+          input.resultPublishedAt ? new Date(input.resultPublishedAt) : null,
+        );
+      }
+      if (input.secretWeight !== undefined) {
+        set("secretWeight", input.secretWeight == null ? null : String(input.secretWeight));
+      }
+      if (input.weightUnit !== undefined) set("weightUnit", input.weightUnit);
+      if (input.customWeightUnit !== undefined)
+        set("customWeightUnit", optionalText(input.customWeightUnit));
+      if (input.allowGuessEditing !== undefined) set("allowGuessEditing", input.allowGuessEditing);
+      if (input.tieBreakerMode !== undefined) set("tieBreakerMode", input.tieBreakerMode);
+      if (input.notifyTelegramOnPublish !== undefined) {
+        set("notifyTelegramOnPublish", input.notifyTelegramOnPublish);
+      }
+      if (input.notifyParticipantsOnResult !== undefined) {
+        set("notifyParticipantsOnResult", input.notifyParticipantsOnResult);
+      }
+      if (startsAtInput !== undefined) {
+        set("startsAt", startsAt);
+        set(
+          "registrationStartsAt",
+          registrationStartsAtInput ? new Date(registrationStartsAtInput) : startsAt,
+        );
+      } else if (registrationStartsAtInput !== undefined) {
+        set(
+          "registrationStartsAt",
+          registrationStartsAtInput ? new Date(registrationStartsAtInput) : existing.startsAt,
+        );
+      }
+      if (endsAtInput !== undefined) {
+        set("endsAt", endsAt);
+        set(
+          "registrationEndsAt",
+          registrationEndsAtInput ? new Date(registrationEndsAtInput) : endsAt,
+        );
+      } else if (registrationEndsAtInput !== undefined) {
+        set(
+          "registrationEndsAt",
+          registrationEndsAtInput ? new Date(registrationEndsAtInput) : existing.endsAt,
+        );
+      }
+
       const [updated] = await tx
         .update(contests)
-        .set({
-          ...otherInput,
-          ...(startsAtInput !== undefined ? { startsAt } : {}),
-          ...(endsAtInput !== undefined ? { endsAt } : {}),
-          ...(registrationStartsAtInput !== undefined
-            ? {
-                registrationStartsAt: registrationStartsAtInput
-                  ? new Date(registrationStartsAtInput)
-                  : null,
-              }
-            : {}),
-          ...(registrationEndsAtInput !== undefined
-            ? {
-                registrationEndsAt: registrationEndsAtInput
-                  ? new Date(registrationEndsAtInput)
-                  : null,
-              }
-            : {}),
-          ...(input.registrationsOpen !== undefined
-            ? { registrationsClosedAt: input.registrationsOpen ? null : new Date() }
-            : {}),
-          updatedById: actor.id,
-          updatedAt: new Date(),
-        })
+        .set(updates)
         .where(eq(contests.id, id))
         .returning(contestSelection);
       if (!updated) throw new Error("Contest update failed");
+      if (input.links !== undefined) await replaceContestLinks(tx, id, input.links);
       await tx.insert(auditLogs).values(
         auditValues({
           actorUserId: actor.id,
@@ -288,12 +550,6 @@ export async function deleteContest(id: string, actor: CurrentUser, requestId?: 
       .limit(1)
       .for("update");
     if (!existing) throw notFound("Concours");
-    if (existing.status !== "DRAFT" && existing.status !== "CANCELLED") {
-      throw conflict(
-        "Annulez le concours avant de le supprimer.",
-        "CONTEST_DELETE_REQUIRES_CANCELLATION",
-      );
-    }
     const now = new Date();
     const [deleted] = await tx
       .update(contests)
@@ -328,26 +584,33 @@ export async function listAdminContestParticipations(
     { items: Record<string, unknown>[] | null; total: number | string }[]
   >(
     `with filtered as (
-      select p.*,u.display_name,u.public_slug,u.telegram_username,u.profile_photo_url,u.role,
+      select p.*,u.display_name,u.public_slug,u.telegram_username,u.profile_photo_url,u.role,u.is_banned,
         e.slug entry_slug,e.name entry_name,e.status entry_status,
-        w.id winner_id,w.rank winner_rank,w.label winner_label
+        w.id winner_id,w.rank winner_rank,w.label winner_label,
+        g.numeric_value::float8 guess_value,g.unit guess_unit,g.submitted_at guess_submitted_at,
+        g.updated_at guess_updated_at,g.submission_count,
+        case when c.secret_weight is not null then abs(g.numeric_value-c.secret_weight)::float8 end guess_difference
       from contest_participations p
+      join contests c on c.id=p.contest_id
       join users u on u.id=p.user_id
       left join entries e on e.id=p.entry_id
       left join contest_winners w on w.participation_id=p.id and w.contest_id=p.contest_id
+      left join contest_guesses g on g.participation_id=p.id and g.contest_id=p.contest_id
       where p.contest_id=$1::uuid
         and ($2::contest_participation_status is null or p.status=$2::contest_participation_status)
         and ($3::text is null or u.display_name ilike '%' || $3 || '%'
           or coalesce(u.telegram_username,'') ilike '%' || $3 || '%'
           or coalesce(e.name,'') ilike '%' || $3 || '%')
     ), page as (
-      select * from filtered
-      order by case status when 'PENDING_REVIEW' then 0 when 'APPROVED' then 1 else 2 end,
-        submitted_at desc limit $4 offset $5
+      select * from filtered order by
+        case when $4='name' then display_name end asc,
+        case when $4='oldest' then submitted_at end asc,
+        case when $4='newest' then submitted_at end desc,
+        id limit $5 offset $6
     )
     select coalesce((select jsonb_agg(to_jsonb(page)) from page),'[]'::jsonb) items,
       (select count(*)::int from filtered) total`,
-    [contest.id, query.status ?? null, query.query ?? null, query.limit, query.offset],
+    [contest.id, query.status ?? null, query.query ?? null, query.sort, query.limit, query.offset],
   );
   return { participations: envelope?.items ?? [], total: Number(envelope?.total ?? 0) };
 }
@@ -458,7 +721,14 @@ export async function selectContestWinner(
   return contestMutation(() =>
     getDb().transaction(async (tx) => {
       const [contest] = await tx
-        .select({ id: contests.id, status: contests.status, endsAt: contests.endsAt })
+        .select({
+          id: contests.id,
+          slug: contests.slug,
+          title: contests.title,
+          status: contests.status,
+          endsAt: contests.endsAt,
+          registrationEndsAt: contests.registrationEndsAt,
+        })
         .from(contests)
         .where(and(eq(contests.id, contestId), isNull(contests.deletedAt)))
         .limit(1)
@@ -467,7 +737,7 @@ export async function selectContestWinner(
       if (
         contest.status === "DRAFT" ||
         contest.status === "CANCELLED" ||
-        (contest.status !== "ENDED" && contest.endsAt > new Date())
+        (contest.status !== "ENDED" && (contest.registrationEndsAt ?? contest.endsAt) > new Date())
       ) {
         throw conflict(
           "Les gagnants se choisissent après la fin du concours.",
@@ -475,7 +745,11 @@ export async function selectContestWinner(
         );
       }
       const [participation] = await tx
-        .select({ id: contestParticipations.id, status: contestParticipations.status })
+        .select({
+          id: contestParticipations.id,
+          status: contestParticipations.status,
+          userId: contestParticipations.userId,
+        })
         .from(contestParticipations)
         .where(
           and(
@@ -490,6 +764,26 @@ export async function selectContestWinner(
           "CONTEST_WINNER_INELIGIBLE",
         );
       }
+      const [previousWinner] = await tx
+        .select({
+          id: contestWinners.id,
+          userId: contestParticipations.userId,
+          participationId: contestWinners.participationId,
+        })
+        .from(contestWinners)
+        .innerJoin(
+          contestParticipations,
+          eq(contestParticipations.id, contestWinners.participationId),
+        )
+        .where(and(eq(contestWinners.contestId, contestId), eq(contestWinners.rank, input.rank)))
+        .limit(1)
+        .for("update");
+      if (previousWinner && !input.replaceExisting) {
+        throw conflict("Ce concours possède déjà un gagnant.", "CONTEST_WINNER_EXISTS");
+      }
+      if (previousWinner) {
+        await tx.delete(contestWinners).where(eq(contestWinners.id, previousWinner.id));
+      }
       const [winner] = await tx
         .insert(contestWinners)
         .values({
@@ -502,6 +796,25 @@ export async function selectContestWinner(
         })
         .returning();
       if (!winner) throw new Error("Contest winner insert failed");
+      await tx.insert(contestWinnerHistory).values({
+        contestId,
+        action: previousWinner ? "REPLACED" : "SELECTED",
+        previousWinnerUserId: previousWinner?.userId ?? null,
+        winnerUserId: participation.userId,
+        selectedById: actor.id,
+        selectedByRole: actor.role,
+        reason: input.reason ?? null,
+        metadata: { rank: input.rank, winnerId: winner.id },
+      });
+      await tx.insert(userNotifications).values({
+        userId: participation.userId,
+        type: "CONTEST_WINNER",
+        title: "🏆 Tu as gagné !",
+        message: `Félicitations, tu as gagné le concours « ${contest.title} ».`,
+        relatedContestId: contestId,
+        actionUrl: `/concours/${contest.slug}`,
+        metadata: { winnerId: winner.id },
+      });
       await tx.insert(auditLogs).values(
         auditValues({
           actorUserId: actor.id,
@@ -512,7 +825,12 @@ export async function selectContestWinner(
           source: "WEB_ADMIN",
           requestId,
           after: winner,
-          metadata: { contestId, participationId: input.participationId },
+          metadata: {
+            contestId,
+            participationId: input.participationId,
+            previousWinnerUserId: previousWinner?.userId ?? null,
+            reason: input.reason ?? null,
+          },
         }),
       );
       return winner;
@@ -551,6 +869,16 @@ export async function removeContestWinner(
       .for("update");
     if (!existing) throw notFound("Gagnant");
     await tx.delete(contestWinners).where(eq(contestWinners.id, winnerId));
+    await tx.insert(contestWinnerHistory).values({
+      contestId,
+      action: "REMOVED",
+      previousWinnerUserId: existing.winnerUserId,
+      winnerUserId: null,
+      selectedById: actor.id,
+      selectedByRole: actor.role,
+      reason: "Retrait confirmé depuis l’administration",
+      metadata: { winnerId, rank: existing.rank },
+    });
     if (existing.rewardBadgeId) {
       await tx
         .update(userBadges)
@@ -582,5 +910,83 @@ export async function removeContestWinner(
       }),
     );
     return { id: winnerId, removed: true };
+  });
+}
+
+export async function publishContestResult(
+  contestId: string,
+  input: PublishResultInput,
+  actor: CurrentUser,
+  requestId?: string,
+) {
+  return getDb().transaction(async (tx) => {
+    const [existing] = await tx
+      .select(contestSelection)
+      .from(contests)
+      .where(and(eq(contests.id, contestId), isNull(contests.deletedAt)))
+      .limit(1)
+      .for("update");
+    if (!existing) throw notFound("Concours");
+    if (new Date(existing.endsAt) > new Date()) {
+      throw conflict(
+        "Le résultat ne peut être publié qu’après la fin du concours.",
+        "CONTEST_NOT_ENDED",
+      );
+    }
+    if (
+      !existing.resultText &&
+      existing.secretWeight === null &&
+      !existing.resultImagePath &&
+      !existing.resultImageUrl
+    ) {
+      throw conflict(
+        "Ajoute un résultat, un poids réel ou une photo avant de publier.",
+        "CONTEST_RESULT_EMPTY",
+      );
+    }
+    const now = new Date();
+    const [updated] = await tx
+      .update(contests)
+      .set({ resultPublishedAt: now, status: "ENDED", updatedAt: now, updatedById: actor.id })
+      .where(eq(contests.id, contestId))
+      .returning(contestSelection);
+    if (!updated) throw new Error("Contest result publication failed");
+    if (input.notifyParticipants || existing.notifyParticipantsOnResult) {
+      const recipients = await tx
+        .selectDistinct({ userId: contestParticipations.userId })
+        .from(contestParticipations)
+        .where(
+          and(
+            eq(contestParticipations.contestId, contestId),
+            sql`${contestParticipations.status} in ('PENDING_REVIEW','APPROVED')`,
+          ),
+        );
+      if (recipients.length > 0) {
+        await tx.insert(userNotifications).values(
+          recipients.map(({ userId }) => ({
+            userId,
+            type: "CONTEST_RESULT" as const,
+            title: "Résultat du concours",
+            message: `Le résultat de « ${existing.title} » est disponible.`,
+            relatedContestId: contestId,
+            actionUrl: `/concours/${existing.slug}`,
+          })),
+        );
+      }
+    }
+    await tx.insert(auditLogs).values(
+      auditValues({
+        actorUserId: actor.id,
+        actorTelegramIdSnapshot: actor.telegramId,
+        action: "CONTEST_RESULT_PUBLISHED",
+        entityType: "CONTEST",
+        entityId: contestId,
+        source: "WEB_ADMIN",
+        requestId,
+        before: existing,
+        after: updated,
+      }),
+    );
+    return updated;
   });
 }

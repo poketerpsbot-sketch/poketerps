@@ -7,6 +7,8 @@ export const storageBucketSchema = z.enum([
   "partner-images",
   "app-assets",
   "message-attachments",
+  "contest-images",
+  "contest-results",
 ]);
 
 export const uploadMetadataSchema = z.object({

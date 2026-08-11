@@ -9,6 +9,8 @@ import {
 
 const mocks = vi.hoisted(() => ({
   createContest: vi.fn(),
+  deleteContest: vi.fn(),
+  getAdminContest: vi.fn(),
   getOptionalCurrentUser: vi.fn(),
   getPublicContest: vi.fn(),
   listAdminContests: vi.fn(),
@@ -24,7 +26,13 @@ vi.mock("@/lib/services/contests", () => ({
 }));
 vi.mock("@/lib/services/admin-contests", () => ({
   createContest: mocks.createContest,
+  deleteContest: mocks.deleteContest,
+  getAdminContest: mocks.getAdminContest,
   listAdminContests: mocks.listAdminContests,
+  updateContest: vi.fn(),
+}));
+vi.mock("@/lib/auth/team-permissions", () => ({
+  hasUserPermission: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("@/lib/auth/current-user", () => ({
   getOptionalCurrentUser: mocks.getOptionalCurrentUser,
@@ -37,6 +45,7 @@ vi.mock("@/lib/security/request-guard", () => ({
 }));
 
 import { GET as getAdminContests, POST as postAdminContest } from "@/app/api/admin/contests/route";
+import { DELETE as deleteAdminContest } from "@/app/api/admin/contests/[id]/route";
 import { GET as getContest } from "@/app/api/contests/[slug]/route";
 import { GET as getContests } from "@/app/api/contests/route";
 
@@ -154,5 +163,24 @@ describe("contest route contracts", () => {
     );
     expect(response.status).toBe(201);
     expect(mocks.requireAdminUser).toHaveBeenLastCalledWith("contest:manage");
+  });
+
+  it("allows an administrator to soft-delete a contest without a prior cancellation", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    mocks.deleteContest.mockResolvedValue({ id, deleted: true });
+    const response = await deleteAdminContest(
+      new NextRequest(`https://pokedex.example.test/api/admin/contests/${id}`, {
+        method: "DELETE",
+        headers: { origin: "https://pokedex.example.test" },
+      }),
+      { params: Promise.resolve({ id }) },
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.requireAdminUser).toHaveBeenCalledWith("contest:manage");
+    expect(mocks.deleteContest).toHaveBeenCalledWith(
+      id,
+      expect.objectContaining({ role: "ADMIN" }),
+      expect.any(String),
+    );
   });
 });

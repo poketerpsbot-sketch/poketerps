@@ -4,19 +4,30 @@ import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { CurrentUser } from "@/lib/auth/current-user";
+import {
+  contestParticipationError,
+  effectiveContestDates,
+  getContestEffectiveStatus,
+} from "@/lib/contests/effective-status";
 import { getDb, getSqlClient } from "@/lib/db";
 import {
   auditLogs,
+  contestGuesses,
+  contestLinks,
   contestParticipations,
+  contestViewEvents,
   contests,
   contestWinners,
   entries,
 } from "@/lib/db/schema";
+import { getEnv } from "@/lib/env";
 import { conflict, notFound } from "@/lib/errors";
 import { auditValues } from "@/lib/services/audit";
-import { publicStorageUrl } from "@/lib/services/storage-url";
+import { publicStorageUrl, signedStorageUrls } from "@/lib/services/storage-url";
 import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import type {
+  contestEventInputSchema,
+  contestGuessInputSchema,
   contestLeaderboardQuerySchema,
   contestParticipationInputSchema,
   contestsQuerySchema,
@@ -25,6 +36,8 @@ import type {
 type ContestQuery = z.infer<typeof contestsQuerySchema>;
 type LeaderboardQuery = z.infer<typeof contestLeaderboardQuerySchema>;
 type ParticipationInput = z.infer<typeof contestParticipationInputSchema>;
+type GuessInput = z.infer<typeof contestGuessInputSchema>;
+type ContestEventInput = z.infer<typeof contestEventInputSchema>;
 
 export type ContestPhase = "UPCOMING" | "ACTIVE" | "ENDED";
 
@@ -32,9 +45,9 @@ type ContestRow = {
   id: string;
   slug: string;
   title: string;
-  summary: string;
-  description: string;
-  rules: string;
+  summary: string | null;
+  public_intro: string | null;
+  short_rules: string | null;
   image_url: string | null;
   status:
     | "DRAFT"
@@ -46,8 +59,17 @@ type ContestRow = {
     | "ACTIVE"
     | "PAUSED"
     | "ENDED"
-    | "CANCELLED";
-  contest_type: "GAME" | "DRAW" | "CREATIVE" | "ENTRY" | "EXTERNAL_LINK" | "COMMUNITY" | "OTHER";
+    | "CANCELLED"
+    | "ENDED_PENDING_RESULT";
+  contest_type:
+    | "GAME"
+    | "DRAW"
+    | "CREATIVE"
+    | "ENTRY"
+    | "EXTERNAL_LINK"
+    | "COMMUNITY"
+    | "OTHER"
+    | "WEIGHT_GUESS";
   is_featured: boolean;
   starts_at: Date | string;
   ends_at: Date | string;
@@ -58,16 +80,13 @@ type ContestRow = {
   reward_badge_id: string | null;
   max_participants: number | string | null;
   require_entry: boolean;
-  instructions: string;
-  participation_steps: string[];
-  external_url: string | null;
-  telegram_url: string | null;
-  instagram_url: string | null;
-  terms: string | null;
-  additional_information: string | null;
   registrations_open: boolean;
+  registrations_manually_closed: boolean;
   registration_starts_at: Date | string | null;
   registration_ends_at: Date | string | null;
+  result_published_at: Date | string | null;
+  main_image_bucket: string | null;
+  main_image_path: string | null;
   participant_count: number | string;
   capacity_count: number | string;
 };
@@ -82,8 +101,8 @@ type PublicParticipant = {
 
 export type ContestCard = ReturnType<typeof contestCardDto>;
 export type ContestDetail = ContestCard & {
-  description: string;
-  rules: string;
+  publicIntro: string | null;
+  shortRules: string | null;
   criteria: Record<string, unknown>;
   rewardBadge: {
     id: string;
@@ -94,17 +113,46 @@ export type ContestDetail = ContestCard & {
   } | null;
   maxParticipants: number | null;
   requireEntry: boolean;
-  instructions: string;
-  participationSteps: string[];
-  externalUrl: string | null;
-  telegramUrl: string | null;
-  instagramUrl: string | null;
-  terms: string | null;
-  additionalInformation: string | null;
+  publicLinks: ContestLinkDto[];
+  participantContent: ParticipantContestContent | null;
+  result: ContestResultDto | null;
   registrationStartsAt: Date | string | null;
   registrationEndsAt: Date | string | null;
   winners: ContestWinnerDto[];
   viewerParticipation: ContestParticipationDto | null;
+};
+
+export type ContestLinkDto = {
+  id: string;
+  label: string;
+  url: string;
+  type: "WEBSITE" | "TELEGRAM" | "INSTAGRAM" | "OTHER";
+  visibility: "PUBLIC" | "PARTICIPANTS_ONLY";
+};
+
+export type ParticipantContestContent = {
+  longDescription: string | null;
+  instructions: string | null;
+  participationSteps: string[];
+  fullRules: string | null;
+  terms: string | null;
+  additionalInformation: string | null;
+  links: ContestLinkDto[];
+  guess: {
+    numericValue: number;
+    unit: string;
+    submittedAt: Date | string;
+    updatedAt: Date | string;
+  } | null;
+  allowGuessEditing: boolean;
+};
+
+export type ContestResultDto = {
+  text: string | null;
+  imageUrl: string | null;
+  weight: number | null;
+  weightUnit: string | null;
+  publishedAt: Date | string;
 };
 
 export type ContestParticipationDto = {
@@ -155,36 +203,49 @@ function participationDto(row: typeof contestParticipations.$inferSelect): Conte
   };
 }
 
-function phaseFor(startsAt: Date | string, endsAt: Date | string, now = new Date()): ContestPhase {
-  if (new Date(endsAt) <= now) return "ENDED";
-  if (new Date(startsAt) > now) return "UPCOMING";
-  return "ACTIVE";
-}
-
 function contestCardDto(row: ContestRow) {
-  const phase = phaseFor(row.starts_at, row.ends_at);
   const maxParticipants = row.max_participants === null ? null : Number(row.max_participants);
   const participantCount = Number(row.participant_count);
   const capacityCount = Number(row.capacity_count);
   const remainingParticipants =
     maxParticipants === null ? null : Math.max(0, maxParticipants - capacityCount);
-  const now = new Date();
-  const registrationStarted =
-    row.registration_starts_at === null || new Date(row.registration_starts_at) <= now;
-  const registrationNotEnded =
-    row.registration_ends_at === null || new Date(row.registration_ends_at) > now;
-  const isFull = maxParticipants !== null && capacityCount >= maxParticipants;
+  const dates = effectiveContestDates({
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    registrationStartsAt: row.registration_starts_at,
+    registrationEndsAt: row.registration_ends_at,
+  });
+  const effectiveStatus = getContestEffectiveStatus({
+    status: row.status,
+    ...dates,
+    registrationsOpen: row.registrations_open,
+    registrationsManuallyClosed: row.registrations_manually_closed,
+    maxParticipants,
+    participantCount: capacityCount,
+    resultPublishedAt: row.result_published_at,
+  });
+  const phase: ContestPhase =
+    effectiveStatus === "UPCOMING"
+      ? "UPCOMING"
+      : effectiveStatus === "ENDED" || effectiveStatus === "ENDED_PENDING_RESULT"
+        ? "ENDED"
+        : "ACTIVE";
+  const isFull = effectiveStatus === "FULL";
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
     summary: row.summary,
-    imageUrl: row.image_url,
-    status: row.status,
+    imageUrl:
+      row.image_url ??
+      (row.main_image_bucket && row.main_image_path
+        ? publicStorageUrl(row.main_image_bucket, row.main_image_path)
+        : null),
+    status: effectiveStatus,
     phase,
     isFeatured: row.is_featured,
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
+    startsAt: dates.startsAt,
+    endsAt: dates.endsAt,
     scoringMode: row.scoring_mode,
     reward: row.reward,
     participantCount,
@@ -193,22 +254,24 @@ function contestCardDto(row: ContestRow) {
     isFull,
     registrationsOpen: row.registrations_open,
     contestType: row.contest_type,
-    participationOpen:
-      phase === "ACTIVE" &&
-      ["OPEN", "ACTIVE"].includes(row.status) &&
-      row.registrations_open &&
-      registrationStarted &&
-      registrationNotEnded &&
-      !isFull,
+    participationOpen: effectiveStatus === "OPEN",
+    timeZone: getEnv().APP_TIMEZONE,
   };
 }
 
-const publicContestStatusSql = `c.status in ('UPCOMING','OPEN','FULL','CLOSED','SCHEDULED','ACTIVE','PAUSED','ENDED')`;
+const publicContestStatusSql = `c.status::text not in ('DRAFT','CANCELLED')`;
 const phaseSql = `case
-  when c.ends_at <= now() then 'ended'
-  when c.starts_at > now() then 'upcoming'
+  when coalesce(c.registration_ends_at,c.ends_at) <= now() then 'ended'
+  when coalesce(c.registration_starts_at,c.starts_at) > now() then 'upcoming'
   else 'active'
 end`;
+const publicContestColumns = `c.id,c.slug,c.title,
+  coalesce(c.short_description,c.summary) summary,
+  coalesce(c.main_image_url,c.image_url) image_url,
+  c.status,c.contest_type,c.is_featured,c.starts_at,c.ends_at,c.scoring_mode,c.criteria,c.reward,
+  c.reward_badge_id,c.max_participants,c.require_entry,c.registrations_open,
+  c.registrations_manually_closed,c.registration_starts_at,c.registration_ends_at,
+  c.result_published_at,c.public_intro,c.short_rules,c.main_image_bucket,c.main_image_path`;
 
 export async function listPublicContests(query: ContestQuery) {
   const sqlClient = getSqlClient();
@@ -216,7 +279,7 @@ export async function listPublicContests(query: ContestQuery) {
     { items: ContestRow[] | null; total: number | string }[]
   >(
     `with eligible as (
-      select c.*,
+      select ${publicContestColumns},
         (select count(*)::int from contest_participations p
           where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) participant_count,
         (select count(*)::int from contest_participations p
@@ -246,17 +309,20 @@ export async function listPublicContests(query: ContestQuery) {
 
 async function readPublicContestRow(slug: string): Promise<ContestRow> {
   const sqlClient = getSqlClient();
-  const [row] = await sqlClient<ContestRow[]>`
-    select c.*,
+  const rows = await sqlClient.unsafe<ContestRow[]>(
+    `
+    select ${publicContestColumns},
       (select count(*)::int from contest_participations p
         where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) participant_count,
       (select count(*)::int from contest_participations p
         where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) capacity_count
     from contests c
-    where c.slug=${slug} and c.deleted_at is null
-      and c.status in ('UPCOMING','OPEN','FULL','CLOSED','SCHEDULED','ACTIVE','PAUSED','ENDED')
+    where c.slug=$1 and c.deleted_at is null and ${publicContestStatusSql}
     limit 1
-  `;
+  `,
+    [slug],
+  );
+  const [row] = rows;
   if (!row) throw notFound("Concours");
   return row;
 }
@@ -324,37 +390,142 @@ async function getViewerParticipation(contestId: string, userId?: string | null)
   return row ?? null;
 }
 
+async function listContestLinks(contestId: string, includeParticipantsOnly: boolean) {
+  return getDb()
+    .select({
+      id: contestLinks.id,
+      label: contestLinks.label,
+      url: contestLinks.url,
+      type: contestLinks.type,
+      visibility: contestLinks.visibility,
+    })
+    .from(contestLinks)
+    .where(
+      includeParticipantsOnly
+        ? eq(contestLinks.contestId, contestId)
+        : and(eq(contestLinks.contestId, contestId), eq(contestLinks.visibility, "PUBLIC")),
+    )
+    .orderBy(contestLinks.displayOrder, contestLinks.id);
+}
+
+async function getParticipantContent(contestId: string, userId?: string | null) {
+  if (!userId) return null;
+  const [row] = await getSqlClient()<
+    Array<{
+      instructions: string | null;
+      long_description: string | null;
+      participation_steps: string[];
+      full_rules: string | null;
+      terms: string | null;
+      additional_information: string | null;
+      allow_guess_editing: boolean;
+      guess_value: number | null;
+      guess_unit: string | null;
+      guess_submitted_at: Date | string | null;
+      guess_updated_at: Date | string | null;
+    }>
+  >`
+    select coalesce(c.participant_instructions,nullif(c.instructions,'')) instructions,
+      coalesce(c.long_description,nullif(c.description,'')) long_description,
+      c.participation_steps,coalesce(c.full_rules,c.rules) full_rules,c.terms,c.additional_information,
+      c.allow_guess_editing,g.numeric_value::float8 guess_value,g.unit guess_unit,
+      g.submitted_at guess_submitted_at,g.updated_at guess_updated_at
+    from contests c join contest_participations p on p.contest_id=c.id
+      and p.user_id=${userId}::uuid and p.status in ('PENDING_REVIEW','APPROVED')
+    left join contest_guesses g on g.contest_id=c.id and g.user_id=p.user_id
+    where c.id=${contestId}::uuid
+    limit 1
+  `;
+  if (!row) return null;
+  const links = await listContestLinks(contestId, true);
+  return {
+    instructions: row.instructions,
+    longDescription: row.long_description,
+    participationSteps: Array.isArray(row.participation_steps) ? row.participation_steps : [],
+    fullRules: row.full_rules,
+    terms: row.terms,
+    additionalInformation: row.additional_information,
+    links: links.filter((link) => link.visibility === "PARTICIPANTS_ONLY"),
+    guess:
+      row.guess_value === null ||
+      !row.guess_unit ||
+      !row.guess_submitted_at ||
+      !row.guess_updated_at
+        ? null
+        : {
+            numericValue: Number(row.guess_value),
+            unit: row.guess_unit,
+            submittedAt: row.guess_submitted_at,
+            updatedAt: row.guess_updated_at,
+          },
+    allowGuessEditing: row.allow_guess_editing,
+  } satisfies ParticipantContestContent;
+}
+
+async function getPublishedContestResult(contestId: string): Promise<ContestResultDto | null> {
+  const [result] = await getSqlClient()<
+    Array<{
+      result_text: string | null;
+      result_image_url: string | null;
+      result_image_path: string | null;
+      secret_weight: number | null;
+      weight_unit: string | null;
+      custom_weight_unit: string | null;
+      result_published_at: Date | string;
+    }>
+  >`
+    select result_text,result_image_url,result_image_path,secret_weight::float8 secret_weight,
+      weight_unit,custom_weight_unit,result_published_at
+    from contests
+    where id=${contestId}::uuid and result_published_at is not null
+    limit 1
+  `;
+  if (!result) return null;
+  const signed = result.result_image_path
+    ? await signedStorageUrls("contest-results", [result.result_image_path])
+    : new Map<string, string>();
+  return {
+    text: result.result_text,
+    imageUrl:
+      result.result_image_url ??
+      (result.result_image_path ? (signed.get(result.result_image_path) ?? null) : null),
+    weight: result.secret_weight === null ? null : Number(result.secret_weight),
+    weightUnit: result.weight_unit === "CUSTOM" ? result.custom_weight_unit : result.weight_unit,
+    publishedAt: result.result_published_at,
+  };
+}
+
 export async function getPublicContest(slug: string, viewerUserId?: string | null) {
   const row = await readPublicContestRow(slug);
-  const [winners, viewerParticipation, rewardBadge] = await Promise.all([
-    listContestWinners(row.id),
-    getViewerParticipation(row.id, viewerUserId),
-    row.reward_badge_id
-      ? getDb().query.badges.findFirst({
-          columns: { id: true, slug: true, name: true, description: true, icon: true },
-          where: (badge, operators) =>
-            operators.and(
-              operators.eq(badge.id, row.reward_badge_id!),
-              operators.eq(badge.isActive, true),
-            ),
-        })
-      : Promise.resolve(undefined),
-  ]);
+  const [viewerParticipation, rewardBadge, publicLinks, participantContent, result] =
+    await Promise.all([
+      getViewerParticipation(row.id, viewerUserId),
+      row.reward_badge_id
+        ? getDb().query.badges.findFirst({
+            columns: { id: true, slug: true, name: true, description: true, icon: true },
+            where: (badge, operators) =>
+              operators.and(
+                operators.eq(badge.id, row.reward_badge_id!),
+                operators.eq(badge.isActive, true),
+              ),
+          })
+        : Promise.resolve(undefined),
+      listContestLinks(row.id, false),
+      getParticipantContent(row.id, viewerUserId),
+      getPublishedContestResult(row.id),
+    ]);
+  const winners = result ? await listContestWinners(row.id) : [];
   return {
     ...contestCardDto(row),
-    description: row.description,
-    rules: row.rules,
+    publicIntro: row.public_intro,
+    shortRules: row.short_rules,
     criteria: row.criteria,
     rewardBadge: rewardBadge ?? null,
     maxParticipants: row.max_participants === null ? null : Number(row.max_participants),
     requireEntry: row.require_entry,
-    instructions: row.instructions,
-    participationSteps: Array.isArray(row.participation_steps) ? row.participation_steps : [],
-    externalUrl: row.external_url,
-    telegramUrl: row.telegram_url,
-    instagramUrl: row.instagram_url,
-    terms: row.terms,
-    additionalInformation: row.additional_information,
+    publicLinks,
+    participantContent,
+    result,
     registrationStartsAt: row.registration_starts_at,
     registrationEndsAt: row.registration_ends_at,
     winners,
@@ -497,19 +668,8 @@ export async function joinContest(
       .where(and(eq(contests.slug, slug), isNull(contests.deletedAt)))
       .limit(1)
       .for("update");
-    if (!contest || !["OPEN", "ACTIVE"].includes(contest.status)) {
-      throw notFound("Concours actif");
-    }
+    if (!contest) throw notFound("Concours");
     const now = new Date();
-    if (
-      !contest.registrationsOpen ||
-      contest.startsAt > now ||
-      contest.endsAt <= now ||
-      (contest.registrationStartsAt && contest.registrationStartsAt > now) ||
-      (contest.registrationEndsAt && contest.registrationEndsAt <= now)
-    ) {
-      throw conflict("Les participations ne sont pas ouvertes.", "CONTEST_CLOSED");
-    }
     if (contest.requireEntry && !input.entryId) {
       throw conflict("Une fiche publiée est requise.", "CONTEST_ENTRY_REQUIRED");
     }
@@ -529,19 +689,34 @@ export async function joinContest(
     if (existing && existing.status !== "WITHDRAWN") {
       throw conflict("Vous participez déjà à ce concours.", "CONTEST_ALREADY_JOINED");
     }
-    if (contest.maxParticipants !== null) {
-      const [total] = await tx
-        .select({ value: count() })
-        .from(contestParticipations)
-        .where(
-          and(
-            eq(contestParticipations.contestId, contest.id),
-            inArray(contestParticipations.status, ["PENDING_REVIEW", "APPROVED"]),
-          ),
-        );
-      if (Number(total?.value ?? 0) >= contest.maxParticipants) {
-        throw conflict("Le concours a atteint sa capacité maximale.", "CONTEST_FULL");
-      }
+    const [total] = await tx
+      .select({ value: count() })
+      .from(contestParticipations)
+      .where(
+        and(
+          eq(contestParticipations.contestId, contest.id),
+          inArray(contestParticipations.status, ["PENDING_REVIEW", "APPROVED"]),
+        ),
+      );
+    const participationError = contestParticipationError(
+      getContestEffectiveStatus(
+        {
+          status: contest.status,
+          startsAt: contest.startsAt,
+          endsAt: contest.endsAt,
+          registrationStartsAt: contest.registrationStartsAt,
+          registrationEndsAt: contest.registrationEndsAt,
+          registrationsOpen: contest.registrationsOpen,
+          registrationsManuallyClosed: contest.registrationsManuallyClosed,
+          maxParticipants: contest.maxParticipants,
+          participantCount: Number(total?.value ?? 0),
+          resultPublishedAt: contest.resultPublishedAt,
+        },
+        now,
+      ),
+    );
+    if (participationError) {
+      throw conflict(participationError.message, participationError.code);
     }
 
     const values = {
@@ -591,6 +766,125 @@ export async function joinContest(
     metadata: { contestSlug: slug },
   });
   return participation;
+}
+
+export async function submitContestGuess(
+  slug: string,
+  input: GuessInput,
+  actor: CurrentUser,
+  requestId?: string,
+) {
+  return getDb().transaction(async (tx) => {
+    const [contest] = await tx
+      .select({
+        id: contests.id,
+        contestType: contests.contestType,
+        endsAt: contests.endsAt,
+        registrationEndsAt: contests.registrationEndsAt,
+        weightUnit: contests.weightUnit,
+        allowGuessEditing: contests.allowGuessEditing,
+      })
+      .from(contests)
+      .where(and(eq(contests.slug, slug), isNull(contests.deletedAt)))
+      .limit(1)
+      .for("update");
+    if (!contest || contest.contestType !== "WEIGHT_GUESS") throw notFound("Jeu du poids");
+    if ((contest.registrationEndsAt ?? contest.endsAt) <= new Date()) {
+      throw conflict("Ce concours est terminé.", "CONTEST_ENDED");
+    }
+    const [participation] = await tx
+      .select({ id: contestParticipations.id, status: contestParticipations.status })
+      .from(contestParticipations)
+      .where(
+        and(
+          eq(contestParticipations.contestId, contest.id),
+          eq(contestParticipations.userId, actor.id),
+          inArray(contestParticipations.status, ["PENDING_REVIEW", "APPROVED"]),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!participation) {
+      throw conflict("Participe d’abord au concours.", "CONTEST_PARTICIPATION_REQUIRED");
+    }
+    const [existing] = await tx
+      .select()
+      .from(contestGuesses)
+      .where(and(eq(contestGuesses.contestId, contest.id), eq(contestGuesses.userId, actor.id)))
+      .limit(1)
+      .for("update");
+    if (existing && !contest.allowGuessEditing) {
+      throw conflict("Ton estimation est déjà enregistrée.", "CONTEST_GUESS_LOCKED");
+    }
+    const now = new Date();
+    const [guess] = existing
+      ? await tx
+          .update(contestGuesses)
+          .set({
+            numericValue: String(input.numericValue),
+            submissionCount: existing.submissionCount + 1,
+            updatedAt: now,
+          })
+          .where(eq(contestGuesses.id, existing.id))
+          .returning()
+      : await tx
+          .insert(contestGuesses)
+          .values({
+            contestId: contest.id,
+            userId: actor.id,
+            participationId: participation.id,
+            numericValue: String(input.numericValue),
+            unit: contest.weightUnit ?? "g",
+            submittedAt: now,
+            updatedAt: now,
+          })
+          .returning();
+    if (!guess) throw new Error("Contest guess insert failed");
+    await tx.insert(auditLogs).values(
+      auditValues({
+        actorUserId: actor.id,
+        actorTelegramIdSnapshot: actor.telegramId,
+        action: existing ? "CONTEST_GUESS_UPDATED" : "CONTEST_GUESS_SUBMITTED",
+        entityType: "CONTEST_GUESS",
+        entityId: guess.id,
+        source: "API",
+        requestId,
+        before: existing,
+        after: guess,
+        metadata: { contestId: contest.id },
+      }),
+    );
+    return {
+      id: guess.id,
+      numericValue: Number(guess.numericValue),
+      unit: guess.unit,
+      submittedAt: guess.submittedAt,
+      updatedAt: guess.updatedAt,
+    };
+  });
+}
+
+export async function recordContestEvent(
+  slug: string,
+  input: ContestEventInput,
+  viewerUserId?: string | null,
+) {
+  const [contest] = await getDb()
+    .select({ id: contests.id })
+    .from(contests)
+    .where(and(eq(contests.slug, slug), isNull(contests.deletedAt)))
+    .limit(1);
+  if (!contest) throw notFound("Concours");
+  const [event] = await getDb()
+    .insert(contestViewEvents)
+    .values({
+      contestId: contest.id,
+      userId: viewerUserId ?? null,
+      eventType: input.eventType,
+      metadata: input.linkId ? { linkId: input.linkId } : {},
+    })
+    .returning({ id: contestViewEvents.id });
+  return event;
 }
 
 export async function withdrawFromContest(slug: string, actor: CurrentUser, requestId?: string) {

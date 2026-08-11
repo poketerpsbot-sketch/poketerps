@@ -199,6 +199,7 @@ export const contestStatusEnum = pgEnum("contest_status", [
   "OPEN",
   "FULL",
   "CLOSED",
+  "ENDED_PENDING_RESULT",
 ]);
 export const contestScoringModeEnum = pgEnum("contest_scoring_mode", [
   "MANUAL",
@@ -235,6 +236,9 @@ export const userNotificationTypeEnum = pgEnum("user_notification_type", [
   "CONTEST",
   "SYSTEM",
   "ENTRY_CHANGES_REQUESTED",
+  "CONTEST_NEW",
+  "CONTEST_RESULT",
+  "CONTEST_WINNER",
 ]);
 export const contestTypeEnum = pgEnum("contest_type", [
   "GAME",
@@ -244,6 +248,55 @@ export const contestTypeEnum = pgEnum("contest_type", [
   "EXTERNAL_LINK",
   "COMMUNITY",
   "OTHER",
+  "WEIGHT_GUESS",
+]);
+export const contestLinkTypeEnum = pgEnum("contest_link_type", [
+  "WEBSITE",
+  "TELEGRAM",
+  "INSTAGRAM",
+  "OTHER",
+]);
+export const contestLinkVisibilityEnum = pgEnum("contest_link_visibility", [
+  "PUBLIC",
+  "PARTICIPANTS_ONLY",
+]);
+export const contestTieBreakerModeEnum = pgEnum("contest_tie_breaker_mode", [
+  "FIRST_SUBMISSION",
+  "RANDOM",
+  "MANUAL",
+]);
+export const contestResultPublicationModeEnum = pgEnum("contest_result_publication_mode", [
+  "MANUAL",
+  "AUTOMATIC",
+]);
+export const contestEventTypeEnum = pgEnum("contest_event_type", [
+  "PAGE_VIEW",
+  "JOIN_CLICK",
+  "LINK_CLICK",
+]);
+export const contestWinnerHistoryActionEnum = pgEnum("contest_winner_history_action", [
+  "SELECTED",
+  "REPLACED",
+  "REMOVED",
+]);
+export const telegramBroadcastTypeEnum = pgEnum("telegram_broadcast_type", [
+  "CONTEST_NEW",
+  "CONTEST_RESULT",
+  "CONTEST_WINNER",
+]);
+export const telegramBroadcastStatusEnum = pgEnum("telegram_broadcast_status", [
+  "QUEUED",
+  "PROCESSING",
+  "COMPLETED",
+  "PARTIAL",
+  "FAILED",
+]);
+export const telegramDeliveryStatusEnum = pgEnum("telegram_delivery_status", [
+  "QUEUED",
+  "SENT",
+  "FAILED",
+  "BLOCKED",
+  "RETRY",
 ]);
 export const userSessionPlatformEnum = pgEnum("user_session_platform", [
   "MINI_APP",
@@ -347,6 +400,7 @@ export const userProfileSettings = pgTable("user_profile_settings", {
   ageGateConfirmedAt: timestamp("age_gate_confirmed_at", { withTimezone: true }),
   notifyReviewStatus: boolean("notify_review_status").notNull().default(true),
   notifySubmissionStatus: boolean("notify_submission_status").notNull().default(true),
+  notifyContests: boolean("notify_contests").notNull().default(true),
   ...timestamps,
 });
 
@@ -816,9 +870,9 @@ export const contests = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     slug: text("slug").notNull().unique(),
     title: text("title").notNull(),
-    summary: text("summary").notNull(),
-    description: text("description").notNull(),
-    rules: text("rules").notNull(),
+    summary: text("summary"),
+    description: text("description"),
+    rules: text("rules"),
     imageUrl: text("image_url"),
     status: contestStatusEnum("status").notNull().default("DRAFT"),
     contestType: contestTypeEnum("contest_type").notNull().default("OTHER"),
@@ -833,6 +887,32 @@ export const contests = pgTable(
     registrationStartsAt: timestamp("registration_starts_at", { withTimezone: true }),
     registrationEndsAt: timestamp("registration_ends_at", { withTimezone: true }),
     registrationsClosedAt: timestamp("registrations_closed_at", { withTimezone: true }),
+    shortDescription: text("short_description"),
+    publicIntro: text("public_intro"),
+    participantInstructions: text("participant_instructions"),
+    shortRules: text("short_rules"),
+    fullRules: text("full_rules"),
+    longDescription: text("long_description"),
+    mainImageUrl: text("main_image_url"),
+    resultImageUrl: text("result_image_url"),
+    mainImageBucket: text("main_image_bucket"),
+    mainImagePath: text("main_image_path"),
+    resultImageBucket: text("result_image_bucket"),
+    resultImagePath: text("result_image_path"),
+    resultText: text("result_text"),
+    registrationsManuallyClosed: boolean("registrations_manually_closed").notNull().default(false),
+    resultPublicationMode: contestResultPublicationModeEnum("result_publication_mode")
+      .notNull()
+      .default("MANUAL"),
+    resultPublishedAt: timestamp("result_published_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    secretWeight: numeric("secret_weight", { precision: 18, scale: 6 }),
+    weightUnit: text("weight_unit"),
+    customWeightUnit: text("custom_weight_unit"),
+    allowGuessEditing: boolean("allow_guess_editing").notNull().default(false),
+    tieBreakerMode: contestTieBreakerModeEnum("tie_breaker_mode").notNull().default("MANUAL"),
+    notifyTelegramOnPublish: boolean("notify_telegram_on_publish").notNull().default(false),
+    notifyParticipantsOnResult: boolean("notify_participants_on_result").notNull().default(false),
     isFeatured: boolean("is_featured").notNull().default(false),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
@@ -985,6 +1065,165 @@ export const contestWinners = pgTable(
     ),
     check("contest_winners_prize_object", sql`jsonb_typeof(${table.prize})='object'`),
     index("contest_winners_participation_idx").on(table.participationId),
+  ],
+);
+
+export const contestLinks = pgTable(
+  "contest_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contestId: uuid("contest_id")
+      .notNull()
+      .references(() => contests.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    url: text("url").notNull(),
+    type: contestLinkTypeEnum("type").notNull().default("WEBSITE"),
+    visibility: contestLinkVisibilityEnum("visibility").notNull().default("PUBLIC"),
+    displayOrder: integer("display_order").notNull().default(0),
+    ...timestamps,
+  },
+  (table) => [
+    index("contest_links_contest_visibility_order_idx").on(
+      table.contestId,
+      table.visibility,
+      table.displayOrder,
+      table.id,
+    ),
+  ],
+);
+
+export const contestGuesses = pgTable(
+  "contest_guesses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contestId: uuid("contest_id")
+      .notNull()
+      .references(() => contests.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    participationId: uuid("participation_id").notNull(),
+    numericValue: numeric("numeric_value", { precision: 18, scale: 6 }).notNull(),
+    unit: text("unit").notNull(),
+    submissionCount: integer("submission_count").notNull().default(1),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("contest_guesses_contest_user_key").on(table.contestId, table.userId),
+    foreignKey({
+      columns: [table.participationId, table.contestId],
+      foreignColumns: [contestParticipations.id, contestParticipations.contestId],
+    }).onDelete("cascade"),
+    check("contest_guesses_numeric_positive", sql`${table.numericValue}>0`),
+    check("contest_guesses_submission_count_positive", sql`${table.submissionCount}>0`),
+    index("contest_guesses_contest_value_idx").on(
+      table.contestId,
+      table.numericValue,
+      table.submittedAt,
+    ),
+    index("contest_guesses_user_updated_idx").on(table.userId, table.updatedAt),
+  ],
+);
+
+export const contestWinnerHistory = pgTable(
+  "contest_winner_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contestId: uuid("contest_id")
+      .notNull()
+      .references(() => contests.id, { onDelete: "cascade" }),
+    action: contestWinnerHistoryActionEnum("action").notNull(),
+    previousWinnerUserId: uuid("previous_winner_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    winnerUserId: uuid("winner_user_id").references(() => users.id, { onDelete: "set null" }),
+    selectedById: uuid("selected_by_id").references(() => users.id, { onDelete: "set null" }),
+    selectedByRole: userRoleEnum("selected_by_role"),
+    reason: text("reason"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("contest_winner_history_contest_created_idx").on(table.contestId, table.createdAt),
+  ],
+);
+
+export const contestViewEvents = pgTable(
+  "contest_view_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    contestId: uuid("contest_id")
+      .notNull()
+      .references(() => contests.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    eventType: contestEventTypeEnum("event_type").notNull(),
+    sessionKeyHash: text("session_key_hash"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("contest_view_events_contest_type_created_idx").on(
+      table.contestId,
+      table.eventType,
+      table.createdAt,
+    ),
+    index("contest_view_events_user_created_idx").on(table.userId, table.createdAt),
+  ],
+);
+
+export const telegramBroadcasts = pgTable(
+  "telegram_broadcasts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: telegramBroadcastTypeEnum("type").notNull(),
+    contestId: uuid("contest_id")
+      .notNull()
+      .references(() => contests.id, { onDelete: "cascade" }),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    status: telegramBroadcastStatusEnum("status").notNull().default("QUEUED"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    totalRecipients: integer("total_recipients").notNull().default(0),
+    sentCount: integer("sent_count").notNull().default(0),
+    failedCount: integer("failed_count").notNull().default(0),
+    retryCount: integer("retry_count").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("telegram_broadcasts_status_created_idx").on(table.status, table.createdAt),
+    index("telegram_broadcasts_contest_created_idx").on(table.contestId, table.createdAt),
+  ],
+);
+
+export const telegramBroadcastDeliveries = pgTable(
+  "telegram_broadcast_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    broadcastId: uuid("broadcast_id")
+      .notNull()
+      .references(() => telegramBroadcasts.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: telegramDeliveryStatusEnum("status").notNull().default("QUEUED"),
+    telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("telegram_broadcast_deliveries_broadcast_user_key").on(table.broadcastId, table.userId),
+    index("telegram_broadcast_deliveries_queue_idx").on(
+      table.status,
+      table.nextAttemptAt,
+      table.createdAt,
+    ),
   ],
 );
 

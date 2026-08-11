@@ -11,9 +11,10 @@ export type ContestStatus =
   | "ACTIVE"
   | "PAUSED"
   | "ENDED"
-  | "CANCELLED";
+  | "CANCELLED"
+  | "ENDED_PENDING_RESULT";
 export type ContestType =
-  "GAME" | "DRAW" | "CREATIVE" | "ENTRY" | "EXTERNAL_LINK" | "COMMUNITY" | "OTHER";
+  "GAME" | "DRAW" | "CREATIVE" | "ENTRY" | "EXTERNAL_LINK" | "COMMUNITY" | "OTHER" | "WEIGHT_GUESS";
 export type ContestScoringMode =
   "MANUAL" | "ENTRY_LIKES" | "ENTRY_VIEWS" | "ENTRY_FAVORITES" | "ENTRY_RATING" | "COMPOSITE";
 export type ContestParticipationStatus =
@@ -54,6 +55,8 @@ export type ContestCardData = {
   summary: string;
   imageUrl: string | null;
   status: ContestStatus;
+  effectiveStatus?: ContestStatus;
+  effective_status?: ContestStatus;
   phase: ContestPhase;
   isFeatured: boolean;
   startsAt: string;
@@ -67,11 +70,33 @@ export type ContestCardData = {
   registrationsOpen: boolean;
   contestType: ContestType;
   participationOpen: boolean;
+  timeZone?: string;
+};
+
+export type ContestLink = {
+  id?: string;
+  label: string;
+  url: string;
+  type: "WEBSITE" | "TELEGRAM" | "INSTAGRAM" | "OTHER";
+  visibility: "PUBLIC" | "PARTICIPANTS_ONLY";
+  displayOrder?: number;
+};
+
+export type ParticipantContestContent = {
+  longDescription: string | null;
+  instructions: string | null;
+  participationSteps: string[];
+  fullRules: string | null;
+  terms: string | null;
+  additionalInformation: string | null;
+  links: ContestLink[];
+  guess: { numericValue: number; unit: string; submittedAt: string; updatedAt: string } | null;
+  allowGuessEditing: boolean;
 };
 
 export type ContestDetailData = ContestCardData & {
-  description: string;
-  rules: string;
+  publicIntro?: string | null;
+  shortRules?: string | null;
   criteria: Record<string, unknown>;
   rewardBadge: {
     id: string;
@@ -81,6 +106,22 @@ export type ContestDetailData = ContestCardData & {
     icon: string | null;
   } | null;
   requireEntry: boolean;
+  publicLinks?: ContestLink[];
+  participantContent?: ParticipantContestContent | null;
+  result?: {
+    text: string | null;
+    imageUrl: string | null;
+    weight: number | null;
+    weightUnit: string | null;
+    publishedAt: string;
+  } | null;
+  registrationStartsAt: string | null;
+  registrationEndsAt: string | null;
+  winners: ContestWinner[];
+  viewerParticipation: ContestParticipation | null;
+  /** Legacy optional fields kept only for old serialized contests during migration. */
+  description: string;
+  rules: string;
   instructions: string;
   participationSteps: string[];
   externalUrl: string | null;
@@ -88,10 +129,6 @@ export type ContestDetailData = ContestCardData & {
   instagramUrl: string | null;
   terms: string | null;
   additionalInformation: string | null;
-  registrationStartsAt: string | null;
-  registrationEndsAt: string | null;
-  winners: ContestWinner[];
-  viewerParticipation: ContestParticipation | null;
 };
 
 export type ContestLeaderboardItem = {
@@ -109,6 +146,7 @@ export type ContestLeaderboardItem = {
 };
 
 export type AdminContest = {
+  canManageWinner?: boolean;
   id: string;
   slug: string;
   title: string;
@@ -118,6 +156,8 @@ export type AdminContest = {
   imageUrl: string | null;
   image_url?: string | null;
   status: ContestStatus;
+  effectiveStatus?: ContestStatus;
+  effective_status?: ContestStatus;
   isFeatured: boolean;
   is_featured?: boolean;
   startsAt: string;
@@ -136,6 +176,33 @@ export type AdminContest = {
   require_entry?: boolean;
   contestType: ContestType;
   contest_type?: ContestType;
+  shortDescription?: string | null;
+  publicIntro?: string | null;
+  participantInstructions?: string | null;
+  shortRules?: string | null;
+  fullRules?: string | null;
+  longDescription?: string | null;
+  mainImageUrl?: string | null;
+  mainImageBucket?: "contest-images" | null;
+  mainImagePath?: string | null;
+  resultImageUrl?: string | null;
+  resultImageBucket?: "contest-results" | null;
+  resultImagePath?: string | null;
+  resultText?: string | null;
+  registrationsManuallyClosed?: boolean;
+  resultPublicationMode?: "MANUAL" | "AUTOMATIC";
+  resultPublishedAt?: string | null;
+  secretWeight?: number | string | null;
+  weightUnit?: "mg" | "g" | "kg" | "CUSTOM" | null;
+  customWeightUnit?: string | null;
+  allowGuessEditing?: boolean;
+  tieBreakerMode?: "FIRST_SUBMISSION" | "RANDOM" | "MANUAL";
+  notifyTelegramOnPublish?: boolean;
+  notifyParticipantsOnResult?: boolean;
+  links?: ContestLink[];
+  analytics?: Record<string, number | null> | null;
+  guessRanking?: Array<Record<string, unknown>>;
+  winnerHistory?: Array<Record<string, unknown>>;
   instructions: string;
   participationSteps: string[];
   participation_steps?: string[];
@@ -227,4 +294,28 @@ export type ContestFormValue = {
   registrationsOpen: boolean;
   registrationStartsAt: string | null;
   registrationEndsAt: string | null;
+  shortDescription?: string | null;
+  publicIntro?: string | null;
+  participantInstructions?: string | null;
+  shortRules?: string | null;
+  fullRules?: string | null;
+  longDescription?: string | null;
+  mainImageUrl?: string | null;
+  mainImageBucket?: "contest-images" | null;
+  mainImagePath?: string | null;
+  resultImageUrl?: string | null;
+  resultImageBucket?: "contest-results" | null;
+  resultImagePath?: string | null;
+  resultText?: string | null;
+  registrationsManuallyClosed?: boolean;
+  resultPublicationMode?: "MANUAL" | "AUTOMATIC";
+  resultPublishedAt?: string | null;
+  secretWeight?: number | null;
+  weightUnit?: "mg" | "g" | "kg" | "CUSTOM" | null;
+  customWeightUnit?: string | null;
+  allowGuessEditing?: boolean;
+  tieBreakerMode?: "FIRST_SUBMISSION" | "RANDOM" | "MANUAL";
+  notifyTelegramOnPublish?: boolean;
+  notifyParticipantsOnResult?: boolean;
+  links?: ContestLink[];
 };

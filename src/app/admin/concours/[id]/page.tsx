@@ -63,6 +63,7 @@ export default async function AdminContestDetailPage({
           initialContest={contest}
           initialParticipations={participations}
           canManage={canManage}
+          canManageWinner={contest.canManageWinner ?? canManage}
         />
       )}
     </>

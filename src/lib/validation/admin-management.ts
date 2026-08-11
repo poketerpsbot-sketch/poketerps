@@ -273,6 +273,7 @@ export const teamPermissionCodeSchema = z.enum([
   "VIEW_ADMIN_ACTIVITY",
   "VIEW_MODERATOR_ACTIVITY",
   "VIEW_TEAM_AUDIT_LOG",
+  "MANAGE_CONTEST_WINNER",
 ]);
 
 export const updateUserTeamPermissionSchema = z.object({

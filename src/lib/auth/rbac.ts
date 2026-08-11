@@ -29,7 +29,8 @@ export type Permission =
   | "audit:read"
   | "VIEW_ADMIN_ACTIVITY"
   | "VIEW_MODERATOR_ACTIVITY"
-  | "VIEW_TEAM_AUDIT_LOG";
+  | "VIEW_TEAM_AUDIT_LOG"
+  | "MANAGE_CONTEST_WINNER";
 
 const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
   OWNER: new Set(["*"]),
@@ -56,6 +57,7 @@ const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
     "telegram:admin",
     "audit:read",
     "VIEW_MODERATOR_ACTIVITY",
+    "MANAGE_CONTEST_WINNER",
   ]),
   MODERATOR: new Set([
     "entry:moderate",

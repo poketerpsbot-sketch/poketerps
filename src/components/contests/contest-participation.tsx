@@ -39,6 +39,9 @@ export function ContestParticipationPanel({
   const [feedback, setFeedback] = useState("");
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [joined, setJoined] = useState(false);
+  const [guess, setGuess] = useState(
+    initialContest.participantContent?.guess?.numericValue?.toString() ?? "",
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -72,6 +75,15 @@ export function ContestParticipationPanel({
     };
   }, [initialContest.slug]);
 
+  useEffect(() => {
+    void fetch(`/api/contests/${encodeURIComponent(initialContest.slug)}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventType: "PAGE_VIEW" }),
+      keepalive: true,
+    });
+  }, [initialContest.slug]);
+
   async function reloadContest() {
     const response = await fetch(`/api/contests/${encodeURIComponent(contest.slug)}`, {
       cache: "no-store",
@@ -89,6 +101,12 @@ export function ContestParticipationPanel({
     }
     setFeedback("");
     setConfirmationOpen(true);
+    void fetch(`/api/contests/${encodeURIComponent(contest.slug)}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventType: "JOIN_CLICK" }),
+      keepalive: true,
+    });
   }
 
   async function participate() {
@@ -129,6 +147,24 @@ export function ContestParticipationPanel({
     setFeedback("Ta participation a été retirée.");
   }
 
+  async function submitGuess(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setFeedback("");
+    const result = await submitJson(
+      `/api/contests/${encodeURIComponent(contest.slug)}/guess`,
+      "POST",
+      { numericValue: Number(guess) },
+    );
+    setPending(false);
+    if (!result.ok) {
+      setFeedback(result.message);
+      return;
+    }
+    setFeedback("Ton estimation est enregistrée.");
+    await reloadContest();
+  }
+
   const participation = contest.viewerParticipation;
   const canRejoin = participation?.status === "WITHDRAWN";
   const canSubmit = contest.participationOpen && (!participation || canRejoin);
@@ -137,6 +173,42 @@ export function ContestParticipationPanel({
   const showParticipationConfirmation =
     joined ||
     Boolean(participation && ["PENDING_REVIEW", "APPROVED"].includes(participation.status));
+  const participantContent =
+    contest.participantContent ??
+    (showParticipationConfirmation
+      ? {
+          instructions: contest.instructions || null,
+          longDescription: contest.description || null,
+          participationSteps: contest.participationSteps,
+          fullRules: contest.rules || null,
+          terms: contest.terms,
+          additionalInformation: contest.additionalInformation,
+          links: [
+            contest.externalUrl && {
+              label: "Ouvrir le lien",
+              url: contest.externalUrl,
+              type: "WEBSITE" as const,
+              visibility: "PARTICIPANTS_ONLY" as const,
+            },
+            contest.telegramUrl && {
+              label: "Ouvrir Telegram",
+              url: contest.telegramUrl,
+              type: "TELEGRAM" as const,
+              visibility: "PARTICIPANTS_ONLY" as const,
+            },
+            contest.instagramUrl && {
+              label: "Ouvrir Instagram",
+              url: contest.instagramUrl,
+              type: "INSTAGRAM" as const,
+              visibility: "PARTICIPANTS_ONLY" as const,
+            },
+          ].filter((link) => Boolean(link)) as NonNullable<
+            ContestDetailData["participantContent"]
+          >["links"],
+          guess: null,
+          allowGuessEditing: false,
+        }
+      : null);
   const contestEndLabel = new Intl.DateTimeFormat("fr-CH", {
     dateStyle: "long",
     timeStyle: "short",
@@ -180,42 +252,42 @@ export function ContestParticipationPanel({
         </div>
       )}
 
-      {showParticipationConfirmation && (
+      {showParticipationConfirmation && participantContent && (
         <div className="contest-participation__confirmation" role="status">
           <CheckCircle2 aria-hidden="true" />
           <div>
             <strong>✅ Parfait, tu participes maintenant à ce concours !</strong>
             <p>Voici les marches à suivre pour participer correctement :</p>
-            {contest.instructions && <p>{contest.instructions}</p>}
-            {contest.participationSteps.length > 0 && (
+            {participantContent.instructions && <p>{participantContent.instructions}</p>}
+            {participantContent.participationSteps.length > 0 && (
               <ol>
-                {contest.participationSteps.map((step, index) => (
+                {participantContent.participationSteps.map((step, index) => (
                   <li key={`${index}-${step}`}>{step}</li>
                 ))}
               </ol>
             )}
-            {contest.description && (
+            {participantContent.longDescription && (
               <section className="contest-participation__instructions">
                 <h3>Explication du concours</h3>
-                <p>{contest.description}</p>
+                <p>{participantContent.longDescription}</p>
               </section>
             )}
-            {contest.additionalInformation && (
+            {participantContent.additionalInformation && (
               <section className="contest-participation__instructions">
                 <h3>Informations complémentaires</h3>
-                <p>{contest.additionalInformation}</p>
+                <p>{participantContent.additionalInformation}</p>
               </section>
             )}
-            {contest.rules && (
+            {participantContent.fullRules && (
               <section className="contest-participation__instructions">
                 <h3>Règlement</h3>
-                <p>{contest.rules}</p>
+                <p>{participantContent.fullRules}</p>
               </section>
             )}
-            {contest.terms && (
+            {participantContent.terms && (
               <section className="contest-participation__instructions">
                 <h3>Conditions</h3>
-                <p>{contest.terms}</p>
+                <p>{participantContent.terms}</p>
               </section>
             )}
             <p>
@@ -223,20 +295,16 @@ export function ContestParticipationPanel({
               <time dateTime={contest.endsAt}>{contestEndLabel}</time>
             </p>
             <div className="button-row">
-              {[
-                [contest.externalUrl, "Ouvrir le lien"],
-                [contest.telegramUrl, "Ouvrir Telegram"],
-                [contest.instagramUrl, "Ouvrir Instagram"],
-              ].map(([href, label]) =>
-                href ? (
+              {participantContent.links.map((link) =>
+                link.url ? (
                   <a
                     className="button button--secondary"
-                    href={href}
+                    href={link.url}
                     target="_blank"
                     rel="noreferrer"
-                    key={label}
+                    key={`${link.type}-${link.url}`}
                   >
-                    <ExternalLink aria-hidden="true" /> {label}
+                    <ExternalLink aria-hidden="true" /> {link.label}
                   </a>
                 ) : null,
               )}
@@ -244,6 +312,41 @@ export function ContestParticipationPanel({
           </div>
         </div>
       )}
+
+      {showParticipationConfirmation &&
+        participantContent &&
+        contest.contestType === "WEIGHT_GUESS" && (
+          <form className="contest-participation__form" onSubmit={submitGuess}>
+            <div className="field">
+              <label htmlFor="contest-guess">Ton estimation du poids</label>
+              <div className="contest-guess-field">
+                <input
+                  id="contest-guess"
+                  type="number"
+                  min="0"
+                  step="any"
+                  required
+                  value={guess}
+                  disabled={
+                    Boolean(participantContent.guess) && !participantContent.allowGuessEditing
+                  }
+                  onChange={(event) => setGuess(event.target.value)}
+                />
+                <span>{participantContent.guess?.unit ?? "unité du concours"}</span>
+              </div>
+            </div>
+            <button
+              className="button button--dark"
+              type="submit"
+              disabled={
+                pending ||
+                (Boolean(participantContent.guess) && !participantContent.allowGuessEditing)
+              }
+            >
+              {participantContent.guess ? "Mettre à jour mon estimation" : "Valider mon estimation"}
+            </button>
+          </form>
+        )}
 
       {!authenticated && !participation ? (
         <div className="contest-participation__login">

@@ -8,14 +8,25 @@ import sharp from "sharp";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { hasPermission } from "@/lib/auth/rbac";
 import { getDb } from "@/lib/db";
-import { adminMessageAttachments, adminMessages, entries, entryImages } from "@/lib/db/schema";
+import {
+  adminMessageAttachments,
+  adminMessages,
+  contests,
+  entries,
+  entryImages,
+} from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
 import { AppError, forbidden, notFound } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { publicStorageUrl } from "@/lib/services/storage-url";
 
 export type StorageBucket =
-  "entry-images" | "partner-images" | "app-assets" | "message-attachments";
+  | "entry-images"
+  | "partner-images"
+  | "app-assets"
+  | "message-attachments"
+  | "contest-images"
+  | "contest-results";
 
 export type StoredBucket = StorageBucket | "entry-drafts";
 
@@ -29,6 +40,8 @@ const bucketLimits: Record<StorageBucket, number> = {
   "partner-images": 5 * 1024 * 1024,
   "app-assets": 10 * 1024 * 1024,
   "message-attachments": 5 * 1024 * 1024,
+  "contest-images": 8 * 1024 * 1024,
+  "contest-results": 8 * 1024 * 1024,
 };
 
 function storageClient() {
@@ -43,7 +56,12 @@ export function storageDestinationForUpload(bucket: StorageBucket): StoredBucket
 }
 
 export function isPublicStorageBucket(bucket: StoredBucket): boolean {
-  return bucket === "entry-images" || bucket === "partner-images" || bucket === "app-assets";
+  return (
+    bucket === "entry-images" ||
+    bucket === "partner-images" ||
+    bucket === "app-assets" ||
+    bucket === "contest-images"
+  );
 }
 
 function assertEntryImageWritable(
@@ -100,6 +118,12 @@ function authorizeBucket(bucket: StorageBucket, actor: CurrentUser): void {
   ) {
     return;
   }
+  if (
+    (bucket === "contest-images" || bucket === "contest-results") &&
+    hasPermission(actor.role, "contest:manage")
+  ) {
+    return;
+  }
   throw forbidden();
 }
 
@@ -130,6 +154,14 @@ async function assertRelatedResource(
     if (message.userId !== actor.id && !hasPermission(actor.role, "message:manage")) {
       throw forbidden();
     }
+  }
+  if ((bucket === "contest-images" || bucket === "contest-results") && relatedId) {
+    const [contest] = await getDb()
+      .select({ id: contests.id })
+      .from(contests)
+      .where(and(eq(contests.id, relatedId), isNull(contests.deletedAt)))
+      .limit(1);
+    if (!contest) throw notFound("Concours");
   }
 }
 
@@ -172,7 +204,8 @@ export async function uploadImage(
   const supabase = storageClient();
   const { error } = await supabase.storage.from(storedBucket).upload(path, processed.data, {
     contentType: "image/webp",
-    cacheControl: bucket === "message-attachments" ? "3600" : "31536000",
+    cacheControl:
+      bucket === "message-attachments" || bucket === "contest-results" ? "3600" : "31536000",
     upsert: false,
   });
   if (error) {

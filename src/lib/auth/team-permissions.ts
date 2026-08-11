@@ -6,7 +6,10 @@ import { getSqlClient } from "@/lib/db";
 import { forbidden } from "@/lib/errors";
 
 export type TeamActivityPermission =
-  "VIEW_ADMIN_ACTIVITY" | "VIEW_MODERATOR_ACTIVITY" | "VIEW_TEAM_AUDIT_LOG";
+  | "VIEW_ADMIN_ACTIVITY"
+  | "VIEW_MODERATOR_ACTIVITY"
+  | "VIEW_TEAM_AUDIT_LOG"
+  | "MANAGE_CONTEST_WINNER";
 
 export async function hasUserPermission(
   actor: Pick<CurrentUser, "id" | "role">,

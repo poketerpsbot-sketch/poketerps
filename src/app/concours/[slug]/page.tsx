@@ -9,6 +9,7 @@ import {
   Target,
   UsersRound,
   ExternalLink,
+  Scale,
 } from "lucide-react";
 
 import { ContestLeaderboard, ContestWinners } from "@/components/contests/contest-leaderboard";
@@ -97,57 +98,56 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
           <section className="content-panel contest-prose">
             <p className="eyebrow">Présentation</p>
             <h2>Le défi</h2>
-            <div className="contest-rich-text">{contest.description}</div>
+            <div className="contest-rich-text">
+              {contest.publicIntro || contest.summary || "Les détails publics arrivent bientôt."}
+            </div>
           </section>
-          {(contest.instructions ||
-            contest.participationSteps.length > 0 ||
-            contest.additionalInformation) && (
+          {(contest.shortRules || (contest.publicLinks?.length ?? 0) > 0) && (
             <section className="content-panel contest-prose">
-              <p className="eyebrow">Mode d’emploi</p>
-              <h2>Comment participer</h2>
-              {contest.instructions && (
-                <div className="contest-rich-text">{contest.instructions}</div>
-              )}
-              {contest.participationSteps.length > 0 && (
-                <ol className="contest-instructions">
-                  {contest.participationSteps.map((step, index) => (
-                    <li key={`${index}-${step}`}>{step}</li>
-                  ))}
-                </ol>
-              )}
-              {contest.additionalInformation && <p>{contest.additionalInformation}</p>}
+              <p className="eyebrow">Avant de participer</p>
+              <h2>Règles essentielles</h2>
+              {contest.shortRules && <div className="contest-rich-text">{contest.shortRules}</div>}
               <div className="button-row">
-                {[
-                  [contest.externalUrl, "Ouvrir le lien"],
-                  [contest.telegramUrl, "Ouvrir Telegram"],
-                  [contest.instagramUrl, "Ouvrir Instagram"],
-                ].map(([href, label]) =>
-                  href ? (
+                {(contest.publicLinks ?? []).map((link) =>
+                  link.url ? (
                     <a
                       className="button button--secondary"
-                      href={href}
+                      href={link.url}
                       target="_blank"
                       rel="noreferrer"
-                      key={label}
+                      key={`${link.type}-${link.url}`}
                     >
-                      <ExternalLink aria-hidden="true" /> {label}
+                      <ExternalLink aria-hidden="true" /> {link.label}
                     </a>
                   ) : null,
                 )}
               </div>
             </section>
           )}
-          {contest.terms && (
+          {contest.result && (
             <section className="content-panel contest-prose">
-              <p className="eyebrow">Conditions complémentaires</p>
-              <div className="contest-rich-text">{contest.terms}</div>
+              <p className="eyebrow">Résultat officiel</p>
+              <h2>{contest.result.text || "Le résultat est publié"}</h2>
+              {contest.result.weight !== null && (
+                <p>
+                  <Scale aria-hidden="true" /> Poids réel :{" "}
+                  <strong>
+                    {contest.result.weight} {contest.result.weightUnit}
+                  </strong>
+                </p>
+              )}
+              {contest.result.imageUrl && (
+                <a
+                  className="button button--secondary"
+                  href={contest.result.imageUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Voir la photo du résultat
+                </a>
+              )}
             </section>
           )}
-          <section className="content-panel contest-prose">
-            <p className="eyebrow">À respecter</p>
-            <h2>Règlement</h2>
-            <div className="contest-rich-text">{contest.rules}</div>
-          </section>
         </div>
         <aside className="page-stack">
           <section className="content-panel contest-reward">

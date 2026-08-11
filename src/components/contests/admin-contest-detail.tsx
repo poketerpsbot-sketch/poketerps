@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Award,
   Check,
@@ -81,11 +82,14 @@ export function AdminContestDetail({
   initialContest,
   initialParticipations,
   canManage,
+  canManageWinner = canManage,
 }: {
   initialContest: AdminContest;
   initialParticipations: AdminContestParticipation[];
   canManage: boolean;
+  canManageWinner?: boolean;
 }) {
+  const router = useRouter();
   const [contest, setContest] = useState(initialContest);
   const [participations, setParticipations] = useState(initialParticipations);
   const [drafts, setDrafts] = useState<Record<string, ParticipationDraft>>(() =>
@@ -96,6 +100,49 @@ export function AdminContestDetail({
   const [filter, setFilter] = useState<ContestParticipationStatus | "ALL">("ALL");
   const [pending, setPending] = useState("");
   const [feedback, setFeedback] = useState("");
+
+  async function deleteCurrentContest() {
+    if (
+      !window.confirm(
+        `Supprimer le concours « ${contest.title} » ?\n\nIl sera retiré du site. Ses participations, résultats et traces d’audit resteront conservés.`,
+      )
+    ) {
+      return;
+    }
+    setPending("delete");
+    setFeedback("");
+    const result = await submitJson<{ deleted: boolean }>(
+      `/api/admin/contests/${encodeURIComponent(contest.id)}`,
+      "DELETE",
+      {},
+    );
+    if (!result.ok) {
+      setPending("");
+      setFeedback(result.message);
+      return;
+    }
+    router.replace("/admin/concours");
+    router.refresh();
+  }
+
+  async function publishResult() {
+    if (!window.confirm("Publier le résultat ? Les participants pourront immédiatement le voir."))
+      return;
+    setPending("result");
+    setFeedback("");
+    const result = await submitJson<AdminContest>(
+      `/api/admin/contests/${encodeURIComponent(contest.id)}/result`,
+      "POST",
+      { notifyParticipants: true },
+    );
+    setPending("");
+    if (!result.ok || !result.data) {
+      setFeedback(result.message);
+      return;
+    }
+    setContest(result.data);
+    setFeedback("Le résultat est publié et les participants ont été notifiés.");
+  }
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("fr-FR");
@@ -185,6 +232,13 @@ export function AdminContestDetail({
       setFeedback("Indique un rang gagnant valide (1, 2, 3…).");
       return;
     }
+    if (
+      !window.confirm(
+        `Confirmer ${displayName(row)} comme gagnant n°${rank} ? Cette action est historisée.`,
+      )
+    ) {
+      return;
+    }
     setPending(`winner-${row.id}`);
     setFeedback("");
     const result = await submitJson(
@@ -195,6 +249,8 @@ export function AdminContestDetail({
         rank,
         label: draft.winnerLabel.trim() || null,
         prize: contest.reward ?? {},
+        replaceExisting: true,
+        reason: "Sélection confirmée depuis l’administration",
       },
     );
     setPending("");
@@ -255,14 +311,35 @@ export function AdminContestDetail({
             </Link>
           )}
           {canManage && (
-            <button
-              className="button button--dark"
-              type="button"
-              onClick={() => setShowEditor((open) => !open)}
-            >
-              {showEditor ? <X aria-hidden="true" /> : <Save aria-hidden="true" />}
-              {showEditor ? "Fermer" : "Modifier"}
-            </button>
+            <>
+              <button
+                className="button button--dark"
+                type="button"
+                onClick={() => setShowEditor((open) => !open)}
+              >
+                {showEditor ? <X aria-hidden="true" /> : <Save aria-hidden="true" />}
+                {showEditor ? "Fermer" : "Modifier"}
+              </button>
+              {contestEnded && !contest.resultPublishedAt && (
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  disabled={pending === "result"}
+                  onClick={() => void publishResult()}
+                >
+                  <Trophy aria-hidden="true" /> Publier le résultat
+                </button>
+              )}
+              <button
+                className="button button--danger"
+                type="button"
+                disabled={pending === "delete"}
+                onClick={() => void deleteCurrentContest()}
+              >
+                <Trash2 aria-hidden="true" />
+                {pending === "delete" ? "Suppression…" : "Supprimer"}
+              </button>
+            </>
           )}
         </div>
       </section>
@@ -443,7 +520,7 @@ export function AdminContestDetail({
                   </div>
                 )}
 
-                {canManage && row.status === "APPROVED" && (
+                {canManageWinner && row.status === "APPROVED" && (
                   <div className="admin-participation-card__winner">
                     <h4>
                       <Award aria-hidden="true" /> Palmarès

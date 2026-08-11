@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Filter, Medal, Plus, Search, ShieldCheck, UsersRound, X } from "lucide-react";
+import { Filter, Medal, Plus, Search, ShieldCheck, Trash2, UsersRound, X } from "lucide-react";
 
 import { AdminContestForm } from "@/components/contests/admin-contest-form";
 import type { AdminContest, ContestFormValue, ContestStatus } from "@/components/contests/types";
@@ -10,19 +10,18 @@ import { contestStatusLabels, formatContestPeriod } from "@/components/contests/
 import { submitJson } from "@/components/forms/form-api";
 import { EmptyState, StatusPill } from "@/components/ui/states";
 
-const filters: Array<{ value: "ALL" | ContestStatus; label: string }> = [
+type ContestFilter = "ALL" | "ACTIVE" | "UPCOMING" | "ENDED" | "DRAFT";
+const filters: Array<{ value: ContestFilter; label: string }> = [
   { value: "ALL", label: "Tous" },
   { value: "DRAFT", label: "Brouillons" },
   { value: "UPCOMING", label: "À venir" },
-  { value: "OPEN", label: "Inscriptions ouvertes" },
-  { value: "FULL", label: "Complets" },
-  { value: "CLOSED", label: "Inscriptions fermées" },
-  { value: "SCHEDULED", label: "Programmés" },
-  { value: "ACTIVE", label: "Actifs" },
-  { value: "PAUSED", label: "En pause" },
+  { value: "ACTIVE", label: "En cours" },
   { value: "ENDED", label: "Terminés" },
-  { value: "CANCELLED", label: "Annulés" },
 ];
+
+function effectiveStatus(contest: AdminContest): ContestStatus {
+  return contest.effectiveStatus ?? contest.effective_status ?? contest.status;
+}
 
 function count(contest: AdminContest, key: "participants" | "pending") {
   const value =
@@ -48,14 +47,19 @@ export function AdminContestManager({
   const [contests, setContests] = useState(initialContests);
   const [showCreate, setShowCreate] = useState(false);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"ALL" | ContestStatus>("ALL");
+  const [status, setStatus] = useState<ContestFilter>("ALL");
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
 
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("fr-FR");
     return contests.filter((contest) => {
-      if (status !== "ALL" && contest.status !== status) return false;
+      const effective = effectiveStatus(contest);
+      if (status === "DRAFT" && effective !== "DRAFT") return false;
+      if (status === "UPCOMING" && effective !== "UPCOMING") return false;
+      if (status === "ENDED" && !["ENDED", "ENDED_PENDING_RESULT"].includes(effective))
+        return false;
+      if (status === "ACTIVE" && !["OPEN", "FULL", "CLOSED"].includes(effective)) return false;
       if (!needle) return true;
       return `${contest.title} ${contest.slug}`.toLocaleLowerCase("fr-FR").includes(needle);
     });
@@ -73,6 +77,27 @@ export function AdminContestManager({
     setContests((current) => [result.data!, ...current]);
     setShowCreate(false);
     setFeedback("Concours créé. Tu peux maintenant gérer ses participants.");
+  }
+
+  async function remove(contest: AdminContest) {
+    const confirmed = window.confirm(
+      `Supprimer le concours « ${contest.title} » ?\n\nIl disparaîtra du site, mais les participations, résultats et traces d’audit seront conservés.`,
+    );
+    if (!confirmed) return;
+    setPending(true);
+    setFeedback("");
+    const result = await submitJson<{ id: string; deleted: boolean }>(
+      `/api/admin/contests/${encodeURIComponent(contest.id)}`,
+      "DELETE",
+      {},
+    );
+    setPending(false);
+    if (!result.ok) {
+      setFeedback(result.message);
+      return;
+    }
+    setContests((current) => current.filter((item) => item.id !== contest.id));
+    setFeedback(`Le concours « ${contest.title} » a été supprimé.`);
   }
 
   return (
@@ -143,7 +168,7 @@ export function AdminContestManager({
                   <Medal aria-hidden="true" />
                 </span>
                 <div>
-                  <StatusPill value={contest.status} />
+                  <StatusPill value={effectiveStatus(contest)} />
                   {contest.isFeatured || contest.is_featured ? (
                     <span className="type-badge">À la une</span>
                   ) : null}
@@ -168,13 +193,25 @@ export function AdminContestManager({
                   <dd>{count(contest, "pending")}</dd>
                 </div>
               </dl>
-              <Link
-                className="button button--secondary"
-                href={`/admin/concours/${encodeURIComponent(contest.id)}`}
-              >
-                {canManage ? "Gérer le concours" : "Modérer les participants"}
-              </Link>
-              <small>{contestStatusLabels[contest.status]}</small>
+              <div className="button-row">
+                <Link
+                  className="button button--secondary"
+                  href={`/admin/concours/${encodeURIComponent(contest.id)}`}
+                >
+                  {canManage ? "Gérer le concours" : "Modérer les participants"}
+                </Link>
+                {canManage && (
+                  <button
+                    className="button button--danger"
+                    type="button"
+                    disabled={pending}
+                    onClick={() => void remove(contest)}
+                  >
+                    <Trash2 aria-hidden="true" /> Supprimer
+                  </button>
+                )}
+              </div>
+              <small>{contestStatusLabels[effectiveStatus(contest)]}</small>
             </article>
           ))}
         </div>

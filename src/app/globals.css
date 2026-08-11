@@ -5819,6 +5819,129 @@ body.is-age-gate-open .app-shell {
   gap: 18px;
 }
 
+.admin-contest-mode {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.admin-contest-mode button,
+.contest-type-grid button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.admin-contest-mode button.is-active,
+.contest-type-grid button.is-active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.admin-contest-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  gap: 8px;
+  list-style: none;
+}
+
+.admin-contest-steps li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: #665f58;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.admin-contest-steps li span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.admin-contest-steps li.is-active,
+.admin-contest-steps li.is-complete {
+  color: var(--red-800);
+}
+
+.admin-contest-steps li.is-active span,
+.admin-contest-steps li.is-complete span {
+  background: var(--red-800);
+  color: white;
+}
+
+.contest-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.contest-type-grid button {
+  display: grid;
+  padding: 12px;
+  gap: 3px;
+  border: 2px solid var(--border);
+  text-align: left;
+}
+
+.contest-type-grid small {
+  color: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  opacity: 0.82;
+}
+
+.admin-contest-wizard__actions {
+  justify-content: flex-end;
+}
+
+.contest-preview-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.contest-preview-card dl div {
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--paper);
+}
+
+.contest-preview-card dt {
+  color: #665f58;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.contest-preview-card dd {
+  margin: 3px 0 0;
+  font-weight: 850;
+}
+
+.contest-guess-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .admin-contest-form__section {
   display: grid;
   padding: 14px;
@@ -6167,6 +6290,25 @@ body.is-age-gate-open .app-shell {
 }
 
 @media (max-width: 430px) {
+  .admin-contest-steps {
+    grid-template-columns: repeat(4, auto);
+    justify-content: space-between;
+  }
+
+  .admin-contest-steps li {
+    display: grid;
+    justify-items: center;
+    font-size: 0.62rem;
+  }
+
+  .contest-type-grid,
+  .contest-preview-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-contest-wizard__actions .button {
+    width: 100%;
+  }
   .contests-header__icons {
     justify-content: center;
   }

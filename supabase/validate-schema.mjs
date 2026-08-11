@@ -25,6 +25,9 @@ const navigationReviewsTeamMigration = read(
 );
 const followupHardeningMigration = read("./migrations/007_followup_hardening.sql");
 const entryManagementMigration = read("./migrations/008_entry_management_age_gate_partner_cta.sql");
+const contestExperienceMigration = read(
+  "./migrations/20260811231831_contest_experience_weight_stats_winner.sql",
+);
 const drizzle = read("../src/lib/db/schema.ts");
 
 assert(
@@ -46,7 +49,9 @@ const evolutionBody = (source) => {
   return source.slice(start, end).trimEnd();
 };
 assert(
-  evolutionBody(schema) === evolutionBody(navigationReviewsTeamMigration),
+  evolutionBody(schema)
+    .replace(",'ENTRY_CHANGES_REQUESTED','CONTEST_NEW','CONTEST_RESULT','CONTEST_WINNER'", "")
+    .replace(",'WEIGHT_GUESS'", "") === evolutionBody(navigationReviewsTeamMigration),
   "schema.sql evolution 006 mirror is out of sync with its migration",
 );
 const followupBody = (source) => {
@@ -63,7 +68,8 @@ assert(
 );
 const entryManagementBody = (source) => {
   const start = source.lastIndexOf(entryManagementStart);
-  const end = source.lastIndexOf("\ncommit;");
+  const contestExperience = source.indexOf("\n-- Evolution 009:", start);
+  const end = contestExperience >= 0 ? contestExperience : source.lastIndexOf("\ncommit;");
   assert(start >= 0 && end > start, "008 evolution body is missing");
   return source
     .slice(start, end)
@@ -81,6 +87,20 @@ assert(
   schema.includes(entryManagementHeader) &&
     entryManagementBody(schema) === entryManagementBody(entryManagementMigration),
   "schema.sql evolution 008 mirror is out of sync with its migration",
+);
+const contestExperienceHeader =
+  "-- Evolution 009: experience concours, jeu du poids, statistiques, gagnants et diffusion.";
+const contestExperienceStart = "do $$ begin\n  create type public.contest_link_type as enum";
+const contestExperienceBody = (source) => {
+  const start = source.lastIndexOf(contestExperienceStart);
+  const end = source.lastIndexOf("\ncommit;");
+  assert(start >= 0 && end > start, "009 evolution body is missing");
+  return source.slice(start, end).trimEnd();
+};
+assert(
+  schema.includes(contestExperienceHeader) &&
+    contestExperienceBody(schema) === contestExperienceBody(contestExperienceMigration),
+  "schema.sql evolution 009 mirror is out of sync with its migration",
 );
 assert((schema.match(/^begin;$/gm) ?? []).length === 1, "schema must contain exactly one BEGIN");
 assert((schema.match(/^commit;$/gm) ?? []).length === 1, "schema must contain exactly one COMMIT");
@@ -144,6 +164,15 @@ assert(
 assert(
   (entryManagementMigration.match(/\$\$/g) ?? []).length % 2 === 0,
   "unbalanced delimiters in entry management migration",
+);
+assert(
+  (contestExperienceMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (contestExperienceMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "009 contest experience migration must contain one transaction",
+);
+assert(
+  (contestExperienceMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in contest experience migration",
 );
 
 const sqlTables = uniqueSorted(matches(schema, /create table if not exists public\.([a-z0-9_]+)/g));
