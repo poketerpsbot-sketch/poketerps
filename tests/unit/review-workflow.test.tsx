@@ -108,6 +108,31 @@ describe("review moderation mobile dialog", () => {
       (screen.getByLabelText("Message pour l’utilisateur") as HTMLTextAreaElement).required,
     ).toBe(true);
   });
+
+  it.each([
+    [403, "Tu n’as pas l’autorisation d’effectuer cette action."],
+    [404, "Cet élément n’existe plus."],
+    [409, "Cet élément a déjà été traité par un autre membre de l’équipe."],
+    [422, "Certaines informations sont invalides."],
+    [500, "Une erreur serveur est survenue. Réessaie."],
+  ])("maps moderation HTTP %s to a useful message", async (status, message) => {
+    const { submitJson } = await import("@/components/forms/form-api");
+    vi.mocked(submitJson).mockResolvedValue({
+      ok: false,
+      status,
+      data: null,
+      message: "Erreur technique",
+    });
+    render(
+      <AdminModerationActions
+        endpoint="/api/admin/reviews/550e8400-e29b-41d4-a716-446655440000"
+        actions={[{ status: "APPROVED", label: "Approuver" }]}
+      />,
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Approuver" }));
+    expect((await screen.findByText(message)).textContent).toBe(message);
+  });
 });
 
 describe("review history and notifications UI", () => {

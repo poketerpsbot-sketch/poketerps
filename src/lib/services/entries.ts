@@ -7,6 +7,7 @@ import type { z } from "zod";
 import { hasPermission } from "@/lib/auth/rbac";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getDb } from "@/lib/db";
+import { logger } from "@/lib/logger";
 import {
   auditLogs,
   categories,
@@ -939,8 +940,18 @@ export async function moderateEntry(
         throw forbidden("Un modérateur peut uniquement traiter une nouvelle fiche en attente.");
       }
       if (!allowedTransitions[entry.status]?.includes(input.status)) {
-        throw conflict("Transition de statut invalide.", "INVALID_STATUS_TRANSITION");
+        throw conflict(
+          "Cette fiche a déjà été traitée par un autre membre de l’équipe.",
+          "ALREADY_MODERATED",
+        );
       }
+      logger.info("moderation_entry_started", {
+        action: `entry.${input.status.toLowerCase()}`,
+        entryId: id,
+        adminId: actor.id,
+        previousStatus: entry.status,
+        targetStatus: input.status,
+      });
 
       if (input.status === "PUBLISHED") {
         const privateImages = await tx
@@ -1005,7 +1016,17 @@ export async function moderateEntry(
         set.archivedAt = null;
       }
       if (input.status === "ARCHIVED") set.archivedAt = now;
-      await tx.update(entries).set(set).where(eq(entries.id, id));
+      const [updated] = await tx
+        .update(entries)
+        .set(set)
+        .where(and(eq(entries.id, id), eq(entries.status, entry.status)))
+        .returning({ id: entries.id });
+      if (!updated) {
+        throw conflict(
+          "Cette fiche a déjà été traitée par un autre membre de l’équipe.",
+          "ALREADY_MODERATED",
+        );
+      }
       const submissionStatus =
         input.status === "CHANGES_REQUESTED"
           ? "CHANGES_REQUESTED"
@@ -1054,10 +1075,17 @@ export async function moderateEntry(
     });
   } catch (error) {
     if (promotion) await rollbackEntryImagePromotion(promotion);
+    logger.error("moderation_entry_failed", {
+      action: `entry.${input.status.toLowerCase()}`,
+      entryId: id,
+      adminId: actor.id,
+      error,
+    });
     throw error;
   }
   if (promotion) await finalizeEntryImagePromotion(promotion);
 
+  let notificationWarning = false;
   if (["CHANGES_REQUESTED", "APPROVED", "REJECTED"].includes(result.status)) {
     const [recipient] = await getDb()
       .select({
@@ -1078,7 +1106,7 @@ export async function moderateEntry(
           ? `Fiche « ${recipient.entryName} » approuvée`
           : `Fiche « ${recipient.entryName} » refusée`;
       const message = input.reason?.trim() || title;
-      await Promise.allSettled([
+      const [internalNotification, telegramNotification] = await Promise.allSettled([
         createUserNotification({
           userId: recipient.userId,
           type:
@@ -1101,9 +1129,28 @@ export async function moderateEntry(
           buttonLabel: changesRequested ? "Modifier ma fiche" : "Voir mes fiches",
         }),
       ]);
+      notificationWarning =
+        internalNotification.status === "rejected" ||
+        (Boolean(recipient.telegramId) &&
+          (telegramNotification.status === "rejected" || telegramNotification.value === false));
+      if (notificationWarning) {
+        logger.warn("entry_moderation_notification_incomplete", {
+          entryId: id,
+          internalNotificationCreated: internalNotification.status === "fulfilled",
+          telegramDelivered:
+            telegramNotification.status === "fulfilled" ? telegramNotification.value : false,
+        });
+      }
     }
   }
-  return result;
+  logger.info("moderation_entry_completed", {
+    action: `entry.${input.status.toLowerCase()}`,
+    entryId: result.id,
+    adminId: actor.id,
+    status: result.status,
+    notificationWarning,
+  });
+  return { ...result, notificationWarning };
 }
 
 export async function softDeleteEntry(

@@ -188,62 +188,92 @@ export async function moderateReview(
   source: AuditSource = "WEB_ADMIN",
 ) {
   const moderationSource = source;
-  const result = await getDb().transaction(async (tx) => {
-    const [review] = await tx
-      .select({
-        id: reviews.id,
-        entryId: reviews.entryId,
-        userId: reviews.userId,
-        status: reviews.status,
-        approvedAt: reviews.approvedAt,
-        publishedAt: reviews.publishedAt,
-        entryName: entries.name,
-        telegramId: users.telegramId,
-        notifyReviewStatus: userProfileSettings.notifyReviewStatus,
-      })
-      .from(reviews)
-      .innerJoin(entries, eq(reviews.entryId, entries.id))
-      .innerJoin(users, eq(reviews.userId, users.id))
-      .leftJoin(userProfileSettings, eq(userProfileSettings.userId, users.id))
-      .where(and(eq(reviews.id, id), isNull(reviews.deletedAt)))
-      .limit(1)
-      .for("update");
-    if (!review) throw notFound("Avis");
-    const targetStatus = input.status === "APPROVED" ? "PUBLISHED" : input.status;
-    if (!reviewTransitions[review.status]?.includes(targetStatus)) {
-      throw conflict("Transition de statut invalide.", "INVALID_STATUS_TRANSITION");
-    }
-    const now = new Date();
-    const set: Partial<typeof reviews.$inferInsert> = {
-      status: targetStatus,
-      moderatedById: actor.id,
-      moderationReason: input.reason ?? null,
-      moderatedAt: now,
-      updatedAt: now,
-    };
-    if (targetStatus === "PUBLISHED") set.approvedAt = review.approvedAt ?? now;
-    if (targetStatus === "PUBLISHED") {
-      set.publishedAt = review.publishedAt ?? now;
-      set.hiddenAt = null;
-    }
-    if (targetStatus === "HIDDEN") set.hiddenAt = now;
-    if (targetStatus === "REJECTED") set.rejectedAt = now;
-    if (targetStatus === "CHANGES_REQUESTED") set.changesRequestedAt = now;
-    await tx.update(reviews).set(set).where(eq(reviews.id, id));
+  let result: {
+    id: string;
+    status: string;
+    telegramId: number | null;
+    notification: ReturnType<typeof reviewNotificationFor> | null;
+    notificationId: string | null;
+  };
+  try {
+    result = await getDb().transaction(async (tx) => {
+      const [review] = await tx
+        .select({
+          id: reviews.id,
+          entryId: reviews.entryId,
+          userId: reviews.userId,
+          status: reviews.status,
+          approvedAt: reviews.approvedAt,
+          publishedAt: reviews.publishedAt,
+          entryName: entries.name,
+          telegramId: users.telegramId,
+          notifyReviewStatus: userProfileSettings.notifyReviewStatus,
+        })
+        .from(reviews)
+        .innerJoin(entries, eq(reviews.entryId, entries.id))
+        .innerJoin(users, eq(reviews.userId, users.id))
+        .leftJoin(userProfileSettings, eq(userProfileSettings.userId, users.id))
+        .where(and(eq(reviews.id, id), isNull(reviews.deletedAt)))
+        .limit(1)
+        // Only the review is the moderation concurrency boundary. Locking every
+        // joined table makes PostgreSQL reject the nullable LEFT JOIN side.
+        .for("update", { of: reviews });
+      if (!review) throw notFound("Avis");
+      const targetStatus = input.status === "APPROVED" ? "PUBLISHED" : input.status;
+      if (!reviewTransitions[review.status]?.includes(targetStatus)) {
+        throw conflict(
+          "Cet avis a déjà été traité par un autre membre de l’équipe.",
+          "ALREADY_MODERATED",
+        );
+      }
+      logger.info("moderation_review_started", {
+        action: `review.${input.status.toLowerCase()}`,
+        reviewId: id,
+        adminId: actor.id,
+        previousStatus: review.status,
+        targetStatus,
+      });
+      const now = new Date();
+      const set: Partial<typeof reviews.$inferInsert> = {
+        status: targetStatus,
+        moderatedById: actor.id,
+        moderationReason: input.reason ?? null,
+        moderatedAt: now,
+        updatedAt: now,
+      };
+      if (targetStatus === "PUBLISHED") set.approvedAt = review.approvedAt ?? now;
+      if (targetStatus === "PUBLISHED") {
+        set.publishedAt = review.publishedAt ?? now;
+        set.hiddenAt = null;
+      }
+      if (targetStatus === "HIDDEN") set.hiddenAt = now;
+      if (targetStatus === "REJECTED") set.rejectedAt = now;
+      if (targetStatus === "CHANGES_REQUESTED") set.changesRequestedAt = now;
+      const [updated] = await tx
+        .update(reviews)
+        .set(set)
+        .where(and(eq(reviews.id, id), eq(reviews.status, review.status)))
+        .returning({ id: reviews.id });
+      if (!updated) {
+        throw conflict(
+          "Cet avis a déjà été traité par un autre membre de l’équipe.",
+          "ALREADY_MODERATED",
+        );
+      }
 
-    const action =
-      targetStatus === "PUBLISHED" && review.status === "HIDDEN"
-        ? "RESTORED"
-        : targetStatus === "PUBLISHED"
-          ? "APPROVED"
-          : targetStatus === "CHANGES_REQUESTED"
-            ? "CHANGES_REQUESTED"
-            : targetStatus === "REJECTED"
-              ? "REJECTED"
-              : targetStatus === "HIDDEN"
-                ? "HIDDEN"
-                : "RESTORED";
-    await tx.execute(sql`
+      const action =
+        targetStatus === "PUBLISHED" && review.status === "HIDDEN"
+          ? "RESTORED"
+          : targetStatus === "PUBLISHED"
+            ? "APPROVED"
+            : targetStatus === "CHANGES_REQUESTED"
+              ? "CHANGES_REQUESTED"
+              : targetStatus === "REJECTED"
+                ? "REJECTED"
+                : targetStatus === "HIDDEN"
+                  ? "HIDDEN"
+                  : "RESTORED";
+      await tx.execute(sql`
       insert into review_moderation_events (
         review_id, action, previous_status, new_status, message, admin_id, metadata
       ) values (
@@ -254,58 +284,71 @@ export async function moderateReview(
       )
     `);
 
-    const notification =
-      action === "APPROVED" || ["REJECTED", "CHANGES_REQUESTED"].includes(targetStatus)
-        ? reviewNotificationFor(
-            targetStatus as "PUBLISHED" | "REJECTED" | "CHANGES_REQUESTED",
-            review.entryName,
-            input.reason,
-          )
-        : null;
-    const [createdNotification] = notification
-      ? await tx
-          .insert(userNotifications)
-          .values({
-            userId: review.userId,
-            type: notification.type,
-            title: notification.title,
-            message: notification.message,
-            relatedReviewId: id,
-            relatedEntryId: review.entryId,
-            actionUrl:
-              targetStatus === "CHANGES_REQUESTED" ? `/profil/avis/${id}` : notification.actionUrl,
-            metadata: { moderationStatus: targetStatus },
-          })
-          .returning({ id: userNotifications.id })
-      : [];
-    await tx.insert(auditLogs).values(
-      auditValues({
-        actorUserId: actor.id,
-        actorTelegramIdSnapshot: actor.telegramId,
-        action: `REVIEW_${action}`,
-        entityType: "REVIEW",
-        entityId: id,
-        source,
-        requestId,
-        before: { status: review.status },
-        after: { status: targetStatus, reason: input.reason },
-      }),
-    );
-    return {
-      id,
-      status: targetStatus,
-      telegramId: review.notifyReviewStatus === false ? null : review.telegramId,
-      notification,
-      notificationId: createdNotification?.id ?? null,
-    };
-  });
+      const notification =
+        action === "APPROVED" || ["REJECTED", "CHANGES_REQUESTED"].includes(targetStatus)
+          ? reviewNotificationFor(
+              targetStatus as "PUBLISHED" | "REJECTED" | "CHANGES_REQUESTED",
+              review.entryName,
+              input.reason,
+            )
+          : null;
+      const [createdNotification] = notification
+        ? await tx
+            .insert(userNotifications)
+            .values({
+              userId: review.userId,
+              type: notification.type,
+              title: notification.title,
+              message: notification.message,
+              relatedReviewId: id,
+              relatedEntryId: review.entryId,
+              actionUrl:
+                targetStatus === "CHANGES_REQUESTED"
+                  ? `/profil/avis/${id}`
+                  : notification.actionUrl,
+              metadata: { moderationStatus: targetStatus },
+            })
+            .returning({ id: userNotifications.id })
+        : [];
+      await tx.insert(auditLogs).values(
+        auditValues({
+          actorUserId: actor.id,
+          actorTelegramIdSnapshot: actor.telegramId,
+          action: `REVIEW_${action}`,
+          entityType: "REVIEW",
+          entityId: id,
+          source,
+          requestId,
+          before: { status: review.status },
+          after: { status: targetStatus, reason: input.reason },
+        }),
+      );
+      return {
+        id,
+        status: targetStatus,
+        telegramId: review.notifyReviewStatus === false ? null : review.telegramId,
+        notification,
+        notificationId: createdNotification?.id ?? null,
+      };
+    });
+  } catch (error) {
+    logger.error("moderation_review_failed", {
+      action: `review.${input.status.toLowerCase()}`,
+      reviewId: id,
+      adminId: actor.id,
+      error,
+    });
+    throw error;
+  }
 
+  let notificationWarning = false;
   if (result.notification) {
     const sent = await sendReviewStatusTelegram({
       telegramId: result.telegramId,
       text: result.notification.message,
       reviewId: result.id,
     });
+    notificationWarning = Boolean(result.telegramId) && !sent;
     if (result.notificationId && result.telegramId) {
       try {
         await getDb()
@@ -325,7 +368,14 @@ export async function moderateReview(
       }
     }
   }
-  return { id: result.id, status: result.status };
+  logger.info("moderation_review_completed", {
+    action: `review.${input.status.toLowerCase()}`,
+    reviewId: result.id,
+    adminId: actor.id,
+    status: result.status,
+    telegramDelivered: result.telegramId ? !notificationWarning : null,
+  });
+  return { id: result.id, status: result.status, notificationWarning };
 }
 
 export async function getEditableReview(id: string, actor: CurrentUser) {

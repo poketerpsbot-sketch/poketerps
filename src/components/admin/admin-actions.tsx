@@ -7,6 +7,25 @@ import { submitJson } from "@/components/forms/form-api";
 
 type Action = { status: string; label: string; tone?: "danger" | "secondary" };
 
+type ModerationResult = { notificationWarning?: boolean };
+
+function moderationErrorMessage(status: number, fallback: string) {
+  if (status === 403) return "Tu n’as pas l’autorisation d’effectuer cette action.";
+  if (status === 404) return "Cet élément n’existe plus.";
+  if (status === 409) return "Cet élément a déjà été traité par un autre membre de l’équipe.";
+  if (status === 422 || status === 400) return "Certaines informations sont invalides.";
+  if (status >= 500) return "Une erreur serveur est survenue. Réessaie.";
+  return fallback;
+}
+
+function moderationSuccessMessage(endpoint: string, status: string) {
+  const entity = endpoint.includes("/reviews/") ? "Avis" : "Fiche";
+  if (status === "APPROVED" || status === "PUBLISHED") return `${entity} approuvé avec succès.`;
+  if (status === "REJECTED") return `${entity} refusé avec succès.`;
+  if (status === "CHANGES_REQUESTED") return "Demande de modification envoyée avec succès.";
+  return "Action enregistrée.";
+}
+
 export function AdminModerationActions({
   endpoint,
   actions,
@@ -37,16 +56,20 @@ export function AdminModerationActions({
       return;
     setPending(action.status);
     setFeedback("");
-    const result = await submitJson(endpoint, "PATCH", {
+    const result = await submitJson<ModerationResult>(endpoint, "PATCH", {
       status: action.status,
       reason: normalizedReason || undefined,
     });
     setPending("");
     if (!result.ok) {
-      setFeedback(result.message);
+      setFeedback(moderationErrorMessage(result.status, result.message));
       return;
     }
-    setFeedback("Action enregistrée.");
+    setFeedback(
+      result.data?.notificationWarning
+        ? "Action enregistrée, mais une notification n’a pas pu être envoyée."
+        : moderationSuccessMessage(endpoint, action.status),
+    );
     setSelectedAction(null);
     setReason("");
     router.refresh();
