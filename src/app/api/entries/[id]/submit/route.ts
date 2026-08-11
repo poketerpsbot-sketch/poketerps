@@ -6,6 +6,7 @@ import { apiJson, handleApi, parseJson } from "@/lib/http";
 import { guardBrowserMutation, rateLimits } from "@/lib/security/request-guard";
 import { submitEntry } from "@/lib/services/entries";
 import { notifyModerationQueue } from "@/lib/services/bot";
+import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import { uuidSchema } from "@/lib/validation/common";
 import { submitEntrySchema } from "@/lib/validation/entries";
 
@@ -21,6 +22,12 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
     const entryId = uuidSchema.parse(id);
     const result = await submitEntry(entryId, actor, input.note, requestId);
     await notifyModerationQueue("entry", entryId, `Proposition de ${actor.displayName}`);
+    await tryRecordUserActivityEvent({
+      userId: actor.id,
+      eventType: "ENTRY_SUBMIT",
+      entityType: "ENTRY",
+      entityId: entryId,
+    });
     return apiJson(result);
   });
 }

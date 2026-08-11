@@ -56,4 +56,16 @@ describe("age confirmation route", () => {
     );
     expect(response.headers.get("location")).toBe("https://pokedex.example.test/");
   });
+
+  it("persists an explicit underage decision instead of granting access", async () => {
+    const body = new FormData();
+    body.set("decision", "no");
+    const response = await POST(
+      new Request("https://pokedex.example.test/api/age-confirmation", {
+        method: "POST",
+        body,
+      }),
+    );
+    expect(response.headers.get("set-cookie")).toContain(`${AGE_GATE_COOKIE_NAME}=no`);
+  });
 });

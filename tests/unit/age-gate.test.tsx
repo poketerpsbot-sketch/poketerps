@@ -33,7 +33,7 @@ describe("AgeGate", () => {
     expect(form?.getAttribute("method")).toBe("post");
     expect(document.body.classList.contains("is-age-gate-open")).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: "Oui, continuer" }));
+    fireEvent.click(screen.getByRole("button", { name: "J’ai 18 ans ou plus" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(window.localStorage.getItem(AGE_GATE_STORAGE_KEY)).toBe(AGE_GATE_CONFIRMED_VALUE);
@@ -53,5 +53,22 @@ describe("AgeGate", () => {
   it("does not render the gate when the server already received the confirmation cookie", () => {
     render(<AgeGate enabled initiallyConfirmed minimumAge={18} />);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("blocks the application after an underage declaration", () => {
+    render(<AgeGate enabled initiallyConfirmed={false} minimumAge={18} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "J’ai moins de 18 ans" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Contenu réservé aux personnes majeures" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "J’ai 18 ans ou plus" })).toBeNull();
+    expect(window.localStorage.getItem(AGE_GATE_STORAGE_KEY)).toBe("no");
+  });
+
+  it("keeps a server-known underage decision blocked", () => {
+    render(<AgeGate enabled initiallyConfirmed={false} initiallyRejected minimumAge={18} />);
+    expect(screen.getByText(/tu ne peux pas accéder/i)).toBeTruthy();
   });
 });

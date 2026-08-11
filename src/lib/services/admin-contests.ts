@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { CurrentUser } from "@/lib/auth/current-user";
@@ -50,6 +50,18 @@ const contestSelection = {
   rewardBadgeId: contests.rewardBadgeId,
   maxParticipants: contests.maxParticipants,
   requireEntry: contests.requireEntry,
+  contestType: contests.contestType,
+  instructions: contests.instructions,
+  participationSteps: contests.participationSteps,
+  externalUrl: contests.externalUrl,
+  telegramUrl: contests.telegramUrl,
+  instagramUrl: contests.instagramUrl,
+  terms: contests.terms,
+  additionalInformation: contests.additionalInformation,
+  registrationsOpen: contests.registrationsOpen,
+  registrationStartsAt: contests.registrationStartsAt,
+  registrationEndsAt: contests.registrationEndsAt,
+  registrationsClosedAt: contests.registrationsClosedAt,
   createdById: contests.createdById,
   updatedById: contests.updatedById,
   createdAt: contests.createdAt,
@@ -106,7 +118,8 @@ export async function listAdminContests(query: AdminContestsQuery) {
   >(
     `with filtered as (
       select c.*,
-        (select count(*)::int from contest_participations p where p.contest_id=c.id) participation_count,
+        (select count(*)::int from contest_participations p
+          where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) participation_count,
         (select count(*)::int from contest_participations p
           where p.contest_id=c.id and p.status='PENDING_REVIEW') pending_count
       from contests c
@@ -133,7 +146,7 @@ export async function getAdminContest(id: string) {
   const [[counts], winners] = await Promise.all([
     getDb()
       .select({
-        total: count(),
+        total: sql<number>`count(*) filter (where ${contestParticipations.status} in ('PENDING_REVIEW','APPROVED'))::int`,
         pending: sql<number>`count(*) filter (where ${contestParticipations.status}='PENDING_REVIEW')::int`,
         approved: sql<number>`count(*) filter (where ${contestParticipations.status}='APPROVED')::int`,
       })
@@ -164,6 +177,11 @@ export async function createContest(input: ContestInput, actor: CurrentUser, req
           ...input,
           startsAt: new Date(input.startsAt),
           endsAt: new Date(input.endsAt),
+          registrationStartsAt: input.registrationStartsAt
+            ? new Date(input.registrationStartsAt)
+            : null,
+          registrationEndsAt: input.registrationEndsAt ? new Date(input.registrationEndsAt) : null,
+          registrationsClosedAt: input.registrationsOpen ? null : new Date(),
           createdById: actor.id,
           updatedById: actor.id,
         })
@@ -176,6 +194,7 @@ export async function createContest(input: ContestInput, actor: CurrentUser, req
           action: "CONTEST_CREATED",
           entityType: "CONTEST",
           entityId: created.id,
+          source: "WEB_ADMIN",
           requestId,
           after: created,
         }),
@@ -201,7 +220,13 @@ export async function updateContest(
         .limit(1)
         .for("update");
       if (!existing) throw notFound("Concours");
-      const { startsAt: startsAtInput, endsAt: endsAtInput, ...otherInput } = input;
+      const {
+        startsAt: startsAtInput,
+        endsAt: endsAtInput,
+        registrationStartsAt: registrationStartsAtInput,
+        registrationEndsAt: registrationEndsAtInput,
+        ...otherInput
+      } = input;
       const startsAt = startsAtInput ? new Date(startsAtInput) : existing.startsAt;
       const endsAt = endsAtInput ? new Date(endsAtInput) : existing.endsAt;
       if (endsAt <= startsAt) {
@@ -213,6 +238,23 @@ export async function updateContest(
           ...otherInput,
           ...(startsAtInput !== undefined ? { startsAt } : {}),
           ...(endsAtInput !== undefined ? { endsAt } : {}),
+          ...(registrationStartsAtInput !== undefined
+            ? {
+                registrationStartsAt: registrationStartsAtInput
+                  ? new Date(registrationStartsAtInput)
+                  : null,
+              }
+            : {}),
+          ...(registrationEndsAtInput !== undefined
+            ? {
+                registrationEndsAt: registrationEndsAtInput
+                  ? new Date(registrationEndsAtInput)
+                  : null,
+              }
+            : {}),
+          ...(input.registrationsOpen !== undefined
+            ? { registrationsClosedAt: input.registrationsOpen ? null : new Date() }
+            : {}),
           updatedById: actor.id,
           updatedAt: new Date(),
         })
@@ -226,6 +268,7 @@ export async function updateContest(
           action: "CONTEST_UPDATED",
           entityType: "CONTEST",
           entityId: id,
+          source: "WEB_ADMIN",
           requestId,
           before: existing,
           after: updated,
@@ -265,6 +308,7 @@ export async function deleteContest(id: string, actor: CurrentUser, requestId?: 
         action: "CONTEST_DELETED",
         entityType: "CONTEST",
         entityId: id,
+        source: "WEB_ADMIN",
         requestId,
         before: existing,
         after: deleted,
@@ -394,6 +438,7 @@ export async function moderateContestParticipation(
         action: "CONTEST_PARTICIPATION_MODERATED",
         entityType: "CONTEST_PARTICIPATION",
         entityId: participationId,
+        source: "WEB_ADMIN",
         requestId,
         before: existing,
         after: updated,
@@ -464,6 +509,7 @@ export async function selectContestWinner(
           action: "CONTEST_WINNER_SELECTED",
           entityType: "CONTEST_WINNER",
           entityId: winner.id,
+          source: "WEB_ADMIN",
           requestId,
           after: winner,
           metadata: { contestId, participationId: input.participationId },
@@ -529,6 +575,7 @@ export async function removeContestWinner(
         action: "CONTEST_WINNER_REMOVED",
         entityType: "CONTEST_WINNER",
         entityId: winnerId,
+        source: "WEB_ADMIN",
         requestId,
         before: existing,
         metadata: { contestId },

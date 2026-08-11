@@ -62,6 +62,7 @@ export async function createCorrection(
         action: "CORRECTION_SUBMITTED",
         entityType: "SUBMISSION",
         entityId: submission.id,
+        source: "API",
         requestId,
         after: {
           entryId: input.entryId,

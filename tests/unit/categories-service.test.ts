@@ -8,7 +8,7 @@ import { listCategories } from "@/lib/services/categories";
 
 function queryBuilder(rows: unknown[], terminalMethod: "orderBy" | "groupBy") {
   const builder: Record<string, ReturnType<typeof vi.fn>> = {};
-  for (const method of ["from", "where", "orderBy", "groupBy"]) {
+  for (const method of ["from", "innerJoin", "where", "orderBy", "groupBy"]) {
     builder[method] = vi.fn(() => (method === terminalMethod ? rows : builder));
   }
   return builder;
@@ -48,7 +48,8 @@ describe("category entry counts", () => {
       .mockReturnValueOnce(queryBuilder([], "orderBy"))
       .mockReturnValueOnce(queryBuilder([], "orderBy"))
       .mockReturnValueOnce(queryBuilder([], "orderBy"))
-      .mockReturnValueOnce(queryBuilder([{ categoryId: flowerId, entryCount: "2" }], "groupBy"));
+      .mockReturnValueOnce(queryBuilder([{ categoryId: flowerId, entryCount: "2" }], "groupBy"))
+      .mockReturnValueOnce(queryBuilder([], "orderBy"));
     mocks.getDb.mockReturnValue({ select });
 
     const result = await listCategories();

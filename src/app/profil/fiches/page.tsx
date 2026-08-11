@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import type { EntrySummaryDto } from "@/components/data/types";
@@ -10,6 +11,7 @@ export const metadata: Metadata = { title: "Mes fiches" };
 export default async function MyEntriesPage() {
   const result = await serverApi<unknown>("/api/me");
   const entries = unwrapList<EntrySummaryDto>(result.data, ["entries"]);
+  const changesRequested = entries.filter((entry) => entry.status === "CHANGES_REQUESTED");
   return (
     <div className="page-shell page-stack">
       <header className="page-header">
@@ -23,7 +25,29 @@ export default async function MyEntriesPage() {
       {result.error ? (
         <ErrorState message={result.error} retryHref="/profil/fiches" />
       ) : entries.length > 0 ? (
-        <EntryGrid entries={entries} />
+        <>
+          {changesRequested.length > 0 && (
+            <section className="content-panel page-stack">
+              <div>
+                <p className="eyebrow">Action requise</p>
+                <h2>Modifications demandées</h2>
+                <p>L’équipe attend une nouvelle version de ces fiches.</p>
+              </div>
+              <div className="button-row">
+                {changesRequested.map((entry) => (
+                  <Link
+                    className="button"
+                    href={`/profil/fiches/${encodeURIComponent(String(entry.id))}/modifier`}
+                    key={String(entry.id)}
+                  >
+                    Modifier « {entry.name} »
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+          <EntryGrid entries={entries} />
+        </>
       ) : (
         <EmptyState
           title="Aucune fiche enregistrée"

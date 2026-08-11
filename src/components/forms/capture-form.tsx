@@ -3,91 +3,108 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm, useWatch, type SubmitHandler } from "react-hook-form";
+import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
 import { z } from "zod";
-import { Camera, Save, Send, ShieldCheck } from "lucide-react";
-import type { CategoryDto, DynamicFieldDefinitionDto } from "@/components/data/types";
+import { Camera, CircleHelp, Save, Send, ShieldCheck } from "lucide-react";
+import type {
+  CategoryDto,
+  DynamicFieldDefinitionDto,
+  EntryDetailDto,
+  MicronContextDto,
+} from "@/components/data/types";
 import { submitJson, uploadImage, validateImage } from "@/components/forms/form-api";
-import { isMicronApplicable } from "@/lib/taxonomy/measurements";
+import {
+  micronProfilesFor,
+  taxonomyExplanations,
+  type MicronContextType,
+} from "@/lib/taxonomy/micron-contexts";
 
-const micronModes = ["NONE", "SINGLE", "RANGE", "MULTIPLE", "FULL_SPECTRUM", "MIXED"] as const;
-
-const schema = z
-  .object({
-    name: z
-      .string()
-      .trim()
-      .min(2, "Le nom doit contenir au moins 2 caractères.")
-      .max(120, "120 caractères maximum."),
-    shortDescription: z
-      .string()
-      .trim()
-      .min(12, "Ajoute une courte description d’au moins 12 caractères.")
-      .max(280, "280 caractères maximum."),
-    fullDescription: z
-      .string()
-      .trim()
-      .min(40, "Le rapport doit contenir au moins 40 caractères.")
-      .max(10_000, "Le rapport est trop long."),
-    categoryId: z.string().min(1, "Choisis une catégorie."),
-    subcategoryId: z.string().optional(),
-    rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).optional(),
-    micronMode: z.enum(micronModes),
-    micronSingle: z.number().int().min(1).max(1_000).optional(),
-    micronMin: z.number().int().min(1).max(1_000).optional(),
-    micronMax: z.number().int().min(1).max(1_000).optional(),
-    micronMultiple: z.string().trim().max(160).optional(),
-    micronLabel: z.string().trim().max(120).optional(),
-    micronNotes: z.string().trim().max(1_000).optional(),
-    confirmEditorial: z.boolean().refine(Boolean, {
-      message: "Confirme le caractère éditorial de la contribution.",
-    }),
-  })
-  .superRefine((value, context) => {
-    if (value.micronMode === "SINGLE" && value.micronSingle === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["micronSingle"],
-        message: "Indique la valeur en microns.",
-      });
-    }
-    if (value.micronMode === "RANGE") {
-      if (value.micronMin === undefined || value.micronMax === undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["micronMin"],
-          message: "Indique les deux limites de la plage.",
-        });
-      } else if (value.micronMin > value.micronMax) {
-        context.addIssue({
-          code: "custom",
-          path: ["micronMax"],
-          message: "La valeur maximale doit être supérieure à la minimale.",
-        });
-      }
-    }
-    if (
-      value.micronMode === "MULTIPLE" &&
-      !value.micronMultiple?.split(",").some((item) => item.trim())
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["micronMultiple"],
-        message: "Indique au moins une valeur.",
-      });
-    }
-  });
+const schema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Le nom doit contenir au moins 2 caractères.")
+    .max(120, "120 caractères maximum."),
+  shortDescription: z
+    .string()
+    .trim()
+    .min(12, "Ajoute une courte description d’au moins 12 caractères.")
+    .max(280, "280 caractères maximum."),
+  fullDescription: z
+    .string()
+    .trim()
+    .min(40, "Le rapport doit contenir au moins 40 caractères.")
+    .max(10_000, "Le rapport est trop long."),
+  categoryId: z.string().min(1, "Choisis une catégorie."),
+  subcategoryId: z.string().optional(),
+  rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).optional(),
+  confirmEditorial: z.boolean().refine(Boolean, {
+    message: "Confirme le caractère éditorial de la contribution.",
+  }),
+});
 
 type CaptureValues = z.infer<typeof schema>;
 type CreatedEntry = { id?: string | number; slug?: string };
 type DynamicValue = string | string[];
-
-function numberValue(value: unknown) {
-  return value === "" || value === null || value === undefined ? undefined : Number(value);
-}
+type MicronContextPayload = {
+  context: MicronContextType;
+  mode: "SINGLE" | "RANGE" | "MULTIPLE" | "FULL_SPECTRUM" | "MIXED";
+  singleValue?: number;
+  minimumValue?: number;
+  maximumValue?: number;
+  multipleValues: number[];
+  displayLabel: string;
+  sourceType: "DECLARED";
+};
 
 function uniqueFields(fields: DynamicFieldDefinitionDto[]) {
   return Array.from(new Map(fields.map((field) => [String(field.id), field])).values());
+}
+
+function normalizedInitialFields(fields?: Record<string, unknown>) {
+  const result: Record<string, DynamicValue> = {};
+  for (const [id, value] of Object.entries(fields ?? {})) {
+    if (Array.isArray(value)) result[id] = value.map(String);
+    else if (value !== null && value !== undefined) result[id] = String(value);
+  }
+  return result;
+}
+
+function sameMicronPreset(
+  preset: ReturnType<typeof micronProfilesFor>[number]["presets"][number],
+  context: MicronContextDto,
+) {
+  return (
+    preset.mode === context.mode &&
+    (preset.singleValue ?? null) === (context.singleValue ?? null) &&
+    (preset.minimumValue ?? null) === (context.minimumValue ?? null) &&
+    (preset.maximumValue ?? null) === (context.maximumValue ?? null) &&
+    JSON.stringify(preset.multipleValues ?? []) === JSON.stringify(context.multipleValues ?? [])
+  );
+}
+
+function initialMicronControls(categories: CategoryDto[], entry?: EntryDetailDto) {
+  const selections: Partial<Record<MicronContextType, string>> = {};
+  const custom: Partial<Record<MicronContextType, { minimum: string; maximum: string }>> = {};
+  if (!entry) return { selections, custom };
+  const category = categories.find((item) => String(item.id) === String(entry.category?.id));
+  const subcategory = category?.subcategories?.find(
+    (item) => String(item.id) === String(entry.subcategory?.id),
+  );
+  const profiles = micronProfilesFor(category?.slug, subcategory?.slug, subcategory?.micronPresets);
+  for (const context of entry.micronContexts ?? []) {
+    const profile = profiles.find((item) => item.context === context.context);
+    const preset = profile?.presets.find((item) => sameMicronPreset(item, context));
+    if (preset) selections[context.context] = preset.value;
+    else {
+      selections[context.context] = "custom";
+      custom[context.context] = {
+        minimum: String(context.singleValue ?? context.minimumValue ?? ""),
+        maximum: String(context.maximumValue ?? ""),
+      };
+    }
+  }
+  return { selections, custom };
 }
 
 function isEmptyDynamicValue(value: DynamicValue | undefined) {
@@ -207,10 +224,32 @@ function DynamicFieldControl({
   );
 }
 
-export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
+export function CaptureForm({
+  categories,
+  initialEntry,
+  allowSubmit = true,
+  moderationMessage,
+  returnHref = "/profil/fiches",
+}: {
+  categories: CategoryDto[];
+  initialEntry?: EntryDetailDto;
+  allowSubmit?: boolean;
+  moderationMessage?: string | null;
+  returnHref?: string;
+}) {
   const router = useRouter();
+  const editing = Boolean(initialEntry?.id);
+  const initialMicrons = initialMicronControls(categories, initialEntry);
   const [image, setImage] = useState<File>();
-  const [dynamicValues, setDynamicValues] = useState<Record<string, DynamicValue>>({});
+  const [dynamicValues, setDynamicValues] = useState<Record<string, DynamicValue>>(() =>
+    normalizedInitialFields(initialEntry?.fields),
+  );
+  const [micronSelections, setMicronSelections] = useState<
+    Partial<Record<MicronContextType, string>>
+  >(initialMicrons.selections);
+  const [customMicrons, setCustomMicrons] = useState<
+    Partial<Record<MicronContextType, { minimum: string; maximum: string }>>
+  >(initialMicrons.custom);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -219,20 +258,25 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CaptureValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      categoryId: "",
-      subcategoryId: "",
-      rarity: "COMMON",
-      micronMode: "NONE",
-      confirmEditorial: false,
+      name: initialEntry?.name ?? "",
+      shortDescription: initialEntry?.shortDescription ?? "",
+      fullDescription: initialEntry?.fullDescription ?? "",
+      categoryId: initialEntry?.category?.id ? String(initialEntry.category.id) : "",
+      subcategoryId: initialEntry?.subcategory?.id ? String(initialEntry.subcategory.id) : "",
+      rarity:
+        initialEntry?.rarity && initialEntry.rarity !== "UNKNOWN"
+          ? (initialEntry.rarity as CaptureValues["rarity"])
+          : "COMMON",
+      confirmEditorial: editing,
     },
   });
   const selectedCategory = useWatch({ control, name: "categoryId" });
   const selectedSubcategory = useWatch({ control, name: "subcategoryId" });
-  const micronMode = useWatch({ control, name: "micronMode" });
   const category = categories.find(
     (item) => String(item.id) === selectedCategory || item.slug === selectedCategory,
   );
@@ -240,7 +284,10 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
   const subcategory = subcategories.find(
     (item) => String(item.id) === selectedSubcategory || item.slug === selectedSubcategory,
   );
-  const micronApplicable = isMicronApplicable(category?.slug, subcategory?.slug);
+  const micronProfiles =
+    subcategory?.micronRequirement === "ABSENT"
+      ? []
+      : micronProfilesFor(category?.slug, subcategory?.slug, subcategory?.micronPresets);
   const dynamicFields = uniqueFields([...(category?.fields ?? []), ...(subcategory?.fields ?? [])]);
 
   function serializedFields() {
@@ -261,25 +308,75 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
     return fields;
   }
 
-  function micronPayload(values: CaptureValues) {
-    if (!micronApplicable || values.micronMode === "NONE") return null;
-    const multipleValues =
-      values.micronMode === "MULTIPLE"
-        ? (values.micronMultiple ?? "")
-            .split(",")
-            .map((item) => Number(item.trim()))
-            .filter((item) => Number.isInteger(item) && item > 0 && item <= 1_000)
-        : [];
-    return {
-      mode: values.micronMode,
-      singleValue: values.micronMode === "SINGLE" ? values.micronSingle : undefined,
-      minimumValue: values.micronMode === "RANGE" ? values.micronMin : undefined,
-      maximumValue: values.micronMode === "RANGE" ? values.micronMax : undefined,
-      multipleValues,
-      displayLabel: values.micronLabel || undefined,
-      sourceType: "DECLARED" as const,
-      notes: values.micronNotes || undefined,
-    };
+  function micronContextPayloads() {
+    const payloads: MicronContextPayload[] = [];
+    for (const profile of micronProfiles) {
+      const selection = micronSelections[profile.context] ?? "none";
+      if (selection === "none") continue;
+      if (selection === "custom") {
+        const custom = customMicrons[profile.context];
+        const minimumValue = Number(custom?.minimum);
+        if (profile.context === "PRESSING_BAG") {
+          if (!Number.isInteger(minimumValue) || minimumValue < 1 || minimumValue > 1_000) {
+            return {
+              error: `Indique une valeur valide pour Â« ${profile.label} Â».`,
+              payloads: [],
+            };
+          }
+          payloads.push({
+            context: profile.context,
+            mode: "SINGLE" as const,
+            singleValue: minimumValue,
+            multipleValues: [],
+            displayLabel: `${minimumValue} Âµm`,
+            sourceType: "DECLARED" as const,
+          });
+          continue;
+        }
+        const maximumValue = Number(custom?.maximum);
+        if (
+          !Number.isInteger(minimumValue) ||
+          !Number.isInteger(maximumValue) ||
+          minimumValue < 1 ||
+          maximumValue > 1_000 ||
+          minimumValue > maximumValue
+        ) {
+          return {
+            error: `Indique une plage valide pour « ${profile.label} ».`,
+            payloads: [],
+          };
+        }
+        payloads.push({
+          context: profile.context,
+          mode: "RANGE" as const,
+          minimumValue,
+          maximumValue,
+          multipleValues: [],
+          displayLabel: `${minimumValue}–${maximumValue} µm`,
+          sourceType: "DECLARED" as const,
+        });
+        continue;
+      }
+      const preset = profile.presets.find((item) => item.value === selection);
+      if (!preset || preset.mode === "NONE") continue;
+      payloads.push({
+        context: profile.context,
+        mode: preset.mode,
+        singleValue: preset.singleValue,
+        minimumValue: preset.minimumValue,
+        maximumValue: preset.maximumValue,
+        multipleValues: preset.multipleValues ?? [],
+        displayLabel: preset.label,
+        sourceType: "DECLARED" as const,
+      });
+    }
+    if (subcategory?.micronRequirement === "REQUIRED" && payloads.length < micronProfiles.length) {
+      return {
+        error: "Renseigne les microns obligatoires pour cette sous-catÃ©gorie.",
+        payloads: [],
+      };
+    }
+    return { error: null, payloads };
   }
 
   const onSubmit: SubmitHandler<CaptureValues> = async (values, event) => {
@@ -307,6 +404,14 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
       return;
     }
 
+    const micronResult = micronContextPayloads();
+    if (micronResult.error) {
+      setFeedback({ type: "error", message: micronResult.error });
+      return;
+    }
+    const collectionMicron = micronResult.payloads.find(
+      (item) => item.context === "COLLECTION_SEPARATION",
+    );
     const body = {
       name: values.name,
       shortDescription: values.shortDescription,
@@ -315,16 +420,37 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
       subcategoryId: values.subcategoryId || null,
       rarity: values.rarity,
       fields: serializedFields(),
-      micron: micronPayload(values),
-      tagIds: [] as string[],
+      micron: collectionMicron
+        ? {
+            mode: collectionMicron.mode,
+            singleValue: collectionMicron.singleValue,
+            minimumValue: collectionMicron.minimumValue,
+            maximumValue: collectionMicron.maximumValue,
+            multipleValues: collectionMicron.multipleValues,
+            displayLabel: collectionMicron.displayLabel,
+            sourceType: collectionMicron.sourceType,
+          }
+        : null,
+      micronContexts: micronResult.payloads,
+      tagIds: editing
+        ? (initialEntry?.tags ?? []).flatMap((tag) =>
+            tag.id === null || tag.id === undefined ? [] : [String(tag.id)],
+          )
+        : ([] as string[]),
     };
-    let result = await submitJson<CreatedEntry>("/api/entries", "POST", body);
+    let result = editing
+      ? await submitJson<CreatedEntry>(
+          `/api/entries/${encodeURIComponent(String(initialEntry?.id))}`,
+          "PATCH",
+          body,
+        )
+      : await submitJson<CreatedEntry>("/api/entries", "POST", body);
     if (!result.ok) {
       setFeedback({ type: "error", message: result.message });
       return;
     }
 
-    const entryId = result.data?.id;
+    const entryId = result.data?.id ?? initialEntry?.id;
     if (!entryId) {
       setFeedback({
         type: "error",
@@ -347,7 +473,7 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
       }
     }
 
-    if (shouldSubmit) {
+    if (shouldSubmit && allowSubmit) {
       result = await submitJson(
         `/api/entries/${encodeURIComponent(String(entryId))}/submit`,
         "POST",
@@ -367,15 +493,21 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
     } else {
       setFeedback({
         type: "success",
-        message: "Brouillon enregistré dans ton atelier.",
+        message: editing ? "Fiche mise à jour." : "Brouillon enregistré dans ton atelier.",
       });
     }
-    router.push("/profil/fiches");
+    router.push(returnHref);
     router.refresh();
   };
 
   return (
     <form className="form-panel form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>
+      {moderationMessage && (
+        <div className="form-feedback form-feedback--error" role="status">
+          <strong>Modification demandée par l’équipe</strong>
+          <p>{moderationMessage}</p>
+        </div>
+      )}
       <section className="form-section">
         <h2>Identification de la découverte</h2>
         <p>
@@ -405,7 +537,13 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
             </label>
             <select
               id="capture-category"
-              {...register("categoryId")}
+              {...register("categoryId", {
+                onChange: () => {
+                  setValue("subcategoryId", "");
+                  setMicronSelections({});
+                  setCustomMicrons({});
+                },
+              })}
               aria-invalid={Boolean(errors.categoryId)}
               aria-describedby={errors.categoryId ? "capture-category-error" : undefined}
             >
@@ -426,7 +564,12 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
             <label htmlFor="capture-subcategory">Sous-catégorie</label>
             <select
               id="capture-subcategory"
-              {...register("subcategoryId")}
+              {...register("subcategoryId", {
+                onChange: () => {
+                  setMicronSelections({});
+                  setCustomMicrons({});
+                },
+              })}
               disabled={subcategories.length === 0}
             >
               <option value="">Aucune</option>
@@ -436,6 +579,13 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
                 </option>
               ))}
             </select>
+            {subcategory?.slug &&
+              (subcategory.frenchExplanation || taxonomyExplanations[subcategory.slug]) && (
+                <p className="field__hint taxonomy-explanation">
+                  <CircleHelp aria-hidden="true" />{" "}
+                  {subcategory.frenchExplanation || taxonomyExplanations[subcategory.slug]}
+                </p>
+              )}
           </div>
           <div className="field">
             <label htmlFor="capture-rarity">Rareté éditoriale</label>
@@ -489,121 +639,92 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
         </section>
       )}
 
-      {micronApplicable && (
-        <section className="form-section">
+      {micronProfiles.length > 0 && (
+        <section className="form-section contextual-microns">
           <h2>Microns déclarés</h2>
-          <p>Indique uniquement la maille de tamis ou du sac filtrant déclarée pour ce produit.</p>
+          <p>
+            Les microns de collecte et ceux du sac de pressage sont enregistrés séparément. Une
+            valeur inconnue ne bloque jamais la fiche.
+          </p>
           <div className="form-grid">
-            <div className="field">
-              <label htmlFor="capture-micron-mode">Mode</label>
-              <select id="capture-micron-mode" {...register("micronMode")}>
-                <option value="NONE">Non précisé</option>
-                <option value="SINGLE">Valeur unique</option>
-                <option value="RANGE">Plage</option>
-                <option value="MULTIPLE">Plusieurs valeurs</option>
-                <option value="FULL_SPECTRUM">Full Spectrum</option>
-                <option value="MIXED">Mixed Micron</option>
-              </select>
-            </div>
-            {micronMode === "SINGLE" && (
-              <div className="field">
-                <label htmlFor="capture-micron-single">Valeur (µm)</label>
-                <Controller
-                  control={control}
-                  name="micronSingle"
-                  render={({ field }) => (
-                    <input
-                      id="capture-micron-single"
-                      type="number"
-                      min="1"
-                      max="1000"
-                      inputMode="numeric"
-                      value={field.value ?? ""}
-                      onChange={(event) => field.onChange(numberValue(event.target.value))}
-                      aria-invalid={Boolean(errors.micronSingle)}
-                    />
+            {micronProfiles.map((profile) => {
+              const id = `capture-micron-${profile.context.toLocaleLowerCase()}`;
+              const selected = micronSelections[profile.context] ?? "none";
+              const custom = customMicrons[profile.context] ?? { minimum: "", maximum: "" };
+              return (
+                <div className="field field--wide contextual-micron" key={profile.context}>
+                  <label htmlFor={id}>{profile.label}</label>
+                  <select
+                    id={id}
+                    value={selected}
+                    onChange={(event) =>
+                      setMicronSelections((current) => ({
+                        ...current,
+                        [profile.context]: event.target.value,
+                      }))
+                    }
+                  >
+                    {profile.presets.map((preset) => (
+                      <option key={preset.value} value={preset.value}>
+                        {preset.label}
+                      </option>
+                    ))}
+                    {profile.allowCustomRange && (
+                      <option value="custom">
+                        {profile.context === "PRESSING_BAG"
+                          ? "Valeur personnalisée"
+                          : "Plage personnalisée"}
+                      </option>
+                    )}
+                  </select>
+                  <p className="field__hint">
+                    <CircleHelp aria-hidden="true" /> {profile.helpText}
+                  </p>
+                  {selected === "custom" && (
+                    <div className="form-grid form-grid--compact">
+                      <div className="field">
+                        <label htmlFor={`${id}-minimum`}>
+                          {profile.context === "PRESSING_BAG" ? "Valeur (µm)" : "Minimum (µm)"}
+                        </label>
+                        <input
+                          id={`${id}-minimum`}
+                          type="number"
+                          min="1"
+                          max="1000"
+                          inputMode="numeric"
+                          value={custom.minimum}
+                          onChange={(event) =>
+                            setCustomMicrons((current) => ({
+                              ...current,
+                              [profile.context]: { ...custom, minimum: event.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                      {profile.context !== "PRESSING_BAG" && (
+                        <div className="field">
+                          <label htmlFor={`${id}-maximum`}>Maximum (µm)</label>
+                          <input
+                            id={`${id}-maximum`}
+                            type="number"
+                            min="1"
+                            max="1000"
+                            inputMode="numeric"
+                            value={custom.maximum}
+                            onChange={(event) =>
+                              setCustomMicrons((current) => ({
+                                ...current,
+                                [profile.context]: { ...custom, maximum: event.target.value },
+                              }))
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
                   )}
-                />
-                {errors.micronSingle && (
-                  <p className="field__error">{errors.micronSingle.message}</p>
-                )}
-              </div>
-            )}
-            {micronMode === "RANGE" && (
-              <>
-                <div className="field">
-                  <label htmlFor="capture-micron-min">Minimum (µm)</label>
-                  <Controller
-                    control={control}
-                    name="micronMin"
-                    render={({ field }) => (
-                      <input
-                        id="capture-micron-min"
-                        type="number"
-                        min="1"
-                        max="1000"
-                        inputMode="numeric"
-                        value={field.value ?? ""}
-                        onChange={(event) => field.onChange(numberValue(event.target.value))}
-                        aria-invalid={Boolean(errors.micronMin)}
-                      />
-                    )}
-                  />
-                  {errors.micronMin && <p className="field__error">{errors.micronMin.message}</p>}
                 </div>
-                <div className="field">
-                  <label htmlFor="capture-micron-max">Maximum (µm)</label>
-                  <Controller
-                    control={control}
-                    name="micronMax"
-                    render={({ field }) => (
-                      <input
-                        id="capture-micron-max"
-                        type="number"
-                        min="1"
-                        max="1000"
-                        inputMode="numeric"
-                        value={field.value ?? ""}
-                        onChange={(event) => field.onChange(numberValue(event.target.value))}
-                        aria-invalid={Boolean(errors.micronMax)}
-                      />
-                    )}
-                  />
-                  {errors.micronMax && <p className="field__error">{errors.micronMax.message}</p>}
-                </div>
-              </>
-            )}
-            {micronMode === "MULTIPLE" && (
-              <div className="field field--wide">
-                <label htmlFor="capture-micron-multiple">Valeurs séparées par des virgules</label>
-                <input
-                  id="capture-micron-multiple"
-                  inputMode="numeric"
-                  placeholder="45, 73, 90"
-                  {...register("micronMultiple")}
-                  aria-invalid={Boolean(errors.micronMultiple)}
-                />
-                {errors.micronMultiple && (
-                  <p className="field__error">{errors.micronMultiple.message}</p>
-                )}
-              </div>
-            )}
-            {micronMode !== "NONE" && (
-              <>
-                <div className="field">
-                  <label htmlFor="capture-micron-label">Libellé affiché</label>
-                  <input
-                    id="capture-micron-label"
-                    placeholder="Ex. 73–159 µm déclaré"
-                    {...register("micronLabel")}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="capture-micron-notes">Notes</label>
-                  <input id="capture-micron-notes" {...register("micronNotes")} />
-                </div>
-              </>
-            )}
+              );
+            })}
           </div>
         </section>
       )}
@@ -631,6 +752,22 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
           <label htmlFor="capture-image">
             <Camera size={17} aria-hidden="true" /> Photo principale
           </label>
+          {initialEntry?.images && initialEntry.images.length > 0 && (
+            <div className="entry-edit-images" aria-label="Images actuellement enregistrées">
+              {initialEntry.images.map((entryImage, index) => (
+                // eslint-disable-next-line @next/next/no-img-element -- signed/public storage URLs are dynamic.
+                <img
+                  src={entryImage.url}
+                  alt={
+                    entryImage.altText ??
+                    entryImage.alt ??
+                    `Image ${index + 1} de ${initialEntry.name}`
+                  }
+                  key={String(entryImage.id ?? entryImage.url)}
+                />
+              ))}
+            </div>
+          )}
           <input
             id="capture-image"
             type="file"
@@ -638,8 +775,8 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
             onChange={(event) => setImage(event.target.files?.[0])}
           />
           <p className="field__hint">
-            JPEG, PNG, WebP ou AVIF · 8 Mo maximum. La photo est envoyée uniquement après la
-            création du brouillon.
+            JPEG, PNG, WebP ou AVIF · 8 Mo maximum. Une nouvelle image est ajoutée sans effacer
+            automatiquement les médias existants.
           </p>
         </div>
         <label className="checkbox-field">
@@ -671,17 +808,24 @@ export function CaptureForm({ categories }: { categories: CategoryDto[] }) {
           disabled={isSubmitting}
         >
           <Save size={17} aria-hidden="true" />{" "}
-          {isSubmitting ? "Enregistrement…" : "Enregistrer le brouillon"}
+          {isSubmitting
+            ? "Enregistrement…"
+            : editing
+              ? "Enregistrer les modifications"
+              : "Enregistrer le brouillon"}
         </button>
-        <button
-          className="button"
-          type="submit"
-          name="intent"
-          value="submit"
-          disabled={isSubmitting}
-        >
-          <Send size={17} aria-hidden="true" /> Envoyer en validation
-        </button>
+        {allowSubmit && (
+          <button
+            className="button"
+            type="submit"
+            name="intent"
+            value="submit"
+            disabled={isSubmitting}
+          >
+            <Send size={17} aria-hidden="true" />
+            {editing ? "Renvoyer pour validation" : "Envoyer en validation"}
+          </button>
+        )}
       </div>
       <p className="field__hint">
         <ShieldCheck size={14} aria-hidden="true" /> La publication n’est jamais automatique : un

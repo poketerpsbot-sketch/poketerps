@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   Award,
+  Bell,
   BookOpen,
   ChevronRight,
   Clock3,
@@ -73,6 +74,7 @@ export type ProfilePayload = PublicProfileDto & {
   telegramIdentity?: TelegramIdentity | null;
   stats?: ProfileStats | null;
   counts?: ProfileCounts | null;
+  unreadNotificationCount?: number;
 };
 
 function arrayFrom<T>(value: unknown): T[] | undefined {
@@ -112,6 +114,10 @@ export function extractProfilePayload(payload: unknown): ProfilePayload | null {
       (root.telegramIdentity as TelegramIdentity | null | undefined) ?? profile.telegramIdentity,
     stats: (root.stats as ProfileStats | null | undefined) ?? profile.stats,
     counts: (root.counts as ProfileCounts | null | undefined) ?? profile.counts,
+    unreadNotificationCount:
+      typeof root.unreadNotificationCount === "number"
+        ? root.unreadNotificationCount
+        : profile.unreadNotificationCount,
   };
 }
 
@@ -265,6 +271,12 @@ const menuItems = [
     label: "Mes avis",
     description: "Avis publiés ou en attente",
     icon: MessageSquare,
+  },
+  {
+    href: "/profil/notifications",
+    label: "Notifications",
+    description: "Réponses de l’équipe",
+    icon: Bell,
   },
   { href: "/favoris", label: "Mes favoris", description: "Captures sauvegardées", icon: Heart },
   { href: "#badges", label: "Mes badges", description: "Récompenses obtenues", icon: Award },
@@ -536,6 +548,15 @@ export function MyProfileView({ profile }: { profile: ProfilePayload }) {
                 <strong>{label}</strong>
                 <small>{description}</small>
               </span>
+              {href === "/profil/notifications" &&
+                Number(profile.unreadNotificationCount ?? 0) > 0 && (
+                  <span
+                    className="profile-menu__count"
+                    aria-label={`${profile.unreadNotificationCount} non lues`}
+                  >
+                    {profile.unreadNotificationCount}
+                  </span>
+                )}
               <ChevronRight size={18} aria-hidden="true" />
             </Link>
           ))}

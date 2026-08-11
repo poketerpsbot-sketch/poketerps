@@ -6,6 +6,7 @@ import { getEnv } from "@/lib/env";
 import { apiJson, handleApi } from "@/lib/http";
 import { guardBrowserMutation, rateLimits } from "@/lib/security/request-guard";
 import { recordEntryView } from "@/lib/services/engagement";
+import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import { uuidSchema } from "@/lib/validation/common";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -20,12 +21,21 @@ export async function POST(request: NextRequest, context: RouteContext): Promise
       actor?.id ?? anonymousSessionHash ?? undefined,
     );
     const { id } = await context.params;
-    return apiJson(
-      await recordEntryView(
-        uuidSchema.parse(id),
-        { userId: actor?.id, anonymousSessionHash },
-        getEnv().ENTRY_VIEW_DEDUP_HOURS,
-      ),
+    const entryId = uuidSchema.parse(id);
+    const result = await recordEntryView(
+      entryId,
+      { userId: actor?.id, anonymousSessionHash },
+      getEnv().ENTRY_VIEW_DEDUP_HOURS,
     );
+    if (actor) {
+      await tryRecordUserActivityEvent({
+        userId: actor.id,
+        eventType: "ENTRY_VIEW",
+        entityType: "ENTRY",
+        entityId: entryId,
+        metadata: { counted: result.counted },
+      });
+    }
+    return apiJson(result);
   });
 }

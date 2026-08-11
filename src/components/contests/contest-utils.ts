@@ -14,6 +14,10 @@ export const phaseLabels: Record<ContestPhase, string> = {
 
 export const contestStatusLabels: Record<ContestStatus, string> = {
   DRAFT: "Brouillon",
+  UPCOMING: "À venir",
+  OPEN: "Inscriptions ouvertes",
+  FULL: "Complet",
+  CLOSED: "Inscriptions fermées",
   SCHEDULED: "Programmé",
   ACTIVE: "Actif",
   PAUSED: "En pause",
@@ -88,6 +92,17 @@ export function adminContestValue(contest: AdminContest): ContestFormValue {
     rewardBadgeId: contest.rewardBadgeId ?? contest.reward_badge_id ?? null,
     maxParticipants: maximum === null || maximum === undefined ? null : Number(maximum),
     requireEntry: contest.requireEntry ?? contest.require_entry ?? false,
+    contestType: contest.contestType ?? contest.contest_type ?? "OTHER",
+    instructions: contest.instructions ?? "",
+    participationSteps: contest.participationSteps ?? contest.participation_steps ?? [],
+    externalUrl: contest.externalUrl ?? contest.external_url ?? null,
+    telegramUrl: contest.telegramUrl ?? contest.telegram_url ?? null,
+    instagramUrl: contest.instagramUrl ?? contest.instagram_url ?? null,
+    terms: contest.terms ?? null,
+    additionalInformation: contest.additionalInformation ?? contest.additional_information ?? null,
+    registrationsOpen: contest.registrationsOpen ?? contest.registrations_open ?? true,
+    registrationStartsAt: contest.registrationStartsAt ?? contest.registration_starts_at ?? null,
+    registrationEndsAt: contest.registrationEndsAt ?? contest.registration_ends_at ?? null,
   };
 }
 

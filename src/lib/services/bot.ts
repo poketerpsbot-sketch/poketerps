@@ -6,6 +6,7 @@ import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { roleForTelegramId } from "@/lib/services/auth";
 import { listAdminEntries, listAdminReviews } from "@/lib/services/admin";
+import { getAdminQueueCounts, type AdminQueueCounts } from "@/lib/services/admin-queues";
 import {
   buildHelpMessage,
   buildTeamMenu,
@@ -46,25 +47,48 @@ const adminActionLabels: Record<AdminAction, string> = {
   archive: "Archiver",
 };
 
-function adminMenu(actor: CurrentUser): InlineKeyboardMarkup {
-  return buildTeamMenu(getEnv().NEXT_PUBLIC_APP_URL, actor.role);
+function adminMenu(actor: CurrentUser, counts?: AdminQueueCounts): InlineKeyboardMarkup {
+  return buildTeamMenu(getEnv().NEXT_PUBLIC_APP_URL, actor.role, counts);
 }
 
-function teamHeading(actor: CurrentUser): string {
+async function queueAwareAdminMenu(actor: CurrentUser): Promise<{
+  heading: string;
+  keyboard: InlineKeyboardMarkup;
+}> {
+  try {
+    const counts = await getAdminQueueCounts(actor);
+    return { heading: teamHeading(actor, counts), keyboard: adminMenu(actor, counts) };
+  } catch {
+    return { heading: teamHeading(actor), keyboard: adminMenu(actor) };
+  }
+}
+
+function teamHeading(actor: CurrentUser, counts?: AdminQueueCounts): string {
   const title = actor.role === "MODERATOR" ? "Modération" : "Administration complète";
-  return `<b>${title}</b>\n${escapeTelegramHtml(actor.displayName)} · ${telegramRoleBadge(actor.role)}\n\nChoisis une action correspondant à tes autorisations.`;
+  const queueSummary = counts
+    ? `\n\n<b>${counts.totalActionable} élément${counts.totalActionable > 1 ? "s" : ""} à traiter</b> · Fiches ${counts.pendingEntries + counts.pendingCorrections} · Avis ${counts.pendingReviews} · Messages ${counts.pendingMessages + counts.pendingReports} · Concours ${counts.pendingContestParticipations}`
+    : "";
+  return `<b>${title}</b>\n${escapeTelegramHtml(actor.displayName)} · ${telegramRoleBadge(actor.role)}${queueSummary}\n\nChoisis une action correspondant à tes autorisations.`;
 }
 
 function entityActions(entity: AdminEntity, id: string): InlineKeyboardMarkup {
   const actions: Record<AdminEntity, AdminAction[]> = {
     entry: ["approve", "publish", "changes", "reject"],
-    review: ["approve", "publish", "changes", "reject"],
+    review: ["approve"],
     message: ["read", "assign", "resolve", "archive"],
   };
+  const inlineKeyboard: InlineKeyboardMarkup["inline_keyboard"] = actions[entity].map((action) => [
+    { text: adminActionLabels[action], callback_data: `do:${entity}:${action}:${id}` },
+  ]);
+  if (entity === "review") {
+    const reviewUrl = `${getEnv().NEXT_PUBLIC_APP_URL}/admin/avis?review=${encodeURIComponent(id)}`;
+    inlineKeyboard.push(
+      [{ text: "Demander une modification avec message", web_app: { url: reviewUrl } }],
+      [{ text: "Refuser avec un motif", web_app: { url: reviewUrl } }],
+    );
+  }
   return {
-    inline_keyboard: actions[entity].map((action) => [
-      { text: adminActionLabels[action], callback_data: `do:${entity}:${action}:${id}` },
-    ]),
+    inline_keyboard: inlineKeyboard,
   };
 }
 
@@ -261,10 +285,19 @@ async function executeAdminAction(
       id,
       { status, ...(["CHANGES_REQUESTED", "REJECTED"].includes(status) ? { reason } : {}) },
       actor,
+      undefined,
+      "TELEGRAM_ADMIN",
     );
     return;
   }
   if (entity === "review") {
+    if (action === "changes" || action === "reject") {
+      throw new AppError(
+        "REVIEW_REASON_REQUIRED",
+        "Ouvre le panel des avis pour saisir le message obligatoire.",
+        400,
+      );
+    }
     const statuses = {
       approve: "APPROVED",
       publish: "PUBLISHED",
@@ -281,6 +314,8 @@ async function executeAdminAction(
         ...(["CHANGES_REQUESTED", "REJECTED", "HIDDEN"].includes(status) ? { reason } : {}),
       },
       actor,
+      undefined,
+      "TELEGRAM_ADMIN",
     );
     return;
   }
@@ -292,7 +327,7 @@ async function executeAdminAction(
   } as const;
   const update = updates[action as keyof typeof updates];
   if (!update) throw new AppError("INVALID_CALLBACK", "Action invalide.", 400);
-  await updateAdminMessage(id, update, actor);
+  await updateAdminMessage(id, update, actor, undefined, "TELEGRAM_ADMIN");
 }
 
 async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promise<void> {
@@ -311,8 +346,10 @@ async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promi
     else if (parsed.value === "ranking") await sendRanking(chatId);
     else {
       assertBotAdmin(actor);
-      if (parsed.value === "admin")
-        await sendTelegramMessage(chatId, teamHeading(actor), adminMenu(actor));
+      if (parsed.value === "admin") {
+        const menu = await queueAwareAdminMenu(actor);
+        await sendTelegramMessage(chatId, menu.heading, menu.keyboard);
+      }
       if (parsed.value === "entries") {
         assertBotAdmin(actor, "entry");
         await sendAdminEntries(chatId, actor);
@@ -351,10 +388,11 @@ async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promi
   }
   await executeAdminAction(parsed.entity, parsed.action, parsed.id, actor);
   await answerTelegramCallback(callback.id, "Action enregistrée.");
+  const refreshedMenu = await queueAwareAdminMenu(actor);
   await sendTelegramMessage(
     chatId,
     `✅ ${escapeTelegramHtml(adminActionLabels[parsed.action])} : terminé.`,
-    adminMenu(actor),
+    refreshedMenu.keyboard,
   );
 }
 
@@ -407,7 +445,8 @@ export async function processTelegramUpdate(
   else if (command.name === "partners") await sendPartners(message.chat.id);
   else if (command.name === "admin") {
     assertBotAdmin(actor);
-    await sendTelegramMessage(message.chat.id, teamHeading(actor), adminMenu(actor));
+    const menu = await queueAwareAdminMenu(actor);
+    await sendTelegramMessage(message.chat.id, menu.heading, menu.keyboard);
   } else if (command.name === "help") {
     await sendTelegramMessage(message.chat.id, buildHelpMessage(actor.role), appKeyboard());
   }

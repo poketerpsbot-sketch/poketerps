@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BookOpen, Mail, Medal, MessageSquare, ShieldCheck } from "lucide-react";
 
-import type { AdminMessageDto, EntrySummaryDto, ReviewDto } from "@/components/data/types";
-import { serverApi, unwrapList } from "@/components/data/server-api";
-import { ErrorState } from "@/components/ui/states";
+import { requireAdminUser } from "@/lib/auth/admin";
+import { getAdminQueueCounts } from "@/lib/services/admin-queues";
 
 export const metadata: Metadata = { title: "Modération" };
 
@@ -17,53 +16,50 @@ type ModerationCard = {
 };
 
 export default async function ModerationDashboardPage() {
-  const [entriesResult, reviewsResult, messagesResult, contestsResult] = await Promise.all([
-    serverApi<unknown>("/api/admin/entries?status=PENDING_REVIEW&limit=10&offset=0"),
-    serverApi<unknown>("/api/admin/reviews?status=PENDING_REVIEW&limit=10&offset=0"),
-    serverApi<unknown>("/api/admin/messages?status=NEW&limit=10&offset=0"),
-    serverApi<unknown>("/api/admin/contests?limit=20&offset=0"),
-  ]);
-
-  const firstError =
-    entriesResult.error ?? reviewsResult.error ?? messagesResult.error ?? contestsResult.error;
-  if (firstError) return <ErrorState message={firstError} retryHref="/admin/moderation" />;
-
-  const entries = unwrapList<EntrySummaryDto>(entriesResult.data, ["entries"]);
-  const reviews = unwrapList<ReviewDto>(reviewsResult.data, ["reviews"]);
-  const messages = unwrapList<AdminMessageDto>(messagesResult.data, ["messages"]);
-  const contests = unwrapList<Record<string, unknown>>(contestsResult.data, ["contests"]);
-  const pendingContests = contests.reduce(
-    (total, contest) => total + Number(contest.pending_count ?? contest.pendingCount ?? 0),
-    0,
-  );
+  const actor = await requireAdminUser();
+  const counts = await getAdminQueueCounts(actor);
 
   const cards: ModerationCard[] = [
     {
       href: "/admin/fiches",
       label: "Fiches à valider",
       description: "Approuver, demander des corrections ou refuser les propositions.",
-      count: entries.length,
+      count: counts.pendingEntries,
+      icon: BookOpen,
+    },
+    {
+      href: "/admin/fiches#corrections",
+      label: "Corrections proposées",
+      description: "Lire les modifications suggérées sur les fiches déjà publiées.",
+      count: counts.pendingCorrections,
       icon: BookOpen,
     },
     {
       href: "/admin/avis",
       label: "Avis à valider",
       description: "Contrôler les avis avant leur publication.",
-      count: reviews.length,
+      count: counts.pendingReviews,
       icon: MessageSquare,
     },
     {
       href: "/admin/messages",
       label: "Messages et signalements",
       description: "Traiter les demandes et contenus signalés.",
-      count: messages.length,
+      count: counts.pendingMessages,
+      icon: Mail,
+    },
+    {
+      href: "/admin/messages?type=REPORT",
+      label: "Signalements",
+      description: "Prioriser les contenus et comportements signalés par la communauté.",
+      count: counts.pendingReports,
       icon: Mail,
     },
     {
       href: "/admin/concours",
       label: "Participations aux concours",
       description: "Examiner les candidatures et attribuer les scores autorisés.",
-      count: pendingContests,
+      count: counts.pendingContestParticipations,
       icon: Medal,
     },
   ];
@@ -96,6 +92,20 @@ export default async function ModerationDashboardPage() {
           </article>
         ))}
       </section>
+
+      {(counts.requestedEntryChanges > 0 || counts.requestedReviewChanges > 0) && (
+        <section className="content-panel admin-waiting-summary" aria-label="Retours demandés">
+          <div>
+            <p className="eyebrow">En attente des membres</p>
+            <h2>Modifications déjà demandées</h2>
+            <p>Ces éléments reviendront dans la file active après leur nouvelle soumission.</p>
+          </div>
+          <div className="button-row">
+            <span className="status-pill">{counts.requestedEntryChanges} fiche(s)</span>
+            <span className="status-pill">{counts.requestedReviewChanges} avis</span>
+          </div>
+        </section>
+      )}
     </>
   );
 }

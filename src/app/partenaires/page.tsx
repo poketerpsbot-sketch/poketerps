@@ -26,6 +26,22 @@ export default async function PartnersPage() {
         </div>
         <Handshake className="page-header__mark" size={58} aria-hidden="true" />
       </header>
+      <section
+        className="content-panel partner-proposal-preview"
+        aria-label="Proposer un partenariat"
+      >
+        <div>
+          <p className="eyebrow">Prochaine fonctionnalité</p>
+          <h2>Proposer un partenariat</h2>
+          <p>Les demandes communautaires, officielles et temporaires seront bientôt disponibles.</p>
+        </div>
+        <div>
+          <button className="button button--secondary" type="button" disabled aria-disabled="true">
+            Proposer un partenariat
+          </button>
+          <small>Bientôt disponible</small>
+        </div>
+      </section>
       {result.error ? (
         <ErrorState message={result.error} retryHref="/partenaires" />
       ) : partners.length === 0 ? (

@@ -3,6 +3,8 @@ import { AdminShell } from "@/components/admin/admin-shell";
 import { ErrorState } from "@/components/ui/states";
 import { getOptionalCurrentUser } from "@/lib/auth/current-user";
 import { isAdminRole } from "@/lib/auth/rbac";
+import { resolvedTeamPermissions } from "@/lib/auth/team-permissions";
+import { getAdminQueueCounts, type AdminQueueCounts } from "@/lib/services/admin-queues";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const user = await getOptionalCurrentUser();
@@ -26,8 +28,26 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
+  let canViewTeamActivity = user.role === "OWNER" || user.role === "ADMIN";
+  let queueCounts: AdminQueueCounts | undefined;
+  try {
+    const [permissions, counts] = await Promise.all([
+      resolvedTeamPermissions(user),
+      getAdminQueueCounts(user),
+    ]);
+    canViewTeamActivity = permissions.VIEW_ADMIN_ACTIVITY || permissions.VIEW_MODERATOR_ACTIVITY;
+    queueCounts = counts;
+  } catch {
+    // Keep the role-safe fallback while a deployment and its migration overlap.
+  }
+
   return (
-    <AdminShell displayName={user.displayName} role={user.role}>
+    <AdminShell
+      displayName={user.displayName}
+      role={user.role}
+      canViewTeamActivity={canViewTeamActivity}
+      queueCounts={queueCounts}
+    >
       {children}
     </AdminShell>
   );

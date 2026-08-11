@@ -4,6 +4,7 @@ import {
   TaxonomyAdmin,
   type AdminCategory,
   type AdminDynamicField,
+  type AdminMicronPreset,
   type AdminSubcategory,
 } from "@/components/admin/taxonomy-admin";
 import { serverApi, unwrapList } from "@/components/data/server-api";
@@ -11,15 +12,33 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 
 export const metadata: Metadata = { title: "Catégories · Administration" };
 
+async function loadAllAdminItems<T>(path: string, keys: string[]) {
+  const items: T[] = [];
+  for (let offset = 0; offset <= 2_000; offset += 100) {
+    const separator = path.includes("?") ? "&" : "?";
+    const result = await serverApi<unknown>(`${path}${separator}limit=100&offset=${offset}`);
+    if (result.error) return { items, error: result.error };
+    const page = unwrapList<T>(result.data, keys);
+    items.push(...page);
+    if (page.length < 100) return { items, error: null };
+  }
+  return {
+    items,
+    error: "La taxonomie dépasse la limite de sécurité de 2 100 éléments.",
+  };
+}
+
 export default async function AdminCategoriesPage() {
-  const [categoryResult, subcategoryResult, fieldResult] = await Promise.all([
-    serverApi<unknown>("/api/admin/categories?limit=100&offset=0"),
-    serverApi<unknown>("/api/admin/subcategories?limit=100&offset=0"),
-    serverApi<unknown>("/api/admin/dynamic-fields?limit=100&offset=0"),
+  const [categoryResult, subcategoryResult, fieldResult, micronPresetResult] = await Promise.all([
+    loadAllAdminItems<AdminCategory>("/api/admin/categories", ["categories"]),
+    loadAllAdminItems<AdminSubcategory>("/api/admin/subcategories", ["subcategories"]),
+    loadAllAdminItems<AdminDynamicField>("/api/admin/dynamic-fields", ["fields", "definitions"]),
+    serverApi<unknown>("/api/admin/micron-presets"),
   ]);
-  const categories = unwrapList<AdminCategory>(categoryResult.data, ["categories"]);
-  const subcategories = unwrapList<AdminSubcategory>(subcategoryResult.data, ["subcategories"]);
-  const fields = unwrapList<AdminDynamicField>(fieldResult.data, ["fields", "definitions"]);
+  const categories = categoryResult.items;
+  const subcategories = subcategoryResult.items;
+  const fields = fieldResult.items;
+  const micronPresets = unwrapList<AdminMicronPreset>(micronPresetResult.data, ["micronPresets"]);
 
   return (
     <>
@@ -36,7 +55,10 @@ export default async function AdminCategoriesPage() {
             categories={[]}
             subcategories={[]}
             fields={[]}
-            secondaryError={subcategoryResult.error ?? fieldResult.error}
+            micronPresets={micronPresets}
+            secondaryError={
+              subcategoryResult.error ?? fieldResult.error ?? micronPresetResult.error
+            }
           />
           <EmptyState
             title="Aucune catégorie"
@@ -48,7 +70,8 @@ export default async function AdminCategoriesPage() {
           categories={categories}
           subcategories={subcategories}
           fields={fields}
-          secondaryError={subcategoryResult.error ?? fieldResult.error}
+          micronPresets={micronPresets}
+          secondaryError={subcategoryResult.error ?? fieldResult.error ?? micronPresetResult.error}
         />
       )}
     </>

@@ -4,9 +4,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   BookOpen,
+  FilePenLine,
   Handshake,
   Mail,
   MessageSquare,
+  Medal,
   ScrollText,
   Send,
   Tags,
@@ -22,6 +24,7 @@ import type {
 import { serverApi, unwrapList, unwrapObject } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
 import { getOptionalCurrentUser } from "@/lib/auth/current-user";
+import { getAdminQueueCounts } from "@/lib/services/admin-queues";
 
 export const metadata: Metadata = { title: "Administration" };
 
@@ -32,11 +35,12 @@ function queueCount(value: unknown) {
 export default async function AdminDashboardPage() {
   const currentUser = await getOptionalCurrentUser();
   if (currentUser?.role === "MODERATOR") redirect("/admin/moderation");
-  const [result, entriesResult, reviewsResult, messagesResult] = await Promise.all([
+  const [result, entriesResult, reviewsResult, messagesResult, queueCounts] = await Promise.all([
     getAdminDashboard(),
     serverApi<unknown>("/api/admin/entries?status=PENDING_REVIEW&limit=5&offset=0"),
     serverApi<unknown>("/api/admin/reviews?status=PENDING_REVIEW&limit=5&offset=0"),
     serverApi<unknown>("/api/admin/messages?limit=5&offset=0"),
+    currentUser ? getAdminQueueCounts(currentUser) : null,
   ]);
   const dashboard = unwrapObject<AdminDashboardDto>(result.data, ["dashboard"]);
   const pendingEntries = unwrapList<EntrySummaryDto>(entriesResult.data, ["entries"]);
@@ -85,6 +89,50 @@ export default async function AdminDashboardPage() {
           <p>Les files prioritaires et actions de modération en temps réel.</p>
         </div>
       </header>
+
+      {queueCounts && (
+        <section className="content-panel admin-attention-panel" aria-labelledby="attention-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Priorités</p>
+              <h2 id="attention-title">À traiter maintenant</h2>
+            </div>
+            <strong className="admin-section-count">{queueCounts.totalActionable}</strong>
+          </div>
+          <div className="admin-attention-grid">
+            <AttentionLink
+              href="/admin/fiches"
+              label="Fiches"
+              count={queueCounts.pendingEntries}
+              icon={<BookOpen aria-hidden="true" />}
+            />
+            <AttentionLink
+              href="/admin/fiches#corrections"
+              label="Corrections"
+              count={queueCounts.pendingCorrections}
+              icon={<FilePenLine aria-hidden="true" />}
+            />
+            <AttentionLink
+              href="/admin/avis"
+              label="Avis"
+              count={queueCounts.pendingReviews}
+              icon={<MessageSquare aria-hidden="true" />}
+            />
+            <AttentionLink
+              href="/admin/messages"
+              label="Messages"
+              count={queueCounts.pendingMessages + queueCounts.pendingReports}
+              icon={<Mail aria-hidden="true" />}
+            />
+            <AttentionLink
+              href="/admin/concours"
+              label="Concours"
+              count={queueCounts.pendingContestParticipations}
+              icon={<Medal aria-hidden="true" />}
+            />
+          </div>
+        </section>
+      )}
 
       <section className="admin-stat-grid" aria-label="Indicateurs administratifs">
         {cards.map((stat) => (
@@ -183,6 +231,30 @@ export default async function AdminDashboardPage() {
         />
       </div>
     </>
+  );
+}
+
+function AttentionLink({
+  href,
+  label,
+  count,
+  icon,
+}: {
+  href: string;
+  label: string;
+  count: number;
+  icon: ReactNode;
+}) {
+  return (
+    <Link
+      className="admin-attention-link"
+      href={href}
+      aria-label={`${label} : ${count} en attente`}
+    >
+      {icon}
+      <span>{label}</span>
+      <strong>{count > 99 ? "99+" : count}</strong>
+    </Link>
   );
 }
 

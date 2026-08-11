@@ -2,14 +2,19 @@ import "server-only";
 
 import { getDb, getSqlClient } from "@/lib/db";
 import { auditLogs } from "@/lib/db/schema";
+import { notFound } from "@/lib/errors";
+
+export type AuditSource =
+  "WEB" | "TELEGRAM" | "SYSTEM" | "WEB_ADMIN" | "TELEGRAM_ADMIN" | "MINI_APP" | "API";
 
 export type AuditEvent = {
   actorUserId?: string | null;
   actorTelegramIdSnapshot?: number | null;
+  actorRole?: import("@/lib/db/schema").UserRole | null;
   action: string;
   entityType: string;
   entityId?: string | null;
-  source?: "WEB" | "TELEGRAM" | "SYSTEM";
+  source?: AuditSource;
   requestId?: string | null;
   before?: unknown;
   after?: unknown;
@@ -20,6 +25,7 @@ export function auditValues(event: AuditEvent): typeof auditLogs.$inferInsert {
   return {
     actorUserId: event.actorUserId ?? null,
     actorTelegramIdSnapshot: event.actorTelegramIdSnapshot ?? null,
+    actorRole: event.actorRole ?? null,
     action: event.action,
     entityType: event.entityType,
     entityId: event.entityId ?? null,
@@ -48,6 +54,7 @@ export async function listAuditLogs(query: {
       id: string;
       actor_user_id: string | null;
       actor_name: string | null;
+      actor_role: string | null;
       action: string;
       entity_type: string;
       entity_id: string | null;
@@ -60,7 +67,9 @@ export async function listAuditLogs(query: {
       total_count: number;
     }>
   >`
-    select a.id, a.actor_user_id, u.display_name as actor_name, a.action, a.entity_type,
+    select a.id, a.actor_user_id, u.display_name as actor_name,
+      coalesce(a.actor_role,u.role)::text actor_role,
+      a.action, a.entity_type,
       a.entity_id, a.source::text, a.request_id, a.before_data, a.after_data, a.metadata,
       a.created_at, count(*) over()::int as total_count
     from audit_logs a
@@ -75,6 +84,7 @@ export async function listAuditLogs(query: {
       id: row.id,
       actorUserId: row.actor_user_id,
       actorName: row.actor_name,
+      actorRole: row.actor_role,
       action: row.action,
       entityType: row.entity_type,
       entityId: row.entity_id,
@@ -86,5 +96,48 @@ export async function listAuditLogs(query: {
       createdAt: row.created_at,
     })),
     total: Number(rows[0]?.total_count ?? 0),
+  };
+}
+
+export async function getAuditLog(id: string) {
+  const [row] = await getSqlClient()<
+    Array<{
+      id: string;
+      actor_user_id: string | null;
+      actor_name: string | null;
+      actor_role: string | null;
+      action: string;
+      entity_type: string;
+      entity_id: string | null;
+      source: string;
+      request_id: string | null;
+      before_data: unknown;
+      after_data: unknown;
+      metadata: Record<string, unknown>;
+      created_at: Date;
+    }>
+  >`
+    select a.id,a.actor_user_id,u.display_name actor_name,
+      coalesce(a.actor_role,u.role)::text actor_role,
+      a.action,a.entity_type,a.entity_id,a.source::text,a.request_id,a.before_data,
+      a.after_data,a.metadata,a.created_at
+    from audit_logs a left join users u on u.id=a.actor_user_id
+    where a.id=${id}::uuid limit 1
+  `;
+  if (!row) throw notFound("Trace d’audit");
+  return {
+    id: row.id,
+    actorUserId: row.actor_user_id,
+    actorName: row.actor_name,
+    actorRole: row.actor_role,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    source: row.source,
+    requestId: row.request_id,
+    before: row.before_data,
+    after: row.after_data,
+    metadata: row.metadata,
+    createdAt: row.created_at,
   };
 }

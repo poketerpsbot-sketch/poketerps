@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, LogIn, Send, ShieldCheck, Undo2 } from "lucide-react";
+import { CheckCircle2, ExternalLink, LogIn, Send, ShieldCheck, Undo2, X } from "lucide-react";
 
 import type { EntrySummaryDto } from "@/components/data/types";
 import type { ContestDetailData, ContestParticipation } from "@/components/contests/types";
@@ -37,6 +37,8 @@ export function ContestParticipationPanel({
   const [statement, setStatement] = useState(initialContest.viewerParticipation?.statement ?? "");
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [joined, setJoined] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -79,12 +81,18 @@ export function ContestParticipationPanel({
     if (payload.data) setContest(payload.data);
   }
 
-  async function participate(event: React.FormEvent<HTMLFormElement>) {
+  function requestParticipation(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (contest.requireEntry && !entryId) {
       setFeedback("Choisis une de tes fiches publiées pour participer.");
       return;
     }
+    setFeedback("");
+    setConfirmationOpen(true);
+  }
+
+  async function participate() {
+    setConfirmationOpen(false);
     setPending(true);
     setFeedback("");
     const result = await submitJson<ContestParticipation>(
@@ -98,7 +106,8 @@ export function ContestParticipationPanel({
       return;
     }
     if (result.data) setContest((current) => ({ ...current, viewerParticipation: result.data }));
-    setFeedback("Participation envoyée à l’équipe de modération.");
+    setJoined(true);
+    setFeedback("✅ Parfait, tu participes maintenant à ce concours !");
     await reloadContest();
   }
 
@@ -125,6 +134,13 @@ export function ContestParticipationPanel({
   const canSubmit = contest.participationOpen && (!participation || canRejoin);
   const canWithdraw =
     participation && !["WITHDRAWN", "DISQUALIFIED"].includes(participation.status);
+  const showParticipationConfirmation =
+    joined ||
+    Boolean(participation && ["PENDING_REVIEW", "APPROVED"].includes(participation.status));
+  const contestEndLabel = new Intl.DateTimeFormat("fr-CH", {
+    dateStyle: "long",
+    timeStyle: "short",
+  }).format(new Date(contest.endsAt));
 
   return (
     <section className="content-panel contest-participation" aria-labelledby="participation-title">
@@ -164,6 +180,71 @@ export function ContestParticipationPanel({
         </div>
       )}
 
+      {showParticipationConfirmation && (
+        <div className="contest-participation__confirmation" role="status">
+          <CheckCircle2 aria-hidden="true" />
+          <div>
+            <strong>✅ Parfait, tu participes maintenant à ce concours !</strong>
+            <p>Voici les marches à suivre pour participer correctement :</p>
+            {contest.instructions && <p>{contest.instructions}</p>}
+            {contest.participationSteps.length > 0 && (
+              <ol>
+                {contest.participationSteps.map((step, index) => (
+                  <li key={`${index}-${step}`}>{step}</li>
+                ))}
+              </ol>
+            )}
+            {contest.description && (
+              <section className="contest-participation__instructions">
+                <h3>Explication du concours</h3>
+                <p>{contest.description}</p>
+              </section>
+            )}
+            {contest.additionalInformation && (
+              <section className="contest-participation__instructions">
+                <h3>Informations complémentaires</h3>
+                <p>{contest.additionalInformation}</p>
+              </section>
+            )}
+            {contest.rules && (
+              <section className="contest-participation__instructions">
+                <h3>Règlement</h3>
+                <p>{contest.rules}</p>
+              </section>
+            )}
+            {contest.terms && (
+              <section className="contest-participation__instructions">
+                <h3>Conditions</h3>
+                <p>{contest.terms}</p>
+              </section>
+            )}
+            <p>
+              <strong>Fin du concours :</strong>{" "}
+              <time dateTime={contest.endsAt}>{contestEndLabel}</time>
+            </p>
+            <div className="button-row">
+              {[
+                [contest.externalUrl, "Ouvrir le lien"],
+                [contest.telegramUrl, "Ouvrir Telegram"],
+                [contest.instagramUrl, "Ouvrir Instagram"],
+              ].map(([href, label]) =>
+                href ? (
+                  <a
+                    className="button button--secondary"
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    key={label}
+                  >
+                    <ExternalLink aria-hidden="true" /> {label}
+                  </a>
+                ) : null,
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!authenticated && !participation ? (
         <div className="contest-participation__login">
           <LogIn aria-hidden="true" />
@@ -176,7 +257,7 @@ export function ContestParticipationPanel({
           </Link>
         </div>
       ) : canSubmit ? (
-        <form className="contest-participation__form" onSubmit={participate}>
+        <form className="contest-participation__form" onSubmit={requestParticipation}>
           {contest.requireEntry && (
             <div className="field">
               <label htmlFor="contest-entry">Fiche publiée</label>
@@ -218,12 +299,62 @@ export function ContestParticipationPanel({
             disabled={pending || (contest.requireEntry && !entries.length)}
           >
             <Send aria-hidden="true" />{" "}
-            {pending ? "Envoi…" : canRejoin ? "Participer à nouveau" : "Envoyer ma participation"}
+            {pending ? "Envoi…" : canRejoin ? "Participer à nouveau" : "Participer au concours"}
           </button>
         </form>
       ) : !participation ? (
-        <p className="notice">Ce concours n’accepte pas de nouvelle participation actuellement.</p>
+        contest.isFull ? (
+          <div className="contest-participation__closed">
+            <button className="button button--dark" type="button" disabled>
+              Concours complet
+            </button>
+            <p className="notice">Plus aucune place disponible.</p>
+          </div>
+        ) : (
+          <p className="notice">
+            Ce concours n’accepte pas de nouvelle participation actuellement.
+          </p>
+        )
       ) : null}
+
+      {confirmationOpen && (
+        <div
+          className="confirmation-sheet"
+          role="presentation"
+          onClick={() => setConfirmationOpen(false)}
+        >
+          <section
+            className="confirmation-sheet__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="contest-confirmation-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="icon-button confirmation-sheet__close"
+              type="button"
+              aria-label="Annuler"
+              onClick={() => setConfirmationOpen(false)}
+            >
+              <X aria-hidden="true" />
+            </button>
+            <h3 id="contest-confirmation-title">Tu veux participer à ce concours ?</h3>
+            <p>Une seule participation est autorisée par personne pour ce concours.</p>
+            <div className="button-row">
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => setConfirmationOpen(false)}
+              >
+                Annuler
+              </button>
+              <button className="button button--dark" type="button" onClick={participate}>
+                Confirmer ma participation
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {feedback && (
         <p className="interaction-feedback" role="status" aria-live="polite">

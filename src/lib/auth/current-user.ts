@@ -4,8 +4,9 @@ import { eq } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
 import { users, type UserRole } from "@/lib/db/schema";
-import { forbidden, unauthorized } from "@/lib/errors";
+import { unauthorized } from "@/lib/errors";
 import { readSession } from "@/lib/auth/session";
+import { resolveUserAccess } from "@/lib/auth/user-access";
 
 export type CurrentUser = {
   id: string;
@@ -32,14 +33,20 @@ export async function getOptionalCurrentUser(): Promise<CurrentUser | null> {
       role: users.role,
       isBanned: users.isBanned,
       suspendedAt: users.suspendedAt,
+      bannedUntil: users.bannedUntil,
     })
     .from(users)
     .where(eq(users.id, session.userId))
     .limit(1);
   if (!user) return null;
-  if (user.isBanned || user.role === "BANNED" || user.suspendedAt)
-    throw forbidden("Compte suspendu.");
-  return user;
+  const role = await resolveUserAccess({
+    id: user.id,
+    role: user.role,
+    isBanned: user.isBanned,
+    suspendedAt: user.suspendedAt,
+    bannedUntil: user.bannedUntil,
+  });
+  return { ...user, role };
 }
 
 export async function requireCurrentUser(): Promise<CurrentUser> {

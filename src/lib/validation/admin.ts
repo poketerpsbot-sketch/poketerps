@@ -6,6 +6,8 @@ import { paginationSchema } from "@/lib/validation/common";
 export const adminEntriesQuerySchema = paginationSchema.extend({
   status: entryStatusSchema.optional(),
   query: z.string().trim().max(120).optional(),
+  category: z.string().trim().max(140).optional(),
+  subcategory: z.string().trim().max(140).optional(),
 });
 
 export const adminReviewsQuerySchema = paginationSchema.extend({
@@ -27,6 +29,15 @@ export const adminReviewsQuerySchema = paginationSchema.extend({
 export const auditQuerySchema = paginationSchema.extend({
   entityType: z.string().trim().min(1).max(80).optional(),
   action: z.string().trim().min(1).max(120).optional(),
+});
+
+export const moderateCorrectionSubmissionSchema = z.object({
+  status: z.enum(["APPROVED", "CHANGES_REQUESTED", "REJECTED"]),
+  reason: z.string().trim().max(2_000).optional(),
+});
+
+export const permanentDeleteEntrySchema = z.object({
+  confirmation: z.string().trim().min(1).max(120),
 });
 
 export const publicationQuerySchema = paginationSchema.extend({

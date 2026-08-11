@@ -21,7 +21,9 @@ describe("automatic Telegram role badges", () => {
 
     expect(migration).toMatch(/"system":"telegram-role"/);
     expect(migration).toMatch(/on conflict\(slug\) do update/i);
-    expect(schema).toBe(initialMigration);
+    expect(schema).not.toBe(initialMigration);
+    expect(schema).toContain("-- Evolution 006: avis, notifications, concours configurables");
+    expect(initialMigration).not.toContain("review_moderation_events");
   });
 
   it("uses a locked-down trigger to reconcile inserts and role changes", () => {

@@ -4,11 +4,25 @@ import { paginationSchema, safeExternalUrlSchema } from "@/lib/validation/common
 
 export const contestStatusSchema = z.enum([
   "DRAFT",
+  "UPCOMING",
+  "OPEN",
+  "FULL",
+  "CLOSED",
   "SCHEDULED",
   "ACTIVE",
   "PAUSED",
   "ENDED",
   "CANCELLED",
+]);
+
+export const contestTypeSchema = z.enum([
+  "GAME",
+  "DRAW",
+  "CREATIVE",
+  "ENTRY",
+  "EXTERNAL_LINK",
+  "COMMUNITY",
+  "OTHER",
 ]);
 
 export const contestScoringModeSchema = z.enum([
@@ -70,6 +84,17 @@ const contestFieldsSchema = z.object({
   rewardBadgeId: z.uuid().nullable().optional(),
   maxParticipants: z.number().int().min(1).max(1_000_000).nullable().optional(),
   requireEntry: z.boolean(),
+  contestType: contestTypeSchema.default("OTHER"),
+  instructions: z.string().trim().max(20_000).default(""),
+  participationSteps: z.array(z.string().trim().min(1).max(500)).max(30).default([]),
+  externalUrl: safeExternalUrlSchema.nullable().optional(),
+  telegramUrl: safeExternalUrlSchema.nullable().optional(),
+  instagramUrl: safeExternalUrlSchema.nullable().optional(),
+  terms: nullableText(20_000),
+  additionalInformation: nullableText(20_000),
+  registrationsOpen: z.boolean().default(true),
+  registrationStartsAt: z.iso.datetime().nullable().optional(),
+  registrationEndsAt: z.iso.datetime().nullable().optional(),
 });
 
 function validateContestDates(
@@ -81,6 +106,22 @@ function validateContestDates(
       code: "custom",
       path: ["endsAt"],
       message: "La fin du concours doit suivre son début.",
+    });
+  }
+  const registrationValue = value as {
+    registrationStartsAt?: string | null;
+    registrationEndsAt?: string | null;
+  };
+  if (
+    registrationValue.registrationStartsAt &&
+    registrationValue.registrationEndsAt &&
+    new Date(registrationValue.registrationEndsAt) <=
+      new Date(registrationValue.registrationStartsAt)
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["registrationEndsAt"],
+      message: "La fermeture des inscriptions doit suivre leur ouverture.",
     });
   }
 }

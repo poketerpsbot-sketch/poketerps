@@ -5,6 +5,12 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
 import { getEnv } from "@/lib/env";
+import { logger } from "@/lib/logger";
+import {
+  endUserSession,
+  recordUserSession,
+  type SessionPlatform,
+} from "@/lib/services/user-activity";
 
 export const PRODUCTION_SESSION_COOKIE_NAME = "__Host-pokedex_session";
 export const DEVELOPMENT_SESSION_COOKIE_NAME = "pokedex_session";
@@ -25,10 +31,13 @@ function signingKey(): Uint8Array {
   return new TextEncoder().encode(getEnv().SESSION_SECRET);
 }
 
-export async function signSession(userId: string): Promise<{ token: string; expiresAt: Date }> {
+export async function signSession(
+  userId: string,
+): Promise<{ token: string; expiresAt: Date; sessionId: string }> {
   const env = getEnv();
   const expiresAt = new Date(Date.now() + env.SESSION_MAX_AGE_SECONDS * 1_000);
-  const token = await new SignJWT({ sid: randomUUID() })
+  const sessionId = randomUUID();
+  const token = await new SignJWT({ sid: sessionId })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(userId)
     .setIssuer("pokedex")
@@ -37,7 +46,7 @@ export async function signSession(userId: string): Promise<{ token: string; expi
     .setExpirationTime(Math.floor(expiresAt.getTime() / 1_000))
     .setJti(randomUUID())
     .sign(signingKey());
-  return { token, expiresAt };
+  return { token, expiresAt, sessionId };
 }
 
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
@@ -59,9 +68,12 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
   }
 }
 
-export async function createSession(userId: string): Promise<void> {
+export async function createSession(
+  userId: string,
+  context: { platform?: SessionPlatform; appVersion?: string | null } = {},
+): Promise<void> {
   const env = getEnv();
-  const { token, expiresAt } = await signSession(userId);
+  const { token, expiresAt, sessionId } = await signSession(userId);
   const cookieStore = await cookies();
   cookieStore.set(sessionCookieName(env.NODE_ENV), token, {
     httpOnly: true,
@@ -71,6 +83,16 @@ export async function createSession(userId: string): Promise<void> {
     expires: expiresAt,
     priority: "high",
   });
+  try {
+    await recordUserSession({
+      userId,
+      clientSessionId: sessionId,
+      platform: context.platform ?? "UNKNOWN",
+      appVersion: context.appVersion,
+    });
+  } catch (error) {
+    logger.warn("user_session_analytics_failed", { userId, error });
+  }
 }
 
 export async function readSession(): Promise<SessionPayload | null> {
@@ -79,5 +101,13 @@ export async function readSession(): Promise<SessionPayload | null> {
 }
 
 export async function deleteSession(): Promise<void> {
+  const session = await readSession();
+  if (session) {
+    try {
+      await endUserSession(session.sessionId);
+    } catch (error) {
+      logger.warn("user_session_end_failed", { userId: session.userId, error });
+    }
+  }
   (await cookies()).delete(sessionCookieName());
 }

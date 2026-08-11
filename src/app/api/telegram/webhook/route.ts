@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { upsertTrustedTelegramUser } from "@/lib/services/auth";
 import { processTelegramUpdate } from "@/lib/services/bot";
 import { isStartCommandUpdate } from "@/lib/services/bot-pure";
+import { recordUserSession } from "@/lib/services/user-activity";
 import {
   claimTelegramUpdate,
   completeTelegramUpdate,
@@ -17,6 +18,10 @@ import { answerTelegramCallback, sendTelegramMessage } from "@/lib/services/tele
 import { telegramUpdateSchema } from "@/lib/validation/telegram";
 
 export const runtime = "nodejs";
+
+function isTechnicalBootstrapFailure(error: unknown): boolean {
+  return !(error instanceof AppError) || error.status >= 500;
+}
 
 export async function POST(request: NextRequest): Promise<Response> {
   return handleApi(request, async () => {
@@ -30,7 +35,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     try {
       claimed = await claimTelegramUpdate(update.update_id);
     } catch (claimError) {
-      if (!isStart) throw claimError;
+      if (!isStart || !isTechnicalBootstrapFailure(claimError)) throw claimError;
       logger.warn("telegram_start_idempotency_unavailable", {
         updateId: update.update_id,
         error: claimError,
@@ -49,7 +54,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       try {
         actor = await upsertTrustedTelegramUser(sender);
       } catch (actorError) {
-        if (!isStart) throw actorError;
+        if (!isStart || !isTechnicalBootstrapFailure(actorError)) throw actorError;
         // /start remains available during a temporary database incident. The
         // bot can still derive bootstrap roles from the trusted Telegram ID,
         // while every protected callback re-authenticates its actor normally.
@@ -57,6 +62,21 @@ export async function POST(request: NextRequest): Promise<Response> {
           updateId: update.update_id,
           error: actorError,
         });
+      }
+      if (actor) {
+        try {
+          await recordUserSession({
+            userId: actor.id,
+            clientSessionId: `telegram-bot:${actor.id}:${new Date().toISOString().slice(0, 10)}`,
+            platform: "TELEGRAM_BOT",
+          });
+        } catch (activityError) {
+          logger.warn("telegram_bot_session_analytics_failed", {
+            updateId: update.update_id,
+            userId: actor.id,
+            error: activityError,
+          });
+        }
       }
       await processTelegramUpdate(update, actor);
       await completeTelegramUpdate(update.update_id);

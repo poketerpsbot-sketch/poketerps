@@ -68,4 +68,17 @@ describe("profile dashboard", () => {
     expect(html).not.toContain("Panneau d’administration");
     expect(html).not.toContain("Espace de modération");
   });
+
+  it("shows the personal notification entry point and unread counter", () => {
+    const profile: ProfilePayload = {
+      displayName: "Nico",
+      role: "MEMBER",
+      unreadNotificationCount: 3,
+    };
+    const html = renderToStaticMarkup(<MyProfileView profile={profile} />);
+
+    expect(html).toContain('href="/profil/notifications"');
+    expect(html).toContain("Notifications");
+    expect(html).toContain("3 non lues");
+  });
 });

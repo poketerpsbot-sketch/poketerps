@@ -1,18 +1,19 @@
 import "server-only";
 
 import { createHmac, randomUUID } from "node:crypto";
-import { lt } from "drizzle-orm";
+import { lt, sql } from "drizzle-orm";
 
 import { verifyTelegramInitData } from "@/lib/auth/telegram";
 import { getDb } from "@/lib/db";
 import { getSqlClient } from "@/lib/db";
 import { auditLogs, telegramAuthReplays, users, type UserRole } from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
-import { AppError, forbidden } from "@/lib/errors";
+import { AppError } from "@/lib/errors";
 import { auditValues } from "@/lib/services/audit";
 import { slugify } from "@/lib/validation/common";
 import type { TelegramSender } from "@/lib/validation/telegram";
 import type { CurrentUser } from "@/lib/auth/current-user";
+import { resolveUserAccess } from "@/lib/auth/user-access";
 
 export function roleForTelegramId(telegramId: number): UserRole {
   const env = getEnv();
@@ -63,9 +64,8 @@ export async function authenticateTelegram(initData: string, requestId?: string)
       lastSeenAt: new Date(),
       updatedAt: new Date(),
     };
-    if (role === "OWNER" || role === "ADMIN" || role === "MODERATOR") {
-      updateValues.role = role;
-    }
+    const synchronizedStaffRole =
+      role === "OWNER" || role === "ADMIN" || role === "MODERATOR" ? role : null;
 
     const [user] = await tx
       .insert(users)
@@ -79,7 +79,20 @@ export async function authenticateTelegram(initData: string, requestId?: string)
         publicSlug: slugify(`${verified.user.username ?? displayName}-${randomUUID().slice(0, 8)}`),
         role,
       })
-      .onConflictDoUpdate({ target: users.telegramId, set: updateValues })
+      .onConflictDoUpdate({
+        target: users.telegramId,
+        set: {
+          ...updateValues,
+          ...(synchronizedStaffRole
+            ? {
+                role: sql<UserRole>`case
+                  when ${users.isBanned} or ${users.role}='BANNED' then ${users.role}
+                  else ${synchronizedStaffRole}::user_role
+                end`,
+              }
+            : {}),
+        },
+      })
       .returning({
         id: users.id,
         telegramId: users.telegramId,
@@ -90,6 +103,7 @@ export async function authenticateTelegram(initData: string, requestId?: string)
         role: users.role,
         isBanned: users.isBanned,
         suspendedAt: users.suspendedAt,
+        bannedUntil: users.bannedUntil,
       });
     if (!user) throw new AppError("AUTHENTICATION_FAILED", "Authentification impossible.", 500);
 
@@ -97,9 +111,11 @@ export async function authenticateTelegram(initData: string, requestId?: string)
       auditValues({
         actorUserId: user.id,
         actorTelegramIdSnapshot: user.telegramId,
+        actorRole: user.role,
         action: "AUTH_TELEGRAM_LOGIN",
         entityType: "USER",
         entityId: user.id,
+        source: "MINI_APP",
         requestId,
         metadata: { queryIdPresent: Boolean(verified.queryId) },
       }),
@@ -107,14 +123,14 @@ export async function authenticateTelegram(initData: string, requestId?: string)
     return user;
   });
 
-  if (
-    authenticatedUser.isBanned ||
-    authenticatedUser.role === "BANNED" ||
-    authenticatedUser.suspendedAt
-  ) {
-    throw forbidden("Compte suspendu.");
-  }
-  return authenticatedUser;
+  const resolvedRole = await resolveUserAccess({
+    id: authenticatedUser.id,
+    role: authenticatedUser.role,
+    isBanned: authenticatedUser.isBanned,
+    suspendedAt: authenticatedUser.suspendedAt,
+    bannedUntil: authenticatedUser.bannedUntil,
+  });
+  return { ...authenticatedUser, role: resolvedRole };
 }
 
 export async function upsertTrustedTelegramUser(sender: TelegramSender): Promise<CurrentUser> {
@@ -134,6 +150,7 @@ export async function upsertTrustedTelegramUser(sender: TelegramSender): Promise
       role: UserRole;
       is_banned: boolean;
       suspended_at: Date | null;
+      banned_until: Date | null;
     }>
   >`
     insert into users (
@@ -148,17 +165,23 @@ export async function upsertTrustedTelegramUser(sender: TelegramSender): Promise
       telegram_username_snapshot = excluded.telegram_username_snapshot,
       display_name = excluded.display_name,
       role = case
+        when users.is_banned or users.role='BANNED' then users.role
         when excluded.role in ('OWNER', 'ADMIN', 'MODERATOR') then excluded.role
         else users.role
       end,
       last_seen_at = now(),
       updated_at = now()
     returning id, telegram_id, telegram_username, display_name, public_slug,
-      profile_photo_url, role, is_banned, suspended_at
+      profile_photo_url, role, is_banned, suspended_at, banned_until
   `;
   if (!row) throw new AppError("AUTHENTICATION_FAILED", "Authentification impossible.", 500);
-  if (row.is_banned || row.role === "BANNED" || row.suspended_at)
-    throw forbidden("Compte suspendu.");
+  const resolvedRole = await resolveUserAccess({
+    id: row.id,
+    role: row.role,
+    isBanned: row.is_banned,
+    suspendedAt: row.suspended_at,
+    bannedUntil: row.banned_until,
+  });
   return {
     id: row.id,
     telegramId: Number(row.telegram_id),
@@ -166,6 +189,6 @@ export async function upsertTrustedTelegramUser(sender: TelegramSender): Promise
     displayName: row.display_name,
     publicSlug: row.public_slug,
     profilePhotoUrl: row.profile_photo_url,
-    role: row.role,
+    role: resolvedRole,
   };
 }

@@ -6,6 +6,8 @@ describe("RBAC", () => {
   it("grants every permission to the owner", () => {
     expect(hasPermission("OWNER", "audit:read")).toBe(true);
     expect(hasPermission("OWNER", "partner:manage")).toBe(true);
+    expect(hasPermission("OWNER", "bot:manage")).toBe(true);
+    expect(hasPermission("OWNER", "entry:delete:permanent")).toBe(true);
   });
 
   it("limits management permissions to administrators", () => {
@@ -16,6 +18,9 @@ describe("RBAC", () => {
     expect(hasPermission("ADMIN", "publication:manage")).toBe(true);
     expect(hasPermission("ADMIN", "contest:manage")).toBe(true);
     expect(hasPermission("ADMIN", "contest:moderate")).toBe(true);
+    expect(hasPermission("ADMIN", "entry:update:any")).toBe(true);
+    expect(hasPermission("ADMIN", "bot:manage")).toBe(false);
+    expect(hasPermission("ADMIN", "entry:delete:permanent")).toBe(false);
     expect(hasPermission("MODERATOR", "publication:manage")).toBe(false);
     expect(hasPermission("MODERATOR", "user:manage")).toBe(false);
     expect(hasPermission("MODERATOR", "contest:manage")).toBe(false);
@@ -28,6 +33,18 @@ describe("RBAC", () => {
     expect(hasPermission("MODERATOR", "entry:moderate")).toBe(true);
     expect(hasPermission("MODERATOR", "contest:moderate")).toBe(true);
     expect(hasPermission("MODERATOR", "partner:manage")).toBe(false);
+    expect(hasPermission("MODERATOR", "settings:manage")).toBe(false);
+    expect(hasPermission("MODERATOR", "entry:update:any")).toBe(false);
+  });
+
+  it("separates team activity from the sensitive team audit log", () => {
+    expect(hasPermission("OWNER", "VIEW_TEAM_AUDIT_LOG")).toBe(true);
+    expect(hasPermission("ADMIN", "VIEW_ADMIN_ACTIVITY")).toBe(false);
+    expect(hasPermission("ADMIN", "VIEW_MODERATOR_ACTIVITY")).toBe(true);
+    expect(hasPermission("ADMIN", "VIEW_TEAM_AUDIT_LOG")).toBe(false);
+    expect(hasPermission("MODERATOR", "VIEW_MODERATOR_ACTIVITY")).toBe(false);
+    expect(hasPermission("MODERATOR", "VIEW_ADMIN_ACTIVITY")).toBe(false);
+    expect(hasPermission("MODERATOR", "VIEW_TEAM_AUDIT_LOG")).toBe(false);
   });
 
   it("rejects forbidden operations with a 403 error", () => {

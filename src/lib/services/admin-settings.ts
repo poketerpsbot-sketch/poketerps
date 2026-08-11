@@ -6,7 +6,7 @@ import type { z } from "zod";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getDb } from "@/lib/db";
 import { appSettings, auditLogs } from "@/lib/db/schema";
-import { AppError, notFound } from "@/lib/errors";
+import { AppError, forbidden, notFound } from "@/lib/errors";
 import { auditValues } from "@/lib/services/audit";
 import type {
   adminSettingsQuerySchema,
@@ -29,8 +29,10 @@ const settingSelection = {
   updatedAt: appSettings.updatedAt,
 };
 
-function isSensitiveSetting(key: string): boolean {
-  return /(SECRET|TOKEN|PASSWORD|PRIVATE|SERVICE_ROLE|DATABASE_URL)/i.test(key);
+export function isSensitiveSetting(key: string): boolean {
+  return /(SECRET|TOKEN|PASSWORD|PRIVATE|SERVICE_ROLE|DATABASE_URL|TELEGRAM|WEBHOOK|OWNER_IDS|BOTFATHER)/i.test(
+    key,
+  );
 }
 
 function settingDto<T extends { key: string; value: unknown }>(setting: T) {
@@ -91,6 +93,9 @@ export async function updateAdminSetting(
   actor: CurrentUser,
   requestId?: string,
 ) {
+  if (isSensitiveSetting(key) && actor.role !== "OWNER") {
+    throw forbidden("Seul le propriétaire peut modifier un paramètre sensible ou Telegram.");
+  }
   return getDb().transaction(async (tx) => {
     const [existing] = await tx
       .select(settingSelection)
@@ -121,6 +126,7 @@ export async function updateAdminSetting(
         actorTelegramIdSnapshot: actor.telegramId,
         action: "SETTING_UPDATED",
         entityType: "SETTING",
+        source: "WEB_ADMIN",
         requestId,
         before: redacted ? { ...existing, value: "[REDACTED]" } : existing,
         after: redacted ? { ...updated, value: "[REDACTED]" } : updated,

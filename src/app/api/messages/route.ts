@@ -6,6 +6,7 @@ import { apiJson, handleApi, parseJson } from "@/lib/http";
 import { guardBrowserMutation, rateLimits } from "@/lib/security/request-guard";
 import { createAdminMessage } from "@/lib/services/messages";
 import { notifyModerationQueue } from "@/lib/services/bot";
+import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import { createMessageSchema } from "@/lib/validation/community";
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -16,6 +17,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     const input = await parseJson(request, createMessageSchema);
     const result = await createAdminMessage(input, actor, requestId);
     await notifyModerationQueue("message", result.id, input.subject);
+    await tryRecordUserActivityEvent({
+      userId: actor.id,
+      eventType: "MESSAGE_SENT",
+      entityType: "ADMIN_MESSAGE",
+      entityId: result.id,
+    });
     return apiJson(result, { status: 201 });
   });
 }

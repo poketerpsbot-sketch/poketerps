@@ -191,6 +191,29 @@ describe("bot menus", () => {
     expect(JSON.stringify(buttons)).not.toMatch(/parametres|utilisateurs|badges|categories/i);
   });
 
+  it("adds exact pending counters to the team menu without changing callbacks", () => {
+    const buttons = buildModeratorMenu("https://pokedex.example.test/", {
+      pendingEntries: 2,
+      pendingCorrections: 1,
+      pendingReviews: 4,
+      pendingMessages: 5,
+      pendingReports: 2,
+      pendingContestParticipations: 3,
+      totalActionable: 17,
+    }).inline_keyboard.flat();
+
+    expect(buttons.map(({ text }) => text)).toEqual(
+      expect.arrayContaining([
+        "✅ Fiches à valider · 3",
+        "💬 Avis à valider · 4",
+        "📨 Messages · 5",
+        "🚩 Signalements · 2",
+        "🎯 Concours · 3",
+      ]),
+    );
+    expect(buttons.find(({ text }) => text.includes("Fiches"))?.callback_data).toBe("menu:entries");
+  });
+
   it("builds the complete /start menu from configured community links", () => {
     const menu = buildWelcomeMenu({
       appUrl: "https://pokedex.example.test/",

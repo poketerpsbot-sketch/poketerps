@@ -7,7 +7,7 @@ import type { CurrentUser } from "@/lib/auth/current-user";
 import { getDb } from "@/lib/db";
 import { adminMessageAttachments, adminMessages, auditLogs } from "@/lib/db/schema";
 import { conflict, forbidden, notFound } from "@/lib/errors";
-import { auditValues } from "@/lib/services/audit";
+import { auditValues, type AuditSource } from "@/lib/services/audit";
 import {
   PRIVATE_STORAGE_SIGNED_URL_TTL_SECONDS,
   signedStorageUrls,
@@ -73,6 +73,7 @@ export async function createAdminMessage(
         action: "ADMIN_MESSAGE_CREATED",
         entityType: "ADMIN_MESSAGE",
         entityId: message.id,
+        source: "API",
         requestId,
         after: { type: input.type, priority: input.priority, status: "NEW" },
       }),
@@ -192,6 +193,7 @@ export async function updateAdminMessage(
   input: UpdateMessage,
   actor: CurrentUser,
   requestId?: string,
+  source: AuditSource = "WEB_ADMIN",
 ) {
   return getDb().transaction(async (tx) => {
     const [message] = await tx
@@ -241,6 +243,7 @@ export async function updateAdminMessage(
         action: "ADMIN_MESSAGE_UPDATED",
         entityType: "ADMIN_MESSAGE",
         entityId: id,
+        source,
         requestId,
         before: {
           status: message.status,

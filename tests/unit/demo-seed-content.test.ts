@@ -96,7 +96,9 @@ describe("demo catalogue enrichment", () => {
   });
 
   it("keeps fresh installs and upgrades guarded and idempotent", () => {
-    expect(schema).toBe(initialMigration);
+    expect(schema).not.toBe(initialMigration);
+    expect(schema).toContain("-- Evolution 006: avis, notifications, concours configurables");
+    expect(initialMigration).not.toContain("review_moderation_events");
     expect(enrichmentMigration).toMatch(/where e\.seed_key = content\.seed_key\s+and e\.is_demo/i);
     expect(enrichmentMigration).toMatch(/on conflict\(entry_id,field_definition_id\) do update/i);
     expect(enrichmentMigration).toMatch(/add column if not exists source_url/i);

@@ -8,6 +8,8 @@ type AdminListQuery = {
   offset: number;
   status?: string;
   query?: string;
+  category?: string;
+  subcategory?: string;
 };
 
 type CountValue = number | string;
@@ -269,6 +271,13 @@ export async function listAdminEntries(query: AdminListQuery) {
       name: string;
       status: string;
       rarity: string;
+      short_description: string | null;
+      category_id: string;
+      category_name: string;
+      category_slug: string;
+      subcategory_id: string | null;
+      subcategory_name: string | null;
+      subcategory_slug: string | null;
       author_id: string;
       author_name: string;
       author_username: string | null;
@@ -278,16 +287,31 @@ export async function listAdminEntries(query: AdminListQuery) {
       total_count: number;
     }>
   >`
-    select e.id, e.public_number, e.slug, e.name, e.status::text, e.rarity::text,
+    select e.id, e.public_number, e.slug, e.name, e.short_description,
+      e.status::text, e.rarity::text,
+      c.id category_id, c.name category_name, c.slug category_slug,
+      sc.id subcategory_id, sc.name subcategory_name, sc.slug subcategory_slug,
       u.id as author_id, u.display_name as author_name, u.telegram_username as author_username,
       e.created_at, e.updated_at,
       (select max(s.submitted_at) from submissions s where s.entry_id = e.id) as submitted_at,
       count(*) over()::int as total_count
     from entries e
     join users u on u.id = e.original_contributor_id
+    join categories c on c.id=e.category_id
+    left join subcategories sc on sc.id=e.subcategory_id
     where e.deleted_at is null
       and (${status}::text is null or e.status::text = ${status})
-      and (${search}::text is null or e.name ilike ${search} or u.display_name ilike ${search})
+      and (${query.category ?? null}::text is null
+        or c.id::text=${query.category ?? null} or c.slug=${query.category ?? null})
+      and (${query.subcategory ?? null}::text is null
+        or sc.id::text=${query.subcategory ?? null} or sc.slug=${query.subcategory ?? null})
+      and (${search}::text is null
+        or e.name ilike ${search}
+        or e.public_number::text ilike ${search}
+        or u.display_name ilike ${search}
+        or u.telegram_username ilike ${search}
+        or c.name ilike ${search}
+        or sc.name ilike ${search})
     order by
       case when e.status = 'PENDING_REVIEW' then 0 else 1 end,
       e.updated_at asc
@@ -299,8 +323,21 @@ export async function listAdminEntries(query: AdminListQuery) {
       publicNumber: row.public_number,
       slug: row.slug,
       name: row.name,
+      shortDescription: row.short_description,
       status: row.status,
       rarity: row.rarity,
+      category: {
+        id: row.category_id,
+        name: row.category_name,
+        slug: row.category_slug,
+      },
+      subcategory: row.subcategory_id
+        ? {
+            id: row.subcategory_id,
+            name: row.subcategory_name ?? "Sous-catégorie",
+            slug: row.subcategory_slug ?? undefined,
+          }
+        : null,
       author: {
         id: row.author_id,
         displayName: row.author_name,
@@ -325,17 +362,53 @@ export async function listAdminReviews(query: AdminListQuery) {
       content: string;
       overall_rating: number;
       status: string;
+      moderation_reason: string | null;
       user_id: string;
       author_name: string;
       author_username: string | null;
       created_at: Date;
       updated_at: Date;
+      moderation_history: Array<{
+        id: string;
+        action: string;
+        previousStatus: string | null;
+        newStatus: string | null;
+        message: string | null;
+        createdAt: string;
+        resolvedAt: string | null;
+        admin: { id: string; displayName: string; username: string | null } | null;
+        user: { id: string; displayName: string; username: string | null } | null;
+      }>;
       total_count: number;
     }>
   >`
     select r.id, r.entry_id, e.name as entry_name, r.content, r.overall_rating,
-      r.status::text, r.user_id, r.author_display_name_snapshot as author_name,
+      r.status::text, r.moderation_reason, r.user_id,
+      r.author_display_name_snapshot as author_name,
       r.author_username_snapshot as author_username, r.created_at, r.updated_at,
+      (
+        select coalesce(jsonb_agg(jsonb_build_object(
+          'id', event.id,
+          'action', event.action::text,
+          'previousStatus', event.previous_status::text,
+          'newStatus', event.new_status::text,
+          'message', event.message,
+          'createdAt', event.created_at,
+          'resolvedAt', event.resolved_at,
+          'admin', case when admin.id is null then null else jsonb_build_object(
+            'id', admin.id, 'displayName', admin.display_name,
+            'username', admin.telegram_username
+          ) end,
+          'user', case when author.id is null then null else jsonb_build_object(
+            'id', author.id, 'displayName', author.display_name,
+            'username', author.telegram_username
+          ) end
+        ) order by event.created_at desc), '[]'::jsonb)
+        from review_moderation_events event
+        left join users admin on admin.id=event.admin_id
+        left join users author on author.id=event.user_id
+        where event.review_id=r.id
+      ) moderation_history,
       count(*) over()::int as total_count
     from reviews r
     join entries e on e.id = r.entry_id
@@ -344,8 +417,9 @@ export async function listAdminReviews(query: AdminListQuery) {
       and (${search}::text is null or r.content ilike ${search} or e.name ilike ${search}
         or coalesce(r.author_display_name_snapshot, '') ilike ${search})
     order by
-      case when r.status = 'PENDING_REVIEW' then 0 else 1 end,
-      r.created_at asc
+      case when ${status}::text is null then 0 when r.status = 'PENDING_REVIEW' then 0 else 1 end,
+      case when ${status}::text is null then r.updated_at end desc,
+      case when ${status}::text is not null then r.created_at end asc
     limit ${query.limit} offset ${query.offset}
   `;
   return {
@@ -356,6 +430,7 @@ export async function listAdminReviews(query: AdminListQuery) {
       content: row.content,
       overallRating: Number(row.overall_rating),
       status: row.status,
+      moderationReason: row.moderation_reason,
       author: {
         id: row.user_id,
         displayName: row.author_name,
@@ -363,6 +438,7 @@ export async function listAdminReviews(query: AdminListQuery) {
       },
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      moderationHistory: Array.isArray(row.moderation_history) ? row.moderation_history : [],
     })),
     total: Number(rows[0]?.total_count ?? 0),
   };

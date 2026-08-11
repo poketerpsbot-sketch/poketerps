@@ -1,7 +1,19 @@
 import type { EntrySummaryDto } from "@/components/data/types";
 
 export type ContestPhase = "UPCOMING" | "ACTIVE" | "ENDED";
-export type ContestStatus = "DRAFT" | "SCHEDULED" | "ACTIVE" | "PAUSED" | "ENDED" | "CANCELLED";
+export type ContestStatus =
+  | "DRAFT"
+  | "UPCOMING"
+  | "OPEN"
+  | "FULL"
+  | "CLOSED"
+  | "SCHEDULED"
+  | "ACTIVE"
+  | "PAUSED"
+  | "ENDED"
+  | "CANCELLED";
+export type ContestType =
+  "GAME" | "DRAW" | "CREATIVE" | "ENTRY" | "EXTERNAL_LINK" | "COMMUNITY" | "OTHER";
 export type ContestScoringMode =
   "MANUAL" | "ENTRY_LIKES" | "ENTRY_VIEWS" | "ENTRY_FAVORITES" | "ENTRY_RATING" | "COMPOSITE";
 export type ContestParticipationStatus =
@@ -49,6 +61,11 @@ export type ContestCardData = {
   scoringMode: ContestScoringMode;
   reward: Record<string, unknown>;
   participantCount: number;
+  maxParticipants: number | null;
+  remainingParticipants: number | null;
+  isFull: boolean;
+  registrationsOpen: boolean;
+  contestType: ContestType;
   participationOpen: boolean;
 };
 
@@ -63,8 +80,16 @@ export type ContestDetailData = ContestCardData & {
     description: string | null;
     icon: string | null;
   } | null;
-  maxParticipants: number | null;
   requireEntry: boolean;
+  instructions: string;
+  participationSteps: string[];
+  externalUrl: string | null;
+  telegramUrl: string | null;
+  instagramUrl: string | null;
+  terms: string | null;
+  additionalInformation: string | null;
+  registrationStartsAt: string | null;
+  registrationEndsAt: string | null;
   winners: ContestWinner[];
   viewerParticipation: ContestParticipation | null;
 };
@@ -109,6 +134,26 @@ export type AdminContest = {
   max_participants?: number | string | null;
   requireEntry: boolean;
   require_entry?: boolean;
+  contestType: ContestType;
+  contest_type?: ContestType;
+  instructions: string;
+  participationSteps: string[];
+  participation_steps?: string[];
+  externalUrl: string | null;
+  external_url?: string | null;
+  telegramUrl: string | null;
+  telegram_url?: string | null;
+  instagramUrl: string | null;
+  instagram_url?: string | null;
+  terms: string | null;
+  additionalInformation: string | null;
+  additional_information?: string | null;
+  registrationsOpen: boolean;
+  registrations_open?: boolean;
+  registrationStartsAt: string | null;
+  registration_starts_at?: string | null;
+  registrationEndsAt: string | null;
+  registration_ends_at?: string | null;
   participantCount?: number;
   participation_count?: number | string;
   pendingCount?: number;
@@ -171,4 +216,15 @@ export type ContestFormValue = {
   rewardBadgeId: string | null;
   maxParticipants: number | null;
   requireEntry: boolean;
+  contestType: ContestType;
+  instructions: string;
+  participationSteps: string[];
+  externalUrl: string | null;
+  telegramUrl: string | null;
+  instagramUrl: string | null;
+  terms: string | null;
+  additionalInformation: string | null;
+  registrationsOpen: boolean;
+  registrationStartsAt: string | null;
+  registrationEndsAt: string | null;
 };

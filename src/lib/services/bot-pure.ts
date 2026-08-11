@@ -172,11 +172,28 @@ export type PureInlineKeyboardMarkup = {
   inline_keyboard: PureInlineKeyboardButton[][];
 };
 
+export type TeamMenuQueueCounts = {
+  pendingEntries: number;
+  pendingCorrections: number;
+  pendingReviews: number;
+  pendingMessages: number;
+  pendingReports: number;
+  pendingContestParticipations: number;
+  totalActionable: number;
+};
+
+function queueLabel(label: string, count = 0): string {
+  return count > 0 ? `${label} · ${count > 99 ? "99+" : count}` : label;
+}
+
 function appUrl(baseUrl: string, path = ""): string {
   return `${baseUrl.replace(/\/+$/, "")}${path}`;
 }
 
-export function buildFullAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
+export function buildFullAdminMenu(
+  baseUrl: string,
+  counts?: TeamMenuQueueCounts,
+): PureInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [
@@ -206,15 +223,27 @@ export function buildFullAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
           text: "📝 Brouillons",
           web_app: { url: appUrl(baseUrl, "/admin/fiches?status=DRAFT") },
         },
-        { text: "✅ Fiches à valider", callback_data: "menu:entries" },
-      ],
-      [
-        { text: "💬 Avis à valider", callback_data: "menu:reviews" },
-        { text: "📨 Messages", callback_data: "menu:messages" },
+        {
+          text: queueLabel(
+            "✅ Fiches à valider",
+            (counts?.pendingEntries ?? 0) + (counts?.pendingCorrections ?? 0),
+          ),
+          callback_data: "menu:entries",
+        },
       ],
       [
         {
-          text: "🚩 Signalements",
+          text: queueLabel("💬 Avis à valider", counts?.pendingReviews),
+          callback_data: "menu:reviews",
+        },
+        {
+          text: queueLabel("📨 Messages", counts?.pendingMessages),
+          callback_data: "menu:messages",
+        },
+      ],
+      [
+        {
+          text: queueLabel("🚩 Signalements", counts?.pendingReports),
           web_app: { url: appUrl(baseUrl, "/admin/messages?type=REPORT") },
         },
         { text: "🖼 Images", web_app: { url: appUrl(baseUrl, "/admin/fiches") } },
@@ -242,7 +271,7 @@ export function buildFullAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
       ],
       [
         {
-          text: "🎯 Gérer les concours",
+          text: queueLabel("🎯 Gérer les concours", counts?.pendingContestParticipations),
           web_app: { url: appUrl(baseUrl, "/admin/concours") },
         },
       ],
@@ -270,7 +299,10 @@ export function buildFullAdminMenu(baseUrl: string): PureInlineKeyboardMarkup {
   };
 }
 
-export function buildModeratorMenu(baseUrl: string): PureInlineKeyboardMarkup {
+export function buildModeratorMenu(
+  baseUrl: string,
+  counts?: TeamMenuQueueCounts,
+): PureInlineKeyboardMarkup {
   return {
     inline_keyboard: [
       [
@@ -280,17 +312,31 @@ export function buildModeratorMenu(baseUrl: string): PureInlineKeyboardMarkup {
         },
       ],
       [
-        { text: "✅ Fiches à valider", callback_data: "menu:entries" },
-        { text: "💬 Avis à valider", callback_data: "menu:reviews" },
+        {
+          text: queueLabel(
+            "✅ Fiches à valider",
+            (counts?.pendingEntries ?? 0) + (counts?.pendingCorrections ?? 0),
+          ),
+          callback_data: "menu:entries",
+        },
+        {
+          text: queueLabel("💬 Avis à valider", counts?.pendingReviews),
+          callback_data: "menu:reviews",
+        },
       ],
-      [{ text: "📨 Messages", callback_data: "menu:messages" }],
       [
         {
-          text: "🚩 Signalements",
+          text: queueLabel("📨 Messages", counts?.pendingMessages),
+          callback_data: "menu:messages",
+        },
+      ],
+      [
+        {
+          text: queueLabel("🚩 Signalements", counts?.pendingReports),
           web_app: { url: appUrl(baseUrl, "/admin/messages?type=REPORT") },
         },
         {
-          text: "🎯 Concours",
+          text: queueLabel("🎯 Concours", counts?.pendingContestParticipations),
           web_app: { url: appUrl(baseUrl, "/admin/concours") },
         },
       ],
@@ -302,8 +348,14 @@ export function buildModeratorMenu(baseUrl: string): PureInlineKeyboardMarkup {
   };
 }
 
-export function buildTeamMenu(baseUrl: string, role: UserRole): PureInlineKeyboardMarkup {
-  return role === "MODERATOR" ? buildModeratorMenu(baseUrl) : buildFullAdminMenu(baseUrl);
+export function buildTeamMenu(
+  baseUrl: string,
+  role: UserRole,
+  counts?: TeamMenuQueueCounts,
+): PureInlineKeyboardMarkup {
+  return role === "MODERATOR"
+    ? buildModeratorMenu(baseUrl, counts)
+    : buildFullAdminMenu(baseUrl, counts);
 }
 
 /** @deprecated Use buildTeamMenu when the actor role is available. */

@@ -13,6 +13,10 @@ import { EmptyState, StatusPill } from "@/components/ui/states";
 const filters: Array<{ value: "ALL" | ContestStatus; label: string }> = [
   { value: "ALL", label: "Tous" },
   { value: "DRAFT", label: "Brouillons" },
+  { value: "UPCOMING", label: "À venir" },
+  { value: "OPEN", label: "Inscriptions ouvertes" },
+  { value: "FULL", label: "Complets" },
+  { value: "CLOSED", label: "Inscriptions fermées" },
   { value: "SCHEDULED", label: "Programmés" },
   { value: "ACTIVE", label: "Actifs" },
   { value: "PAUSED", label: "En pause" },

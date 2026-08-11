@@ -102,6 +102,12 @@ export default async function AdminAuditPage({
                   {log.entityId ? ` · ${log.entityId}` : ""}
                 </p>
               </header>
+              <Link
+                className="button button--secondary"
+                href={`/admin/journal/${encodeURIComponent(String(log.id))}`}
+              >
+                Ouvrir la trace complète
+              </Link>
               {((log.before !== null && log.before !== undefined) ||
                 (log.after !== null && log.after !== undefined)) && (
                 <details>

@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { MessageSquare } from "lucide-react";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import type { ReviewDto } from "@/components/data/types";
 import { EmptyState, ErrorState, StatusPill, formatDate } from "@/components/ui/states";
+import { reviewPresentation } from "@/lib/reviews/presentation";
 
 export const metadata: Metadata = { title: "Mes avis" };
 
@@ -29,29 +31,47 @@ export default async function MyReviewsPage() {
         />
       ) : (
         <div className="list-stack">
-          {reviews.map((review) => (
-            <article className="list-row" key={String(review.id)}>
-              <span className="category-card__icon" aria-hidden="true">
-                ★
-              </span>
-              <div className="list-row__copy">
-                <h3>{review.entry?.name ?? review.entryName ?? "Avis"}</h3>
-                <p>{review.content}</p>
-                {review.moderationReason && (
-                  <p>
-                    <strong>Retour de la modération :</strong> {review.moderationReason}
-                  </p>
-                )}
-                <p>{formatDate(review.createdAt)}</p>
-              </div>
-              <div className="list-row__meta">
-                ★{" "}
-                {Number(review.overallRating).toLocaleString("fr-CH", { maximumFractionDigits: 1 })}
-                <br />
-                <StatusPill value={review.status} />
-              </div>
-            </article>
-          ))}
+          {reviews.map((review) => {
+            const presentation = reviewPresentation(review.status);
+            return (
+              <article
+                className={`list-row my-review-card my-review-card--${presentation.tone}`}
+                key={String(review.id)}
+              >
+                <span className="category-card__icon" aria-hidden="true">
+                  ★
+                </span>
+                <div className="list-row__copy">
+                  <h3>{review.entry?.name ?? review.entryName ?? "Avis"}</h3>
+                  <strong className="my-review-card__status">{presentation.label}</strong>
+                  <p>{presentation.description}</p>
+                  <p>{review.content}</p>
+                  {review.moderationReason && (
+                    <p>
+                      <strong>Retour de la modération :</strong> {review.moderationReason}
+                    </p>
+                  )}
+                  {review.status === "CHANGES_REQUESTED" && (
+                    <Link
+                      className="button"
+                      href={`/profil/avis/${encodeURIComponent(String(review.id))}`}
+                    >
+                      Modifier mon avis
+                    </Link>
+                  )}
+                  <p>{formatDate(review.createdAt)}</p>
+                </div>
+                <div className="list-row__meta">
+                  ★{" "}
+                  {Number(review.overallRating).toLocaleString("fr-CH", {
+                    maximumFractionDigits: 1,
+                  })}
+                  <br />
+                  <StatusPill value={review.status} />
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

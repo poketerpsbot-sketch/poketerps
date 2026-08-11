@@ -7,16 +7,31 @@ import type {
   ContestFormValue,
   ContestScoringMode,
   ContestStatus,
+  ContestType,
 } from "@/components/contests/types";
 import { localDateTime } from "@/components/contests/contest-utils";
 
 const statuses: Array<{ value: ContestStatus; label: string }> = [
   { value: "DRAFT", label: "Brouillon (invisible)" },
+  { value: "UPCOMING", label: "À venir" },
+  { value: "OPEN", label: "Inscriptions ouvertes" },
+  { value: "FULL", label: "Complet" },
+  { value: "CLOSED", label: "Inscriptions fermées" },
   { value: "SCHEDULED", label: "Programmé" },
   { value: "ACTIVE", label: "Actif" },
   { value: "PAUSED", label: "En pause" },
   { value: "ENDED", label: "Terminé" },
   { value: "CANCELLED", label: "Annulé" },
+];
+
+const contestTypes: Array<{ value: ContestType; label: string }> = [
+  { value: "GAME", label: "Jeu" },
+  { value: "DRAW", label: "Tirage au sort" },
+  { value: "CREATIVE", label: "Concours créatif" },
+  { value: "ENTRY", label: "Concours lié à une fiche" },
+  { value: "EXTERNAL_LINK", label: "Action via un lien externe" },
+  { value: "COMMUNITY", label: "Concours communautaire" },
+  { value: "OTHER", label: "Autre" },
 ];
 
 const scoringModes: Array<{ value: ContestScoringMode; label: string }> = [
@@ -53,6 +68,17 @@ function defaultValue(): ContestFormValue {
     rewardBadgeId: null,
     maxParticipants: null,
     requireEntry: true,
+    contestType: "OTHER",
+    instructions: "",
+    participationSteps: [],
+    externalUrl: null,
+    telegramUrl: null,
+    instagramUrl: null,
+    terms: null,
+    additionalInformation: null,
+    registrationsOpen: true,
+    registrationStartsAt: null,
+    registrationEndsAt: null,
   };
 }
 
@@ -150,6 +176,20 @@ export function AdminContestForm({
             <small>Ex. meilleure-fleur-aout</small>
           </div>
           <div className="field">
+            <label htmlFor={`${baseId}-type`}>Type de concours</label>
+            <select
+              id={`${baseId}-type`}
+              value={value.contestType}
+              onChange={(event) => field("contestType", event.target.value as ContestType)}
+            >
+              {contestTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
             <label htmlFor={`${baseId}-image`}>Image HTTPS (facultative)</label>
             <input
               id={`${baseId}-image`}
@@ -192,6 +232,80 @@ export function AdminContestForm({
               onChange={(event) => field("rules", event.target.value)}
             />
           </div>
+          <div className="field field--wide">
+            <label htmlFor={`${baseId}-instructions`}>Instructions après participation</label>
+            <textarea
+              id={`${baseId}-instructions`}
+              maxLength={20000}
+              value={value.instructions}
+              placeholder="Explique ici comment participer correctement."
+              onChange={(event) => field("instructions", event.target.value)}
+            />
+          </div>
+          <div className="field field--wide">
+            <label htmlFor={`${baseId}-steps`}>Marches à suivre (une par ligne)</label>
+            <textarea
+              id={`${baseId}-steps`}
+              value={value.participationSteps.join("\n")}
+              placeholder={"Rejoins le canal.\nOuvre le lien.\nEffectue l’action demandée."}
+              onChange={(event) =>
+                field(
+                  "participationSteps",
+                  event.target.value
+                    .split("\n")
+                    .map((step) => step.trim())
+                    .filter(Boolean)
+                    .slice(0, 30),
+                )
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${baseId}-external-url`}>Lien externe</label>
+            <input
+              id={`${baseId}-external-url`}
+              type="url"
+              value={value.externalUrl ?? ""}
+              placeholder="https://…"
+              onChange={(event) => field("externalUrl", event.target.value || null)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${baseId}-telegram-url`}>Lien Telegram</label>
+            <input
+              id={`${baseId}-telegram-url`}
+              type="url"
+              value={value.telegramUrl ?? ""}
+              placeholder="https://t.me/…"
+              onChange={(event) => field("telegramUrl", event.target.value || null)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${baseId}-instagram-url`}>Lien Instagram</label>
+            <input
+              id={`${baseId}-instagram-url`}
+              type="url"
+              value={value.instagramUrl ?? ""}
+              placeholder="https://instagram.com/…"
+              onChange={(event) => field("instagramUrl", event.target.value || null)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${baseId}-terms`}>Conditions complémentaires</label>
+            <textarea
+              id={`${baseId}-terms`}
+              value={value.terms ?? ""}
+              onChange={(event) => field("terms", event.target.value || null)}
+            />
+          </div>
+          <div className="field field--wide">
+            <label htmlFor={`${baseId}-additional`}>Informations complémentaires</label>
+            <textarea
+              id={`${baseId}-additional`}
+              value={value.additionalInformation ?? ""}
+              onChange={(event) => field("additionalInformation", event.target.value || null)}
+            />
+          </div>
         </div>
       </div>
 
@@ -222,6 +336,34 @@ export function AdminContestForm({
               required
               value={localDateTime(value.endsAt)}
               onChange={(event) => field("endsAt", isoFromLocal(event.target.value))}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${baseId}-registration-starts`}>Ouverture des inscriptions</label>
+            <input
+              id={`${baseId}-registration-starts`}
+              type="datetime-local"
+              value={value.registrationStartsAt ? localDateTime(value.registrationStartsAt) : ""}
+              onChange={(event) =>
+                field(
+                  "registrationStartsAt",
+                  event.target.value ? isoFromLocal(event.target.value) : null,
+                )
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`${baseId}-registration-ends`}>Fermeture des inscriptions</label>
+            <input
+              id={`${baseId}-registration-ends`}
+              type="datetime-local"
+              value={value.registrationEndsAt ? localDateTime(value.registrationEndsAt) : ""}
+              onChange={(event) =>
+                field(
+                  "registrationEndsAt",
+                  event.target.value ? isoFromLocal(event.target.value) : null,
+                )
+              }
             />
           </div>
           <div className="field">
@@ -275,6 +417,14 @@ export function AdminContestForm({
               onChange={(event) => field("rewardBadgeId", event.target.value)}
             />
           </div>
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={value.registrationsOpen}
+              onChange={(event) => field("registrationsOpen", event.target.checked)}
+            />
+            <span>Autoriser actuellement les inscriptions</span>
+          </label>
           <label className="checkbox-field">
             <input
               type="checkbox"

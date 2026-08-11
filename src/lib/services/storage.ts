@@ -50,7 +50,10 @@ function assertEntryImageWritable(
   entry: { createdById: string; status: string },
   actor: CurrentUser,
 ): void {
-  const editableStatus = ["DRAFT", "CHANGES_REQUESTED", "APPROVED"].includes(entry.status);
+  const editableStatus =
+    ["DRAFT", "CHANGES_REQUESTED", "APPROVED"].includes(entry.status) ||
+    (hasPermission(actor.role, "entry:update:any") &&
+      ["PUBLISHED", "HIDDEN", "ARCHIVED"].includes(entry.status));
   const canEdit = entry.createdById === actor.id || hasPermission(actor.role, "entry:update:any");
   if (!editableStatus || !canEdit) {
     throw new AppError(
@@ -365,5 +368,23 @@ export async function finalizeEntryImagePromotion(promotion: EntryImagePromotion
     // Publication is already committed at this point. A private duplicate is
     // preferable to deleting the public object referenced by the database.
     logger.error("storage_draft_cleanup_failed", { paths: promotion.paths, error });
+  }
+}
+
+export async function removeEntryStorageObjects(
+  objects: Array<{ bucket: string; path: string }>,
+): Promise<void> {
+  const allowedBuckets = new Set<StoredBucket>(["entry-images", "entry-drafts"]);
+  const grouped = new Map<StoredBucket, string[]>();
+  for (const object of objects) {
+    if (!allowedBuckets.has(object.bucket as StoredBucket) || !object.path) continue;
+    const bucket = object.bucket as StoredBucket;
+    grouped.set(bucket, [...(grouped.get(bucket) ?? []), object.path]);
+  }
+  for (const [bucket, paths] of grouped) {
+    const { error } = await storageClient()
+      .storage.from(bucket)
+      .remove([...new Set(paths)]);
+    if (error) throw new Error(`Storage cleanup failed for ${bucket}: ${error.message}`);
   }
 }

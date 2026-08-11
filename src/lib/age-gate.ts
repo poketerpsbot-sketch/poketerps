@@ -1,10 +1,15 @@
 export const AGE_GATE_COOKIE_NAME = "pokedex-age-gate";
 export const AGE_GATE_STORAGE_KEY = "pokedex-age-gate:v1";
 export const AGE_GATE_CONFIRMED_VALUE = "yes";
+export const AGE_GATE_REJECTED_VALUE = "no";
 export const AGE_GATE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 export function isAgeGateConfirmed(value: string | null | undefined) {
   return value === AGE_GATE_CONFIRMED_VALUE;
+}
+
+export function isAgeGateRejected(value: string | null | undefined) {
+  return value === AGE_GATE_REJECTED_VALUE;
 }
 
 export function trustedAgeGateRequestUrl(

@@ -11,6 +11,19 @@ vi.mock("@/lib/services/admin", () => ({
   listAdminEntries: vi.fn(),
   listAdminReviews: vi.fn(),
 }));
+vi.mock("@/lib/services/admin-queues", () => ({
+  getAdminQueueCounts: vi.fn().mockResolvedValue({
+    pendingEntries: 0,
+    pendingCorrections: 0,
+    pendingReviews: 0,
+    pendingMessages: 0,
+    pendingReports: 0,
+    pendingContestParticipations: 0,
+    requestedEntryChanges: 0,
+    requestedReviewChanges: 0,
+    totalActionable: 0,
+  }),
+}));
 vi.mock("@/lib/services/catalogue", () => ({ searchCatalogue: vi.fn() }));
 vi.mock("@/lib/services/entries", () => ({ moderateEntry: vi.fn() }));
 vi.mock("@/lib/services/messages", () => ({

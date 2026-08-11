@@ -111,6 +111,24 @@ describe("POST /api/telegram/webhook /start", () => {
     );
   });
 
+  it("never degrades a forbidden actor such as a banned Telegram user", async () => {
+    auth.upsertTrustedTelegramUser.mockRejectedValue(
+      new AppError("FORBIDDEN", "Compte suspendu.", 403),
+    );
+
+    const response = await POST(webhookRequest());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { accepted: true, handledError: "FORBIDDEN" } });
+    expect(bot.processTelegramUpdate).not.toHaveBeenCalled();
+    expect(telegram.sendTelegramMessage).toHaveBeenCalledWith(42, "Compte suspendu.");
+    expect(receipts.completeTelegramUpdate).toHaveBeenCalledWith(99);
+    expect(log.warn).not.toHaveBeenCalledWith(
+      "telegram_start_actor_unavailable",
+      expect.anything(),
+    );
+  });
+
   it("returns a retryable non-2xx response when Telegram delivery fails", async () => {
     bot.processTelegramUpdate.mockRejectedValue(
       new AppError("TELEGRAM_API_ERROR", "Telegram indisponible.", 502, { expose: false }),

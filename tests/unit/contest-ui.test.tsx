@@ -22,6 +22,11 @@ const card: ContestCardData = {
   scoringMode: "ENTRY_LIKES",
   reward: { title: "Badge Champion" },
   participantCount: 12,
+  maxParticipants: 100,
+  remainingParticipants: 88,
+  isFull: false,
+  registrationsOpen: true,
+  contestType: "ENTRY",
   participationOpen: true,
 };
 
@@ -31,8 +36,16 @@ const detail: ContestDetailData = {
   rules: "Une fiche personnelle publiée.",
   criteria: {},
   rewardBadge: null,
-  maxParticipants: 100,
   requireEntry: true,
+  instructions: "Rejoins le canal puis ouvre le lien.",
+  participationSteps: ["Rejoins le canal", "Ouvre le lien"],
+  externalUrl: "https://example.com/participer",
+  telegramUrl: null,
+  instagramUrl: null,
+  terms: "Compte PokéTerps actif et une seule participation.",
+  additionalInformation: "Le jury annoncera le résultat dans le canal officiel.",
+  registrationStartsAt: null,
+  registrationEndsAt: null,
   winners: [],
   viewerParticipation: null,
 };
@@ -45,6 +58,16 @@ const adminContest: AdminContest = {
   rewardBadgeId: null,
   maxParticipants: 100,
   requireEntry: true,
+  instructions: detail.instructions,
+  participationSteps: detail.participationSteps,
+  externalUrl: detail.externalUrl,
+  telegramUrl: detail.telegramUrl,
+  instagramUrl: detail.instagramUrl,
+  terms: detail.terms,
+  additionalInformation: detail.additionalInformation,
+  registrationsOpen: true,
+  registrationStartsAt: null,
+  registrationEndsAt: null,
   participantCount: 12,
   pendingCount: 3,
 };
@@ -56,7 +79,7 @@ describe("contest public UI", () => {
     expect(markup).toContain('href="/concours/defi-aout"');
     expect(markup).toContain("En cours");
     expect(markup).toContain("Badge Champion");
-    expect(markup).toContain(">12<");
+    expect(markup).toContain("12 / 100 participants");
     expect(markup).toContain("Participer");
   });
 
@@ -66,7 +89,7 @@ describe("contest public UI", () => {
     );
 
     expect(markup).toContain("Connexion Telegram nécessaire");
-    expect(markup).not.toContain("Envoyer ma participation");
+    expect(markup).not.toContain("Participer au concours");
   });
 
   it("renders the entry selector for an authenticated contest requiring a capture", () => {
@@ -80,7 +103,58 @@ describe("contest public UI", () => {
 
     expect(markup).toContain("Fiche publiée");
     expect(markup).toContain("Ma fiche");
-    expect(markup).toContain("Envoyer ma participation");
+    expect(markup).toContain("Participer au concours");
+  });
+
+  it("keeps every configured instruction visible after participation", () => {
+    const markup = renderToStaticMarkup(
+      <ContestParticipationPanel
+        initialContest={{
+          ...detail,
+          viewerParticipation: {
+            id: "22222222-2222-4222-8222-222222222222",
+            contestId: detail.id,
+            entryId: "entry-1",
+            status: "PENDING_REVIEW",
+            statement: null,
+            submittedAt: "2026-08-10T10:00:00.000Z",
+            updatedAt: "2026-08-10T10:00:00.000Z",
+            withdrawnAt: null,
+          },
+        }}
+        initiallyAuthenticated
+      />,
+    );
+
+    expect(markup).toContain("Voici les marches à suivre");
+    expect(markup).toContain("Rejoins le canal");
+    expect(markup).toContain("Explication du concours");
+    expect(markup).toContain("Informations complémentaires");
+    expect(markup).toContain("Règlement");
+    expect(markup).toContain("Conditions");
+    expect(markup).toContain("Fin du concours");
+    expect(markup).toContain("Ouvrir le lien");
+  });
+
+  it("keeps a full contest visible and disables the participation call to action", () => {
+    const full = {
+      ...detail,
+      participantCount: 50,
+      maxParticipants: 50,
+      remainingParticipants: 0,
+      isFull: true,
+      participationOpen: false,
+    };
+    const cardMarkup = renderToStaticMarkup(<ContestCard contest={full} />);
+    const panelMarkup = renderToStaticMarkup(
+      <ContestParticipationPanel initialContest={full} initiallyAuthenticated />,
+    );
+    expect(cardMarkup).toContain("50 / 50 participants");
+    expect(cardMarkup).toContain("COMPLET");
+    expect(panelMarkup).toContain("Concours complet");
+    expect(panelMarkup).toContain("disabled");
+    expect(panelMarkup).toContain("Plus aucune place disponible");
+    expect(panelMarkup).not.toContain("Participer au concours");
   });
 
   it("renders ranked participants and their linked capture", () => {

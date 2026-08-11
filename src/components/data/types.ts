@@ -1,11 +1,35 @@
 export type Identifier = string | number;
 
+export type MicronPresetDto = {
+  id: Identifier;
+  slug: string;
+  context: "COLLECTION_SEPARATION" | "PRESSING_BAG";
+  mode: "NONE" | "SINGLE" | "RANGE" | "MULTIPLE" | "FULL_SPECTRUM" | "MIXED";
+  label: string;
+  technicalName?: string | null;
+  displayName?: string | null;
+  frenchExplanation?: string | null;
+  singleValue?: number | null;
+  minimumValue?: number | null;
+  maximumValue?: number | null;
+  multipleValues?: number[] | null;
+  isFullSpectrum?: boolean;
+  isMixedMicron?: boolean;
+  sortOrder?: number | null;
+};
+
 export type CategoryRef = {
   id?: Identifier;
   name: string;
   slug?: string;
   icon?: string | null;
   description?: string | null;
+  technicalName?: string | null;
+  displayName?: string | null;
+  frenchExplanation?: string | null;
+  micronRequirement?: "ABSENT" | "OPTIONAL" | "REQUIRED" | null;
+  allowedMicronContexts?: Array<"COLLECTION_SEPARATION" | "PRESSING_BAG">;
+  micronPresets?: MicronPresetDto[];
 };
 
 export type EntryImageDto = {
@@ -96,6 +120,10 @@ export type MicronSpecificationDto = {
   notes?: string | null;
 };
 
+export type MicronContextDto = MicronSpecificationDto & {
+  context: "COLLECTION_SEPARATION" | "PRESSING_BAG";
+};
+
 export type EntryDetailDto = EntrySummaryDto & {
   fullDescription?: string | null;
   rarity?: string | null;
@@ -105,6 +133,7 @@ export type EntryDetailDto = EntrySummaryDto & {
   fieldValues?: DynamicFieldValueDto[];
   fields?: Record<string, unknown>;
   micron?: MicronSpecificationDto | null;
+  micronContexts?: MicronContextDto[];
   isLiked?: boolean;
   isFavorited?: boolean;
   canReview?: boolean;
@@ -207,6 +236,39 @@ export type ReviewDto = {
   publishedAt?: string | null;
   updatedAt?: string | null;
   entrySlug?: string | null;
+  ratings?: Array<{
+    criterionId: Identifier;
+    key?: string | null;
+    label: string;
+    score: number | string;
+  }>;
+  moderationHistory?: ReviewModerationEventDto[];
+};
+
+export type ReviewModerationEventDto = {
+  id: Identifier;
+  action: string;
+  previousStatus?: string | null;
+  newStatus?: string | null;
+  message?: string | null;
+  admin?: PublicProfileDto | null;
+  user?: PublicProfileDto | null;
+  createdAt?: string | null;
+  resolvedAt?: string | null;
+};
+
+export type UserNotificationDto = {
+  id: Identifier;
+  type: string;
+  title: string;
+  message: string;
+  relatedReviewId?: Identifier | null;
+  relatedEntryId?: Identifier | null;
+  relatedContestId?: Identifier | null;
+  actionUrl?: string | null;
+  isRead: boolean;
+  createdAt?: string | null;
+  entry?: EntrySummaryDto | null;
 };
 
 export type SubmissionDto = {

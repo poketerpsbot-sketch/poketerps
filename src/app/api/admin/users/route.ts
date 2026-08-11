@@ -12,7 +12,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const actor = await requireAdminUser("user:manage");
     await enforceRateLimit(rateLimits.admin, actor.id);
     const query = parseSearchParams(request, adminUsersQuerySchema);
-    const result = await listAdminUsers(query);
+    const result = await listAdminUsers(query, actor);
     return apiList(result.users, {
       limit: query.limit,
       offset: query.offset,

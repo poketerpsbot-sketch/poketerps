@@ -72,6 +72,10 @@ export const micronSpecificationSchema = z
     }
   });
 
+export const micronContextSpecificationSchema = micronSpecificationSchema.extend({
+  context: z.enum(["COLLECTION_SEPARATION", "PRESSING_BAG"]),
+});
+
 export const createEntrySchema = z.object({
   name: shortTextSchema,
   shortDescription: z.string().trim().max(500).nullable().optional(),
@@ -81,6 +85,14 @@ export const createEntrySchema = z.object({
   rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "UNKNOWN"]).default("UNKNOWN"),
   fields: z.record(uuidSchema, dynamicValueSchema).default({}),
   micron: micronSpecificationSchema.nullable().optional(),
+  micronContexts: z
+    .array(micronContextSpecificationSchema)
+    .max(2)
+    .default([])
+    .refine(
+      (values) => new Set(values.map((value) => value.context)).size === values.length,
+      "Un seul relevé micron est autorisé par contexte.",
+    ),
   tagIds: z.array(uuidSchema).max(30).default([]),
 });
 
@@ -94,10 +106,27 @@ export const submitEntrySchema = z.object({
   note: z.string().trim().max(2_000).optional(),
 });
 
-export const moderateEntrySchema = z.object({
-  status: z.enum(["CHANGES_REQUESTED", "APPROVED", "PUBLISHED", "REJECTED", "HIDDEN", "ARCHIVED"]),
-  reason: z.string().trim().max(2_000).optional(),
-});
+export const moderateEntrySchema = z
+  .object({
+    status: z.enum([
+      "CHANGES_REQUESTED",
+      "APPROVED",
+      "PUBLISHED",
+      "REJECTED",
+      "HIDDEN",
+      "ARCHIVED",
+    ]),
+    reason: z.string().trim().max(2_000).optional(),
+  })
+  .superRefine((value, context) => {
+    if (["CHANGES_REQUESTED", "REJECTED"].includes(value.status) && !value.reason) {
+      context.addIssue({
+        code: "custom",
+        path: ["reason"],
+        message: "Un message est obligatoire pour informer l’auteur.",
+      });
+    }
+  });
 
 export const catalogueQuerySchema = paginationSchema.extend({
   query: z.string().trim().max(120).optional(),

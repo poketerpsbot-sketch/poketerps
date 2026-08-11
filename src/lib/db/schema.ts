@@ -181,6 +181,13 @@ export const partnerCategoryKindEnum = pgEnum("partner_category_kind", [
   "BRAND",
   "OTHER",
 ]);
+export const partnershipTypeEnum = pgEnum("partnership_type", [
+  "COMMUNITY",
+  "OFFICIAL",
+  "SPONSORED",
+  "TEMPORARY",
+  "PREMIUM",
+]);
 export const contestStatusEnum = pgEnum("contest_status", [
   "DRAFT",
   "SCHEDULED",
@@ -188,6 +195,10 @@ export const contestStatusEnum = pgEnum("contest_status", [
   "PAUSED",
   "ENDED",
   "CANCELLED",
+  "UPCOMING",
+  "OPEN",
+  "FULL",
+  "CLOSED",
 ]);
 export const contestScoringModeEnum = pgEnum("contest_scoring_mode", [
   "MANUAL",
@@ -203,6 +214,75 @@ export const contestParticipationStatusEnum = pgEnum("contest_participation_stat
   "REJECTED",
   "WITHDRAWN",
   "DISQUALIFIED",
+]);
+export const reviewModerationActionEnum = pgEnum("review_moderation_action", [
+  "SUBMITTED",
+  "CHANGES_REQUESTED",
+  "RESUBMITTED",
+  "APPROVED",
+  "REJECTED",
+  "HIDDEN",
+  "RESTORED",
+  "DELETED",
+]);
+export const userNotificationTypeEnum = pgEnum("user_notification_type", [
+  "REVIEW_APPROVED",
+  "REVIEW_REJECTED",
+  "REVIEW_CHANGES_REQUESTED",
+  "REVIEW_RESUBMITTED",
+  "ENTRY_APPROVED",
+  "ENTRY_REJECTED",
+  "CONTEST",
+  "SYSTEM",
+  "ENTRY_CHANGES_REQUESTED",
+]);
+export const contestTypeEnum = pgEnum("contest_type", [
+  "GAME",
+  "DRAW",
+  "CREATIVE",
+  "ENTRY",
+  "EXTERNAL_LINK",
+  "COMMUNITY",
+  "OTHER",
+]);
+export const userSessionPlatformEnum = pgEnum("user_session_platform", [
+  "MINI_APP",
+  "WEB",
+  "TELEGRAM_BOT",
+  "ADMIN_WEB",
+  "UNKNOWN",
+]);
+export const userActivityEventTypeEnum = pgEnum("user_activity_event_type", [
+  "APP_OPEN",
+  "ENTRY_VIEW",
+  "SEARCH",
+  "LIKE",
+  "UNLIKE",
+  "FAVORITE",
+  "REVIEW_SUBMIT",
+  "ENTRY_SUBMIT",
+  "PARTNER_VIEW",
+  "MESSAGE_SENT",
+  "CONTEST_JOIN",
+]);
+export const adminOutboundMessageStatusEnum = pgEnum("admin_outbound_message_status", [
+  "QUEUED",
+  "SENT",
+  "FAILED",
+]);
+export const userModerationActionEnum = pgEnum("user_moderation_action", [
+  "WARNING",
+  "BAN",
+  "UNBAN",
+]);
+export const micronContextTypeEnum = pgEnum("micron_context_type", [
+  "COLLECTION_SEPARATION",
+  "PRESSING_BAG",
+]);
+export const micronRequirementEnum = pgEnum("micron_requirement", [
+  "ABSENT",
+  "OPTIONAL",
+  "REQUIRED",
 ]);
 
 const timestamps = {
@@ -234,12 +314,20 @@ export const users = pgTable(
     isBanned: boolean("is_banned").notNull().default(false),
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     suspensionReason: text("suspension_reason"),
+    bannedUntil: timestamp("banned_until", { withTimezone: true }),
+    bannedById: uuid("banned_by_id").references((): AnyPgColumn => users.id, {
+      onDelete: "set null",
+    }),
+    roleBeforeBan: userRoleEnum("role_before_ban"),
     ...timestamps,
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   },
   (table) => [
     index("users_telegram_username_idx").on(table.telegramUsername),
     index("users_role_idx").on(table.role),
+    index("users_banned_until_idx")
+      .on(table.bannedUntil)
+      .where(sql`${table.isBanned} and ${table.bannedUntil} is not null`),
     check(
       "users_identity_consistency",
       sql`(${table.accountKind}='TELEGRAM' and not ${table.isSystem} and ${table.telegramId} is not null and ${table.telegramId}>0) or (${table.accountKind}='SYSTEM' and ${table.isSystem} and ${table.telegramId} is null)`,
@@ -256,6 +344,7 @@ export const userProfileSettings = pgTable("user_profile_settings", {
   allowContact: boolean("allow_contact").notNull().default(true),
   showActivity: boolean("show_activity").notNull().default(true),
   showBadges: boolean("show_badges").notNull().default(true),
+  ageGateConfirmedAt: timestamp("age_gate_confirmed_at", { withTimezone: true }),
   notifyReviewStatus: boolean("notify_review_status").notNull().default(true),
   notifySubmissionStatus: boolean("notify_submission_status").notNull().default(true),
   ...timestamps,
@@ -280,6 +369,31 @@ export const rolePermissions = pgTable(
   (table) => [
     primaryKey({ columns: [table.role, table.permissionCode] }),
     index("role_permissions_permission_idx").on(table.permissionCode),
+  ],
+);
+
+export const userPermissions = pgTable(
+  "user_permissions",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    permissionCode: text("permission_code")
+      .notNull()
+      .references(() => permissions.code, { onDelete: "cascade" }),
+    isGranted: boolean("is_granted").notNull().default(true),
+    grantedById: uuid("granted_by_id").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.permissionCode] }),
+    index("user_permissions_permission_idx")
+      .on(table.permissionCode, table.userId)
+      .where(sql`${table.isGranted}`),
+    index("user_permissions_expires_idx")
+      .on(table.expiresAt)
+      .where(sql`${table.expiresAt} is not null`),
   ],
 );
 
@@ -338,12 +452,75 @@ export const userExperienceEvents = pgTable(
   (table) => [index("user_experience_events_user_created_idx").on(table.userId, table.createdAt)],
 );
 
+export const userSessions = pgTable(
+  "user_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
+    durationSeconds: integer("duration_seconds"),
+    platform: userSessionPlatformEnum("platform").notNull().default("UNKNOWN"),
+    appVersion: text("app_version"),
+    clientSessionId: text("client_session_id").unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "user_sessions_time_order",
+      sql`${table.endedAt} is null or (${table.endedAt}>=${table.startedAt} and ${table.lastActivityAt}>=${table.startedAt})`,
+    ),
+    check(
+      "user_sessions_duration_nonnegative",
+      sql`${table.durationSeconds} is null or ${table.durationSeconds}>=0`,
+    ),
+    index("user_sessions_user_started_idx").on(table.userId, table.startedAt),
+    index("user_sessions_active_idx")
+      .on(table.lastActivityAt)
+      .where(sql`${table.endedAt} is null`),
+  ],
+);
+
+export const userActivityEvents = pgTable(
+  "user_activity_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id").references(() => userSessions.id, { onDelete: "set null" }),
+    eventType: userActivityEventTypeEnum("event_type").notNull(),
+    entityType: text("entity_type"),
+    entityId: uuid("entity_id"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "user_activity_events_entity_consistency",
+      sql`(${table.entityType} is null and ${table.entityId} is null) or ${table.entityType} is not null`,
+    ),
+    check("user_activity_events_metadata_object", sql`jsonb_typeof(${table.metadata})='object'`),
+    index("user_activity_events_user_created_idx").on(table.userId, table.createdAt),
+    index("user_activity_events_type_created_idx").on(table.eventType, table.createdAt),
+    index("user_activity_events_session_idx")
+      .on(table.sessionId, table.createdAt)
+      .where(sql`${table.sessionId} is not null`),
+  ],
+);
+
 export const categories = pgTable(
   "categories",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     slug: text("slug").notNull().unique(),
     name: text("name").notNull(),
+    technicalName: text("technical_name"),
+    displayName: text("display_name"),
+    frenchExplanation: text("french_explanation"),
     icon: text("icon"),
     description: text("description"),
     disclaimer: text("disclaimer"),
@@ -364,7 +541,15 @@ export const subcategories = pgTable(
       .references(() => categories.id, { onDelete: "cascade" }),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
+    technicalName: text("technical_name"),
+    displayName: text("display_name"),
+    frenchExplanation: text("french_explanation"),
     description: text("description"),
+    micronRequirement: micronRequirementEnum("micron_requirement").notNull().default("ABSENT"),
+    allowedMicronContexts: micronContextTypeEnum("allowed_micron_contexts")
+      .array()
+      .notNull()
+      .default(sql`'{}'::public.micron_context_type[]`),
     sortOrder: integer("sort_order").notNull().default(0),
     isVisible: boolean("is_visible").notNull().default(true),
     ...timestamps,
@@ -454,6 +639,9 @@ export const dynamicFieldOptions = pgTable(
       .references(() => dynamicFieldDefinitions.id, { onDelete: "cascade" }),
     value: text("value").notNull(),
     label: text("label").notNull(),
+    technicalName: text("technical_name"),
+    displayName: text("display_name"),
+    frenchExplanation: text("french_explanation"),
     description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
     isActive: boolean("is_active").notNull().default(true),
@@ -633,6 +821,18 @@ export const contests = pgTable(
     rules: text("rules").notNull(),
     imageUrl: text("image_url"),
     status: contestStatusEnum("status").notNull().default("DRAFT"),
+    contestType: contestTypeEnum("contest_type").notNull().default("OTHER"),
+    instructions: text("instructions").notNull().default(""),
+    participationSteps: jsonb("participation_steps").$type<unknown[]>().notNull().default([]),
+    externalUrl: text("external_url"),
+    telegramUrl: text("telegram_url"),
+    instagramUrl: text("instagram_url"),
+    terms: text("terms"),
+    additionalInformation: text("additional_information"),
+    registrationsOpen: boolean("registrations_open").notNull().default(true),
+    registrationStartsAt: timestamp("registration_starts_at", { withTimezone: true }),
+    registrationEndsAt: timestamp("registration_ends_at", { withTimezone: true }),
+    registrationsClosedAt: timestamp("registrations_closed_at", { withTimezone: true }),
     isFeatured: boolean("is_featured").notNull().default(false),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
@@ -668,6 +868,22 @@ export const contests = pgTable(
     check(
       "contests_json_objects",
       sql`jsonb_typeof(${table.criteria})='object' and jsonb_typeof(${table.reward})='object'`,
+    ),
+    check(
+      "contests_participation_steps_array",
+      sql`jsonb_typeof(${table.participationSteps})='array'`,
+    ),
+    check(
+      "contests_registration_dates_order",
+      sql`${table.registrationStartsAt} is null or ${table.registrationEndsAt} is null or ${table.registrationEndsAt}>${table.registrationStartsAt}`,
+    ),
+    check(
+      "contests_links_http",
+      sql`(${table.externalUrl} is null or ${table.externalUrl} ~ '^https?://') and (${table.telegramUrl} is null or ${table.telegramUrl} ~ '^https?://') and (${table.instagramUrl} is null or ${table.instagramUrl} ~ '^https?://')`,
+    ),
+    check(
+      "contests_registration_closed_consistency",
+      sql`${table.registrationsOpen} or ${table.registrationsClosedAt} is not null`,
     ),
     check(
       "contests_max_participants_positive",
@@ -818,6 +1034,10 @@ export const micronPresets = pgTable("micron_presets", {
   slug: text("slug").notNull().unique(),
   mode: micronModeEnum("mode").notNull(),
   label: text("label").notNull(),
+  context: micronContextTypeEnum("context"),
+  technicalName: text("technical_name"),
+  displayName: text("display_name"),
+  frenchExplanation: text("french_explanation"),
   singleValue: smallint("single_value"),
   minimumValue: smallint("minimum_value"),
   maximumValue: smallint("maximum_value"),
@@ -828,6 +1048,62 @@ export const micronPresets = pgTable("micron_presets", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const subcategoryMicronPresets = pgTable(
+  "subcategory_micron_presets",
+  {
+    subcategoryId: uuid("subcategory_id")
+      .notNull()
+      .references(() => subcategories.id, { onDelete: "cascade" }),
+    micronPresetId: uuid("micron_preset_id")
+      .notNull()
+      .references(() => micronPresets.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.subcategoryId, table.micronPresetId] }),
+    index("subcategory_micron_presets_preset_idx").on(table.micronPresetId, table.subcategoryId),
+  ],
+);
+
+export const entryMicronContexts = pgTable(
+  "entry_micron_contexts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    entryId: uuid("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    context: micronContextTypeEnum("context").notNull(),
+    mode: micronModeEnum("mode").notNull().default("NONE"),
+    singleValue: smallint("single_value"),
+    minimumValue: smallint("minimum_value"),
+    maximumValue: smallint("maximum_value"),
+    multipleValues: smallint("multiple_values").array(),
+    isFullSpectrum: boolean("is_full_spectrum").notNull().default(false),
+    isMixedMicron: boolean("is_mixed_micron").notNull().default(false),
+    displayLabel: text("display_label"),
+    sourceType: micronSourceEnum("source_type").notNull().default("DECLARED"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (table) => [
+    unique("entry_micron_contexts_entry_context_unique").on(table.entryId, table.context),
+    check(
+      "entry_micron_contexts_range_order",
+      sql`${table.minimumValue} is null or ${table.maximumValue} is null or ${table.minimumValue}<=${table.maximumValue}`,
+    ),
+    check(
+      "entry_micron_contexts_multiple_values",
+      sql`${table.multipleValues} is null or (cardinality(${table.multipleValues}) between 1 and 20 and 0<all(${table.multipleValues}) and 1000>=all(${table.multipleValues}))`,
+    ),
+    check(
+      "entry_micron_contexts_mode_values",
+      sql`(${table.mode}='NONE' and ${table.singleValue} is null and ${table.minimumValue} is null and ${table.maximumValue} is null and ${table.multipleValues} is null and not ${table.isFullSpectrum} and not ${table.isMixedMicron}) or (${table.mode}='SINGLE' and ${table.singleValue} is not null) or (${table.mode}='RANGE' and ${table.minimumValue} is not null and ${table.maximumValue} is not null) or (${table.mode}='MULTIPLE' and ${table.multipleValues} is not null) or (${table.mode}='FULL_SPECTRUM' and ${table.isFullSpectrum}) or (${table.mode}='MIXED' and ${table.isMixedMicron})`,
+    ),
+    index("entry_micron_contexts_context_idx").on(table.context, table.entryId),
+  ],
+);
 
 export const entryTags = pgTable(
   "entry_tags",
@@ -883,7 +1159,10 @@ export const reviews = pgTable(
     moderatedById: uuid("moderated_by_id").references(() => users.id, { onDelete: "set null" }),
     moderationReason: text("moderation_reason"),
     ...timestamps,
+    moderatedAt: timestamp("moderated_at", { withTimezone: true }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    changesRequestedAt: timestamp("changes_requested_at", { withTimezone: true }),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     hiddenAt: timestamp("hidden_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -905,6 +1184,7 @@ export const reviewVersions = pgTable(
     versionNumber: integer("version_number").notNull(),
     content: text("content").notNull(),
     overallRating: numeric("overall_rating", { precision: 4, scale: 2 }).notNull(),
+    ratingsSnapshot: jsonb("ratings_snapshot").$type<unknown[]>().notNull().default([]),
     changedById: uuid("changed_by_id").references(() => users.id, { onDelete: "set null" }),
     changeReason: text("change_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -912,6 +1192,103 @@ export const reviewVersions = pgTable(
   (table) => [
     unique("review_versions_review_version_unique").on(table.reviewId, table.versionNumber),
     index("review_versions_changed_by_idx").on(table.changedById),
+    check(
+      "review_versions_ratings_snapshot_array",
+      sql`jsonb_typeof(${table.ratingsSnapshot})='array'`,
+    ),
+  ],
+);
+
+export const reviewModerationEvents = pgTable(
+  "review_moderation_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reviewId: uuid("review_id")
+      .notNull()
+      .references(() => reviews.id, { onDelete: "cascade" }),
+    action: reviewModerationActionEnum("action").notNull(),
+    previousStatus: reviewStatusEnum("previous_status"),
+    newStatus: reviewStatusEnum("new_status"),
+    message: text("message"),
+    adminId: uuid("admin_id").references(() => users.id, { onDelete: "set null" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    reviewVersionId: uuid("review_version_id").references(() => reviewVersions.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "review_moderation_events_message_required",
+      sql`${table.action} not in ('CHANGES_REQUESTED','REJECTED') or (${table.message} is not null and char_length(btrim(${table.message})) between 1 and 5000)`,
+    ),
+    check(
+      "review_moderation_events_metadata_object",
+      sql`jsonb_typeof(${table.metadata})='object'`,
+    ),
+    check(
+      "review_moderation_events_resolution_consistency",
+      sql`(${table.resolvedAt} is null and ${table.resolvedByUserId} is null) or ${table.resolvedAt} is not null`,
+    ),
+    index("review_moderation_events_review_created_idx").on(table.reviewId, table.createdAt),
+    index("review_moderation_events_admin_created_idx")
+      .on(table.adminId, table.createdAt)
+      .where(sql`${table.adminId} is not null`),
+    index("review_moderation_events_user_created_idx")
+      .on(table.userId, table.createdAt)
+      .where(sql`${table.userId} is not null`),
+    index("review_moderation_events_action_created_idx").on(table.action, table.createdAt),
+    uniqueIndex("review_moderation_events_one_open_change_idx")
+      .on(table.reviewId)
+      .where(sql`${table.action}='CHANGES_REQUESTED' and ${table.resolvedAt} is null`),
+  ],
+);
+
+export const userNotifications = pgTable(
+  "user_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: userNotificationTypeEnum("type").notNull(),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    relatedReviewId: uuid("related_review_id").references(() => reviews.id, {
+      onDelete: "set null",
+    }),
+    relatedEntryId: uuid("related_entry_id").references(() => entries.id, {
+      onDelete: "set null",
+    }),
+    relatedContestId: uuid("related_contest_id").references(() => contests.id, {
+      onDelete: "set null",
+    }),
+    actionUrl: text("action_url"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    isRead: boolean("is_read").notNull().default(false),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    telegramSentAt: timestamp("telegram_sent_at", { withTimezone: true }),
+    telegramError: text("telegram_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "user_notifications_read_consistency",
+      sql`(${table.isRead} and ${table.readAt} is not null) or (not ${table.isRead} and ${table.readAt} is null)`,
+    ),
+    check("user_notifications_metadata_object", sql`jsonb_typeof(${table.metadata})='object'`),
+    index("user_notifications_user_created_idx").on(table.userId, table.createdAt),
+    index("user_notifications_user_unread_idx")
+      .on(table.userId, table.createdAt)
+      .where(sql`not ${table.isRead}`),
+    index("user_notifications_review_idx")
+      .on(table.relatedReviewId)
+      .where(sql`${table.relatedReviewId} is not null`),
   ],
 );
 
@@ -1062,6 +1439,7 @@ export const partners = pgTable(
     telegramUrl: text("telegram_url"),
     instagramUrl: text("instagram_url"),
     otherUrl: text("other_url"),
+    partnershipType: partnershipTypeEnum("partnership_type").notNull().default("COMMUNITY"),
     isActive: boolean("is_active").notNull().default(true),
     isFeatured: boolean("is_featured").notNull().default(false),
     featuredFrom: timestamp("featured_from", { withTimezone: true }),
@@ -1225,11 +1603,117 @@ export const adminMessageAttachments = pgTable(
   ],
 );
 
+export const adminOutboundMessages = pgTable(
+  "admin_outbound_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    adminId: uuid("admin_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    content: text("content").notNull(),
+    status: adminOutboundMessageStatusEnum("status").notNull().default("QUEUED"),
+    telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
+    errorMessage: text("error_message"),
+    idempotencyKey: text("idempotency_key").unique(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "admin_outbound_messages_delivery_consistency",
+      sql`(${table.status}='SENT' and ${table.sentAt} is not null and ${table.errorMessage} is null) or (${table.status}='FAILED' and ${table.errorMessage} is not null) or ${table.status}='QUEUED'`,
+    ),
+    index("admin_outbound_messages_user_created_idx").on(table.userId, table.createdAt),
+    index("admin_outbound_messages_admin_created_idx").on(table.adminId, table.createdAt),
+    index("admin_outbound_messages_status_created_idx").on(table.status, table.createdAt),
+  ],
+);
+
+export const userModerationEvents = pgTable(
+  "user_moderation_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    adminId: uuid("admin_id").references(() => users.id, { onDelete: "set null" }),
+    action: userModerationActionEnum("action").notNull(),
+    reason: text("reason").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull().defaultNow(),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    previousRole: userRoleEnum("previous_role"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "user_moderation_events_dates_order",
+      sql`${table.endsAt} is null or ${table.endsAt}>${table.startsAt}`,
+    ),
+    check("user_moderation_events_metadata_object", sql`jsonb_typeof(${table.metadata})='object'`),
+    index("user_moderation_events_user_created_idx").on(table.userId, table.createdAt),
+    index("user_moderation_events_admin_created_idx").on(table.adminId, table.createdAt),
+    index("user_moderation_events_action_created_idx").on(table.action, table.createdAt),
+  ],
+);
+
+export const adminUserNotes = pgTable(
+  "admin_user_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    adminId: uuid("admin_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    content: text("content").notNull(),
+    ...timestamps,
+  },
+  (table) => [
+    index("admin_user_notes_user_created_idx").on(table.userId, table.createdAt),
+    index("admin_user_notes_admin_created_idx").on(table.adminId, table.createdAt),
+  ],
+);
+
+export const roleHistory = pgTable(
+  "role_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    previousRole: userRoleEnum("previous_role"),
+    newRole: userRoleEnum("new_role").notNull(),
+    changedById: uuid("changed_by_id").references(() => users.id, { onDelete: "set null" }),
+    reason: text("reason"),
+    source: text("source").notNull().default("SYSTEM"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "role_history_actual_change",
+      sql`${table.previousRole} is null or ${table.previousRole}<>${table.newRole}`,
+    ),
+    check("role_history_metadata_object", sql`jsonb_typeof(${table.metadata})='object'`),
+    index("role_history_user_created_idx").on(table.userId, table.createdAt),
+    index("role_history_new_role_created_idx").on(table.newRole, table.createdAt),
+    index("role_history_changed_by_idx")
+      .on(table.changedById, table.createdAt)
+      .where(sql`${table.changedById} is not null`),
+  ],
+);
+
 export const auditLogs = pgTable(
   "audit_logs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    actorRole: userRoleEnum("actor_role"),
     actorTelegramIdSnapshot: bigint("actor_telegram_id_snapshot", { mode: "number" }),
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(),
@@ -1246,6 +1730,11 @@ export const auditLogs = pgTable(
   (table) => [
     index("audit_logs_entity_created_idx").on(table.entityType, table.entityId, table.createdAt),
     index("audit_logs_actor_created_idx").on(table.actorUserId, table.createdAt),
+    index("audit_logs_actor_role_created_idx")
+      .on(table.actorRole, table.createdAt)
+      .where(sql`${table.actorRole} is not null`),
+    index("audit_logs_action_created_idx").on(table.action, table.createdAt),
+    index("audit_logs_source_created_idx").on(table.source, table.createdAt),
   ],
 );
 
@@ -1360,6 +1849,16 @@ export type AdminMessage = typeof adminMessages.$inferSelect;
 export type Contest = typeof contests.$inferSelect;
 export type ContestParticipation = typeof contestParticipations.$inferSelect;
 export type ContestWinner = typeof contestWinners.$inferSelect;
+export type ReviewModerationEvent = typeof reviewModerationEvents.$inferSelect;
+export type UserNotification = typeof userNotifications.$inferSelect;
+export type UserSession = typeof userSessions.$inferSelect;
+export type UserActivityEvent = typeof userActivityEvents.$inferSelect;
+export type AdminOutboundMessage = typeof adminOutboundMessages.$inferSelect;
+export type UserModerationEvent = typeof userModerationEvents.$inferSelect;
+export type AdminUserNote = typeof adminUserNotes.$inferSelect;
+export type RoleHistory = typeof roleHistory.$inferSelect;
+export type EntryMicronContext = typeof entryMicronContexts.$inferSelect;
+export type SubcategoryMicronPreset = typeof subcategoryMicronPresets.$inferSelect;
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type EntryStatus = (typeof entryStatusEnum.enumValues)[number];
 export type ContentStatus = EntryStatus;

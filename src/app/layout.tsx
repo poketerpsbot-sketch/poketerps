@@ -9,12 +9,14 @@ import {
   AGE_GATE_CONFIRMED_VALUE,
   AGE_GATE_COOKIE_NAME,
   AGE_GATE_MAX_AGE_SECONDS,
+  AGE_GATE_REJECTED_VALUE,
   AGE_GATE_STORAGE_KEY,
   isAgeGateConfirmed,
+  isAgeGateRejected,
 } from "@/lib/age-gate";
 import "./globals.css";
 
-const ageGateBootstrap = `try{if(localStorage.getItem(${JSON.stringify(AGE_GATE_STORAGE_KEY)})===${JSON.stringify(AGE_GATE_CONFIRMED_VALUE)}){document.documentElement.dataset.ageGateConfirmed="true";document.cookie=${JSON.stringify(`${AGE_GATE_COOKIE_NAME}=${AGE_GATE_CONFIRMED_VALUE}; Path=/; Max-Age=${AGE_GATE_MAX_AGE_SECONDS}; SameSite=Lax`)}+(location.protocol==="https:"?"; Secure":"")}}catch{}`;
+const ageGateBootstrap = `try{const v=localStorage.getItem(${JSON.stringify(AGE_GATE_STORAGE_KEY)});if(v===${JSON.stringify(AGE_GATE_CONFIRMED_VALUE)}||v===${JSON.stringify(AGE_GATE_REJECTED_VALUE)}){document.documentElement.dataset.ageGateConfirmed=v===${JSON.stringify(AGE_GATE_CONFIRMED_VALUE)}?"true":"false";document.documentElement.dataset.ageGateRejected=v===${JSON.stringify(AGE_GATE_REJECTED_VALUE)}?"true":"false";document.cookie=${JSON.stringify(`${AGE_GATE_COOKIE_NAME}=`)}+v+${JSON.stringify(`; Path=/; Max-Age=${AGE_GATE_MAX_AGE_SECONDS}; SameSite=Lax`)}+(location.protocol==="https:"?"; Secure":"")}}catch{}`;
 
 export const metadata: Metadata = {
   title: {
@@ -41,9 +43,11 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   );
   const ageGateEnabled =
     (process.env.NEXT_PUBLIC_AGE_GATE_ENABLED ?? process.env.AGE_GATE_ENABLED) === "true";
-  const ageGateConfirmed = ageGateEnabled
-    ? isAgeGateConfirmed((await cookies()).get(AGE_GATE_COOKIE_NAME)?.value)
-    : true;
+  const ageGateCookie = ageGateEnabled
+    ? (await cookies()).get(AGE_GATE_COOKIE_NAME)?.value
+    : AGE_GATE_CONFIRMED_VALUE;
+  const ageGateConfirmed = isAgeGateConfirmed(ageGateCookie);
+  const ageGateRejected = isAgeGateRejected(ageGateCookie);
   return (
     <html lang="fr">
       <body>
@@ -57,6 +61,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <AgeGate
           enabled={ageGateEnabled}
           initiallyConfirmed={ageGateConfirmed}
+          initiallyRejected={ageGateRejected}
           minimumAge={Number.isFinite(minimumAge) ? minimumAge : 18}
         />
       </body>

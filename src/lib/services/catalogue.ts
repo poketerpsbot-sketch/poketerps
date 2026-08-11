@@ -8,6 +8,7 @@ import {
   entries,
   entryFieldValues,
   entryImages,
+  entryMicronContexts,
   entryTags,
   micronSpecifications,
   subcategories,
@@ -195,7 +196,7 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
     throw notFound("Capture");
   }
 
-  const [imageRows, fieldRows, tagRows, micronRows] = await Promise.all([
+  const [imageRows, fieldRows, tagRows, micronRows, micronContextRows] = await Promise.all([
     db
       .select({
         id: entryImages.id,
@@ -226,6 +227,11 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
       .innerJoin(tags, eq(entryTags.tagId, tags.id))
       .where(eq(entryTags.entryId, row.id)),
     db.select().from(micronSpecifications).where(eq(micronSpecifications.entryId, row.id)).limit(1),
+    db
+      .select()
+      .from(entryMicronContexts)
+      .where(eq(entryMicronContexts.entryId, row.id))
+      .orderBy(asc(entryMicronContexts.context)),
   ]);
   const { primaryImagePath, createdById, originalContributorId, ...entry } = row;
   void primaryImagePath;
@@ -241,5 +247,6 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
     fields: Object.fromEntries(fieldRows.map((field) => [field.fieldDefinitionId, field.value])),
     tags: tagRows,
     micron: micronRows[0] ?? null,
+    micronContexts: micronContextRows,
   };
 }

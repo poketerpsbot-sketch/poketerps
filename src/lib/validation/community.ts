@@ -8,7 +8,15 @@ export const createReviewSchema = z.object({
   ratings: z
     .array(z.object({ criterionId: uuidSchema, score: z.number().min(0).max(10) }))
     .max(30)
+    .refine(
+      (items) => new Set(items.map((item) => item.criterionId)).size === items.length,
+      "Chaque critère ne peut être noté qu’une seule fois.",
+    )
     .default([]),
+});
+
+export const resubmitReviewSchema = createReviewSchema.extend({
+  content: z.string().trim().min(10).max(5_000),
 });
 
 export const moderateReviewSchema = z
@@ -53,3 +61,19 @@ export const updateMessageSchema = z
   .refine((value) => Object.keys(value).length > 0, { message: "Aucune modification fournie." });
 
 export const favoriteSchema = z.object({ entryId: uuidSchema });
+
+export const notificationQuerySchema = paginationSchema.extend({
+  unreadOnly: z
+    .enum(["true", "false", "1", "0"])
+    .optional()
+    .transform((value) => value === "true" || value === "1"),
+});
+
+export const markNotificationsReadSchema = z
+  .object({
+    notificationId: uuidSchema.optional(),
+    all: z.boolean().optional(),
+  })
+  .refine((value) => Boolean(value.notificationId) !== Boolean(value.all), {
+    message: "Indique une notification ou demande de tout marquer comme lu.",
+  });

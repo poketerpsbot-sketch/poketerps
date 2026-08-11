@@ -11,7 +11,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     await guardBrowserMutation(request, rateLimits.auth);
     const { initData } = await parseJson(request, telegramLoginSchema, 12_000);
     const user = await authenticateTelegram(initData, requestId);
-    await createSession(user.id);
+    await createSession(user.id, { platform: "MINI_APP" });
     return apiJson({
       user: {
         id: user.id,

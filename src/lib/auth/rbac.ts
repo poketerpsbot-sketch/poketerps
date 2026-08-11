@@ -8,6 +8,7 @@ export type Permission =
   | "entry:update:own"
   | "entry:update:any"
   | "entry:moderate"
+  | "entry:delete:permanent"
   | "review:create"
   | "review:moderate"
   | "message:create"
@@ -24,7 +25,11 @@ export type Permission =
   | "storage:upload:partner"
   | "storage:upload:message"
   | "telegram:admin"
-  | "audit:read";
+  | "bot:manage"
+  | "audit:read"
+  | "VIEW_ADMIN_ACTIVITY"
+  | "VIEW_MODERATOR_ACTIVITY"
+  | "VIEW_TEAM_AUDIT_LOG";
 
 const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
   OWNER: new Set(["*"]),
@@ -50,6 +55,7 @@ const permissions: Record<UserRole, ReadonlySet<Permission | "*">> = {
     "storage:upload:message",
     "telegram:admin",
     "audit:read",
+    "VIEW_MODERATOR_ACTIVITY",
   ]),
   MODERATOR: new Set([
     "entry:moderate",

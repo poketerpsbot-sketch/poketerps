@@ -15,6 +15,7 @@ import {
 import { conflict, notFound } from "@/lib/errors";
 import { auditValues } from "@/lib/services/audit";
 import { publicStorageUrl } from "@/lib/services/storage-url";
+import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import type {
   contestLeaderboardQuerySchema,
   contestParticipationInputSchema,
@@ -35,7 +36,18 @@ type ContestRow = {
   description: string;
   rules: string;
   image_url: string | null;
-  status: "DRAFT" | "SCHEDULED" | "ACTIVE" | "PAUSED" | "ENDED" | "CANCELLED";
+  status:
+    | "DRAFT"
+    | "UPCOMING"
+    | "OPEN"
+    | "FULL"
+    | "CLOSED"
+    | "SCHEDULED"
+    | "ACTIVE"
+    | "PAUSED"
+    | "ENDED"
+    | "CANCELLED";
+  contest_type: "GAME" | "DRAW" | "CREATIVE" | "ENTRY" | "EXTERNAL_LINK" | "COMMUNITY" | "OTHER";
   is_featured: boolean;
   starts_at: Date | string;
   ends_at: Date | string;
@@ -46,6 +58,16 @@ type ContestRow = {
   reward_badge_id: string | null;
   max_participants: number | string | null;
   require_entry: boolean;
+  instructions: string;
+  participation_steps: string[];
+  external_url: string | null;
+  telegram_url: string | null;
+  instagram_url: string | null;
+  terms: string | null;
+  additional_information: string | null;
+  registrations_open: boolean;
+  registration_starts_at: Date | string | null;
+  registration_ends_at: Date | string | null;
   participant_count: number | string;
   capacity_count: number | string;
 };
@@ -72,6 +94,15 @@ export type ContestDetail = ContestCard & {
   } | null;
   maxParticipants: number | null;
   requireEntry: boolean;
+  instructions: string;
+  participationSteps: string[];
+  externalUrl: string | null;
+  telegramUrl: string | null;
+  instagramUrl: string | null;
+  terms: string | null;
+  additionalInformation: string | null;
+  registrationStartsAt: Date | string | null;
+  registrationEndsAt: Date | string | null;
   winners: ContestWinnerDto[];
   viewerParticipation: ContestParticipationDto | null;
 };
@@ -135,6 +166,14 @@ function contestCardDto(row: ContestRow) {
   const maxParticipants = row.max_participants === null ? null : Number(row.max_participants);
   const participantCount = Number(row.participant_count);
   const capacityCount = Number(row.capacity_count);
+  const remainingParticipants =
+    maxParticipants === null ? null : Math.max(0, maxParticipants - capacityCount);
+  const now = new Date();
+  const registrationStarted =
+    row.registration_starts_at === null || new Date(row.registration_starts_at) <= now;
+  const registrationNotEnded =
+    row.registration_ends_at === null || new Date(row.registration_ends_at) > now;
+  const isFull = maxParticipants !== null && capacityCount >= maxParticipants;
   return {
     id: row.id,
     slug: row.slug,
@@ -149,14 +188,22 @@ function contestCardDto(row: ContestRow) {
     scoringMode: row.scoring_mode,
     reward: row.reward,
     participantCount,
+    maxParticipants,
+    remainingParticipants,
+    isFull,
+    registrationsOpen: row.registrations_open,
+    contestType: row.contest_type,
     participationOpen:
       phase === "ACTIVE" &&
-      (row.status === "ACTIVE" || row.status === "SCHEDULED") &&
-      (maxParticipants === null || capacityCount < maxParticipants),
+      ["OPEN", "ACTIVE"].includes(row.status) &&
+      row.registrations_open &&
+      registrationStarted &&
+      registrationNotEnded &&
+      !isFull,
   };
 }
 
-const publicContestStatusSql = `c.status in ('SCHEDULED','ACTIVE','PAUSED','ENDED')`;
+const publicContestStatusSql = `c.status in ('UPCOMING','OPEN','FULL','CLOSED','SCHEDULED','ACTIVE','PAUSED','ENDED')`;
 const phaseSql = `case
   when c.ends_at <= now() then 'ended'
   when c.starts_at > now() then 'upcoming'
@@ -171,7 +218,7 @@ export async function listPublicContests(query: ContestQuery) {
     `with eligible as (
       select c.*,
         (select count(*)::int from contest_participations p
-          where p.contest_id=c.id and p.status='APPROVED') participant_count,
+          where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) participant_count,
         (select count(*)::int from contest_participations p
           where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) capacity_count,
         ${phaseSql} phase
@@ -202,12 +249,12 @@ async function readPublicContestRow(slug: string): Promise<ContestRow> {
   const [row] = await sqlClient<ContestRow[]>`
     select c.*,
       (select count(*)::int from contest_participations p
-        where p.contest_id=c.id and p.status='APPROVED') participant_count,
+        where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) participant_count,
       (select count(*)::int from contest_participations p
         where p.contest_id=c.id and p.status in ('PENDING_REVIEW','APPROVED')) capacity_count
     from contests c
     where c.slug=${slug} and c.deleted_at is null
-      and c.status in ('SCHEDULED','ACTIVE','PAUSED','ENDED')
+      and c.status in ('UPCOMING','OPEN','FULL','CLOSED','SCHEDULED','ACTIVE','PAUSED','ENDED')
     limit 1
   `;
   if (!row) throw notFound("Concours");
@@ -301,6 +348,15 @@ export async function getPublicContest(slug: string, viewerUserId?: string | nul
     rewardBadge: rewardBadge ?? null,
     maxParticipants: row.max_participants === null ? null : Number(row.max_participants),
     requireEntry: row.require_entry,
+    instructions: row.instructions,
+    participationSteps: Array.isArray(row.participation_steps) ? row.participation_steps : [],
+    externalUrl: row.external_url,
+    telegramUrl: row.telegram_url,
+    instagramUrl: row.instagram_url,
+    terms: row.terms,
+    additionalInformation: row.additional_information,
+    registrationStartsAt: row.registration_starts_at,
+    registrationEndsAt: row.registration_ends_at,
     winners,
     viewerParticipation,
   } satisfies ContestDetail;
@@ -431,7 +487,7 @@ export async function joinContest(
   requestId?: string,
 ) {
   const db = getDb();
-  return db.transaction(async (tx) => {
+  const participation = await db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${`${slug}:${actor.id}`},0))`,
     );
@@ -441,11 +497,17 @@ export async function joinContest(
       .where(and(eq(contests.slug, slug), isNull(contests.deletedAt)))
       .limit(1)
       .for("update");
-    if (!contest || !["SCHEDULED", "ACTIVE"].includes(contest.status)) {
+    if (!contest || !["OPEN", "ACTIVE"].includes(contest.status)) {
       throw notFound("Concours actif");
     }
     const now = new Date();
-    if (contest.startsAt > now || contest.endsAt <= now) {
+    if (
+      !contest.registrationsOpen ||
+      contest.startsAt > now ||
+      contest.endsAt <= now ||
+      (contest.registrationStartsAt && contest.registrationStartsAt > now) ||
+      (contest.registrationEndsAt && contest.registrationEndsAt <= now)
+    ) {
       throw conflict("Les participations ne sont pas ouvertes.", "CONTEST_CLOSED");
     }
     if (contest.requireEntry && !input.entryId) {
@@ -513,6 +575,7 @@ export async function joinContest(
         action: existing ? "CONTEST_REJOINED" : "CONTEST_JOINED",
         entityType: "CONTEST_PARTICIPATION",
         entityId: participation.id,
+        source: "API",
         requestId,
         after: participation,
         metadata: { contestId: contest.id },
@@ -520,6 +583,14 @@ export async function joinContest(
     );
     return participationDto(participation);
   });
+  await tryRecordUserActivityEvent({
+    userId: actor.id,
+    eventType: "CONTEST_JOIN",
+    entityType: "CONTEST_PARTICIPATION",
+    entityId: String(participation.id),
+    metadata: { contestSlug: slug },
+  });
+  return participation;
 }
 
 export async function withdrawFromContest(slug: string, actor: CurrentUser, requestId?: string) {
@@ -577,6 +648,7 @@ export async function withdrawFromContest(slug: string, actor: CurrentUser, requ
         action: "CONTEST_WITHDRAWN",
         entityType: "CONTEST_PARTICIPATION",
         entityId: participation.id,
+        source: "API",
         requestId,
         before: participation,
         after: updated,

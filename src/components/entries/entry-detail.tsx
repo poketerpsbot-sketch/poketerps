@@ -53,31 +53,34 @@ function dynamicFields(entry: EntryDetailDto) {
   }));
 }
 
+function micronSpecificationLabel(entry: NonNullable<EntryDetailDto["micron"]>) {
+  if (entry.displayLabel) return entry.displayLabel;
+  if (entry.mode === "SINGLE" && entry.singleValue !== null && entry.singleValue !== undefined) {
+    return `${entry.singleValue} µm`;
+  }
+  if (
+    entry.mode === "RANGE" &&
+    entry.minimumValue !== null &&
+    entry.minimumValue !== undefined &&
+    entry.maximumValue !== null &&
+    entry.maximumValue !== undefined
+  ) {
+    return `${entry.minimumValue}–${entry.maximumValue} µm`;
+  }
+  if (entry.mode === "MULTIPLE" && entry.multipleValues?.length) {
+    return `${entry.multipleValues.join(", ")} µm`;
+  }
+  if (entry.mode === "FULL_SPECTRUM") return "Full Spectrum";
+  if (entry.mode === "MIXED") return "Mixed Micron";
+  return null;
+}
+
 function micronLabel(entry: EntryDetailDto) {
   if (entry.micronLabel) return entry.micronLabel;
-  if (entry.micron?.displayLabel) return entry.micron.displayLabel;
-
-  if (
-    entry.micron?.mode === "SINGLE" &&
-    entry.micron.singleValue !== null &&
-    entry.micron.singleValue !== undefined
-  ) {
-    return `${entry.micron.singleValue} µm`;
+  if (entry.micron) {
+    const label = micronSpecificationLabel(entry.micron);
+    if (label) return label;
   }
-  if (
-    entry.micron?.mode === "RANGE" &&
-    entry.micron.minimumValue !== null &&
-    entry.micron.minimumValue !== undefined &&
-    entry.micron.maximumValue !== null &&
-    entry.micron.maximumValue !== undefined
-  ) {
-    return `${entry.micron.minimumValue}–${entry.micron.maximumValue} µm`;
-  }
-  if (entry.micron?.mode === "MULTIPLE" && entry.micron.multipleValues?.length) {
-    return `${entry.micron.multipleValues.join(", ")} µm`;
-  }
-  if (entry.micron?.mode === "FULL_SPECTRUM") return "Full Spectrum";
-  if (entry.micron?.mode === "MIXED") return "Mixed Micron";
   if (entry.micronMin !== null && entry.micronMin !== undefined) {
     return `${entry.micronMin}${entry.micronMax !== null && entry.micronMax !== undefined ? `–${entry.micronMax}` : ""} µm`;
   }
@@ -88,6 +91,9 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
   const author = contributor(entry);
   const fields = dynamicFields(entry);
   const micron = micronLabel(entry);
+  const micronContexts = (entry.micronContexts ?? [])
+    .map((context) => ({ ...context, label: micronSpecificationLabel(context) }))
+    .filter((context) => context.label);
   const heroImage = entry.images?.find((image) => image.isPrimary) ?? entry.images?.[0];
   const heroImageUrl = entry.primaryImageUrl ?? heroImage?.url ?? null;
   const hasImageAttribution = Boolean(
@@ -168,7 +174,7 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
             )}
           </section>
 
-          {(fields.length > 0 || micron || entry.subcategory) && (
+          {(fields.length > 0 || micron || micronContexts.length > 0 || entry.subcategory) && (
             <section className="content-panel">
               <h2>Données analysées</h2>
               <dl className="data-list">
@@ -178,12 +184,23 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
                     <dd>{entry.subcategory.name}</dd>
                   </div>
                 )}
-                {micron && (
-                  <div>
-                    <dt>Microns déclarés</dt>
-                    <dd>{micron}</dd>
-                  </div>
-                )}
+                {micronContexts.length > 0
+                  ? micronContexts.map((context) => (
+                      <div key={context.context}>
+                        <dt>
+                          {context.context === "PRESSING_BAG"
+                            ? "Micron du sac de pressage"
+                            : "Microns de collecte / séparation"}
+                        </dt>
+                        <dd>{context.label}</dd>
+                      </div>
+                    ))
+                  : micron && (
+                      <div>
+                        <dt>Microns déclarés</dt>
+                        <dd>{micron}</dd>
+                      </div>
+                    )}
                 {entry.rarity && (
                   <div>
                     <dt>Rareté</dt>

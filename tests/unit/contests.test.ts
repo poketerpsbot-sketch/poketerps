@@ -85,6 +85,29 @@ describe("contest validation", () => {
       false,
     );
   });
+
+  it("validates configurable instructions, links and the registration window", () => {
+    expect(
+      createContestSchema.safeParse({
+        ...validContest,
+        status: "OPEN",
+        contestType: "EXTERNAL_LINK",
+        instructions: "Suis les étapes affichées après confirmation.",
+        participationSteps: ["Rejoins le canal", "Ouvre le lien"],
+        externalUrl: "https://example.com/concours",
+        registrationsOpen: true,
+        registrationStartsAt: "2026-08-11T12:00:00.000Z",
+        registrationEndsAt: "2026-08-19T12:00:00.000Z",
+      }).success,
+    ).toBe(true);
+    expect(
+      createContestSchema.safeParse({
+        ...validContest,
+        registrationStartsAt: "2026-08-19T12:00:00.000Z",
+        registrationEndsAt: "2026-08-11T12:00:00.000Z",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("contest route contracts", () => {

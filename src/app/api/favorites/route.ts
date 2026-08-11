@@ -4,6 +4,7 @@ import { requireCurrentUser } from "@/lib/auth/current-user";
 import { apiJson, apiList, handleApi, parseJson, parseSearchParams } from "@/lib/http";
 import { guardBrowserMutation, rateLimits } from "@/lib/security/request-guard";
 import { addFavorite, listFavorites } from "@/lib/services/favorites";
+import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import { favoriteSchema } from "@/lib/validation/community";
 import { paginationSchema } from "@/lib/validation/common";
 
@@ -20,6 +21,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     const actor = await requireCurrentUser();
     await guardBrowserMutation(request, rateLimits.mutation, actor.id);
     const input = await parseJson(request, favoriteSchema);
-    return apiJson(await addFavorite(input.entryId, actor.id), { status: 201 });
+    const result = await addFavorite(input.entryId, actor.id);
+    await tryRecordUserActivityEvent({
+      userId: actor.id,
+      eventType: "FAVORITE",
+      entityType: "ENTRY",
+      entityId: input.entryId,
+      metadata: { favorited: true },
+    });
+    return apiJson(result, { status: 201 });
   });
 }

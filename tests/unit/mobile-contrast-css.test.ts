@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+const drawer = readFileSync(
+  join(process.cwd(), "src/components/layout/navigation-drawer.tsx"),
+  "utf8",
+);
 
 describe("mobile and contrast CSS invariants", () => {
   it("frames section headings that sit directly on the red shell", () => {
@@ -38,8 +42,21 @@ describe("mobile and contrast CSS invariants", () => {
 
   it("clips the closed drawer so it cannot create horizontal mobile scrolling", () => {
     expect(css).toMatch(/\.nav-drawer \{[\s\S]*?inset: 0;[\s\S]*?overflow: hidden;/);
-    expect(css).toMatch(/\.bottom-nav__inner \{[\s\S]*?repeat\(6, minmax\(0, 1fr\)\);/);
+    expect(css).toMatch(/\.bottom-nav__inner \{[\s\S]*?repeat\(7, minmax\(0, 1fr\)\);/);
+    expect(css).toMatch(
+      /\.nav-drawer__panel \{[\s\S]*?padding:[\s\S]*?var\(--bottom-nav-height\)[\s\S]*?env\(safe-area-inset-bottom\)[\s\S]*?scroll-padding-bottom:/,
+    );
     const topbarBlock = css.match(/\.topbar \{([\s\S]*?)\}/)?.[1] ?? "";
     expect(topbarBlock).not.toContain("backdrop-filter");
+  });
+
+  it("keeps Settings as the last admin destination and scrollable above the bottom bar", () => {
+    const administration = drawer.slice(drawer.indexOf("const administrationLinks"));
+    expect(administration.indexOf('label: "Paramètres"')).toBeGreaterThan(
+      administration.indexOf('label: "Journal"'),
+    );
+    expect(css).toMatch(
+      /\.nav-drawer__panel \{[\s\S]*?height: 100dvh;[\s\S]*?overflow-y: auto;[\s\S]*?overscroll-behavior: contain;/,
+    );
   });
 });

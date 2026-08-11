@@ -19,9 +19,69 @@ const migration = read("./migrations/001_initial_schema.sql");
 const demoEnrichmentMigration = read("./migrations/002_enrich_demo_entries.sql");
 const contestMigration = read("./migrations/003_contests.sql");
 const taxonomyMeasurementMigration = read("./migrations/004_taxonomy_measurements.sql");
+const roleBadgeMigration = read("./migrations/005_role_badges.sql");
+const navigationReviewsTeamMigration = read(
+  "./migrations/006_navigation_reviews_contests_team_activity.sql",
+);
+const followupHardeningMigration = read("./migrations/007_followup_hardening.sql");
+const entryManagementMigration = read("./migrations/008_entry_management_age_gate_partner_cta.sql");
 const drizzle = read("../src/lib/db/schema.ts");
 
-assert(schema === migration, "001_initial_schema.sql must be an exact copy of schema.sql");
+assert(
+  schema !== migration &&
+    schema.includes("-- Evolution 006: avis, notifications, concours configurables"),
+  "schema.sql must be the full snapshot, while 001 remains immutable",
+);
+const evolutionStart = "do $$ begin create type public.review_moderation_action";
+const followupHeader = "-- Evolution 007: durcissement capacite des concours";
+const followupStart = "create or replace function public.enforce_contest_capacity_floor()";
+const entryManagementHeader = "-- Evolution 008: gestion editoriale";
+const entryManagementStart =
+  "alter type public.user_notification_type add value if not exists 'ENTRY_CHANGES_REQUESTED';";
+const evolutionBody = (source) => {
+  const start = source.lastIndexOf(evolutionStart);
+  const followup = source.indexOf(`\n${followupHeader}`, start);
+  const end = followup >= 0 ? followup : source.lastIndexOf("\ncommit;");
+  assert(start >= 0 && end > start, "006 evolution body is missing");
+  return source.slice(start, end).trimEnd();
+};
+assert(
+  evolutionBody(schema) === evolutionBody(navigationReviewsTeamMigration),
+  "schema.sql evolution 006 mirror is out of sync with its migration",
+);
+const followupBody = (source) => {
+  const start = source.lastIndexOf(followupStart);
+  const next = source.indexOf(`\n${entryManagementHeader}`, start);
+  const end = next >= 0 ? next : source.lastIndexOf("\ncommit;");
+  assert(start >= 0 && end > start, "007 evolution body is missing");
+  return source.slice(start, end).trimEnd();
+};
+assert(
+  schema.includes(followupHeader) &&
+    followupBody(schema) === followupBody(followupHardeningMigration),
+  "schema.sql evolution 007 mirror is out of sync with its migration",
+);
+const entryManagementBody = (source) => {
+  const start = source.lastIndexOf(entryManagementStart);
+  const end = source.lastIndexOf("\ncommit;");
+  assert(start >= 0 && end > start, "008 evolution body is missing");
+  return source
+    .slice(start, end)
+    .replace(
+      /\nbegin;\nset local lock_timeout = '10s';\nset local statement_timeout = '0';\nset local search_path = public, extensions, pg_temp;\n/,
+      "\n",
+    )
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .join("\n")
+    .trimEnd();
+};
+assert(
+  schema.includes(entryManagementHeader) &&
+    entryManagementBody(schema) === entryManagementBody(entryManagementMigration),
+  "schema.sql evolution 008 mirror is out of sync with its migration",
+);
 assert((schema.match(/^begin;$/gm) ?? []).length === 1, "schema must contain exactly one BEGIN");
 assert((schema.match(/^commit;$/gm) ?? []).length === 1, "schema must contain exactly one COMMIT");
 assert(schema.trimEnd().endsWith("commit;"), "schema transaction must end with COMMIT");
@@ -53,6 +113,38 @@ assert(
   (taxonomyMeasurementMigration.match(/\$\$/g) ?? []).length % 2 === 0,
   "unbalanced delimiters in taxonomy measurement migration",
 );
+assert(
+  (roleBadgeMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (roleBadgeMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "005_role_badges.sql must contain one transaction",
+);
+assert(
+  (navigationReviewsTeamMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (navigationReviewsTeamMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "006_navigation_reviews_contests_team_activity.sql must contain one main transaction",
+);
+assert(
+  (navigationReviewsTeamMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in navigation/reviews/team migration",
+);
+assert(
+  (followupHardeningMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (followupHardeningMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "007_followup_hardening.sql must contain one transaction",
+);
+assert(
+  (followupHardeningMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in follow-up hardening migration",
+);
+assert(
+  (entryManagementMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (entryManagementMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "008_entry_management_age_gate_partner_cta.sql must contain one transaction",
+);
+assert(
+  (entryManagementMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in entry management migration",
+);
 
 const sqlTables = uniqueSorted(matches(schema, /create table if not exists public\.([a-z0-9_]+)/g));
 const drizzleTables = uniqueSorted(matches(drizzle, /pgTable\(\s*["']([a-z0-9_]+)["']/g));
@@ -75,6 +167,13 @@ const sqlEnumValues = new Map(
     (match) => [match[1], matches(match[2], /'([^']+)'/g)],
   ),
 );
+for (const match of schema.matchAll(
+  /alter type public\.([a-z0-9_]+) add value if not exists '([^']+)'/g,
+)) {
+  const values = sqlEnumValues.get(match[1]) ?? [];
+  if (!values.includes(match[2])) values.push(match[2]);
+  sqlEnumValues.set(match[1], values);
+}
 const drizzleEnumValues = new Map(
   [...drizzle.matchAll(/pgEnum\(\s*["']([a-z0-9_]+)["']\s*,\s*\[([\s\S]*?)\]\s*\)/g)].map(
     (match) => [match[1], matches(match[2], /["']([^"']+)["']/g)],
@@ -128,7 +227,11 @@ assert(
 
 const rlsBlock = schema.match(/-- RLS defaults[\s\S]*?end \$\$;/i)?.[0] ?? "";
 for (const table of sqlTables) {
-  assert(rlsBlock.includes(`'${table}'`), `RLS enable list is missing ${table}`);
+  assert(
+    rlsBlock.includes(`'${table}'`) ||
+      new RegExp(`alter table public\\.${table} enable row level security`, "i").test(schema),
+    `RLS enable coverage is missing ${table}`,
+  );
 }
 
 const categories = [

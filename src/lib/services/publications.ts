@@ -105,6 +105,7 @@ export async function createPublication(
     action: "TELEGRAM_PUBLICATION_CREATED",
     entityType: "TELEGRAM_PUBLICATION",
     entityId: publication.id,
+    source: "WEB_ADMIN",
     requestId,
     after: { type: input.type, status: publication.status },
   });
@@ -215,6 +216,7 @@ export async function previewPublication(id: string, actor: CurrentUser, request
     action: "TELEGRAM_PUBLICATION_PREVIEWED",
     entityType: "TELEGRAM_PUBLICATION",
     entityId: id,
+    source: "WEB_ADMIN",
     requestId,
   });
   return { ...updated, preview: payload };
@@ -274,6 +276,7 @@ export async function publishPublication(id: string, actor: CurrentUser, request
     action: "TELEGRAM_PUBLICATION_PUBLISHED",
     entityType: "TELEGRAM_PUBLICATION",
     entityId: id,
+    source: "WEB_ADMIN",
     requestId,
     after: { channelId },
   });
@@ -299,6 +302,7 @@ export async function cancelPublication(id: string, actor: CurrentUser, requestI
     action: "TELEGRAM_PUBLICATION_CANCELLED",
     entityType: "TELEGRAM_PUBLICATION",
     entityId: id,
+    source: "WEB_ADMIN",
     requestId,
   });
   return updated;

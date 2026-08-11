@@ -19,6 +19,7 @@ import {
 import { getEnv } from "@/lib/env";
 import { notFound } from "@/lib/errors";
 import { listFavorites } from "@/lib/services/favorites";
+import { countUnreadNotifications } from "@/lib/services/notifications";
 import { publicStorageUrl } from "@/lib/services/storage-url";
 
 const myEntrySelection = {
@@ -247,6 +248,7 @@ export async function getMyProfile(actor: CurrentUser) {
     recentViewRows,
     recentViewCountRows,
     badgeRows,
+    unreadNotificationCount,
   ] = await Promise.all([
     getDb()
       .select({
@@ -471,6 +473,7 @@ export async function getMyProfile(actor: CurrentUser) {
         ),
       )
       .orderBy(desc(userBadges.awardedAt)),
+    countUnreadNotifications(actor.id),
   ]);
 
   const entryCountMap = statusCounts(entryCounts);
@@ -542,5 +545,6 @@ export async function getMyProfile(actor: CurrentUser) {
       reviews: reviewCountMap,
       submissions: submissionCountMap,
     },
+    unreadNotificationCount,
   };
 }

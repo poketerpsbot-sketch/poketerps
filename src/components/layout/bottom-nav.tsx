@@ -1,43 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Handshake, Home, Medal, Plus, ScanSearch, Trophy } from "lucide-react";
+import { Handshake, Home, Medal, Plus, ScanSearch, Trophy, UserRound } from "lucide-react";
 import { usePathname } from "next/navigation";
-
-function sessionRole(payload: unknown) {
-  if (!payload || typeof payload !== "object") return null;
-  const root = payload as Record<string, unknown>;
-  const data =
-    root.data && typeof root.data === "object" ? (root.data as Record<string, unknown>) : root;
-  const user =
-    data.user && typeof data.user === "object" ? (data.user as Record<string, unknown>) : data;
-  return typeof user.role === "string" ? user.role : null;
-}
 
 export function BottomNav() {
   const pathname = usePathname();
-  const [role, setRole] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const loadRole = () => {
-      void fetch("/api/auth/session", { signal: controller.signal })
-        .then(async (response) => {
-          if (!response.ok) return;
-          setRole(sessionRole(await response.json().catch(() => null)));
-        })
-        .catch(() => undefined);
-    };
-    loadRole();
-    window.addEventListener("pokedex:session-ready", loadRole);
-    return () => {
-      controller.abort();
-      window.removeEventListener("pokedex:session-ready", loadRole);
-    };
-  }, []);
-
-  const canManage = role === "EDITOR" || role === "ADMIN" || role === "OWNER";
   const items = [
     { href: "/", label: "Accueil", icon: Home, primary: false, matches: ["/"] },
     {
@@ -56,7 +25,7 @@ export function BottomNav() {
     },
     {
       href: "/capturer",
-      label: canManage ? "Ajouter" : "Proposer",
+      label: "Ajouter",
       icon: Plus,
       primary: true,
       matches: ["/capturer"],
@@ -74,6 +43,13 @@ export function BottomNav() {
       icon: Handshake,
       primary: false,
       matches: ["/partenaires"],
+    },
+    {
+      href: "/profil",
+      label: "Profil",
+      icon: UserRound,
+      primary: false,
+      matches: ["/profil"],
     },
   ] as const;
 

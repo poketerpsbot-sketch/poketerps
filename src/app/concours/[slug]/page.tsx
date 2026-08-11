@@ -8,6 +8,7 @@ import {
   Sparkles,
   Target,
   UsersRound,
+  ExternalLink,
 } from "lucide-react";
 
 import { ContestLeaderboard, ContestWinners } from "@/components/contests/contest-leaderboard";
@@ -79,8 +80,10 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
               {formatContestPeriod(contest.startsAt, contest.endsAt)}
             </span>
             <span>
-              <UsersRound aria-hidden="true" /> {contest.participantCount} participant
-              {contest.participantCount > 1 ? "s" : ""}
+              <UsersRound aria-hidden="true" /> {contest.participantCount}
+              {contest.maxParticipants === null
+                ? " participants · places illimitées"
+                : ` / ${contest.maxParticipants} participants`}
             </span>
             <span>
               <Target aria-hidden="true" /> {scoringLabels[contest.scoringMode]}
@@ -96,6 +99,50 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
             <h2>Le défi</h2>
             <div className="contest-rich-text">{contest.description}</div>
           </section>
+          {(contest.instructions ||
+            contest.participationSteps.length > 0 ||
+            contest.additionalInformation) && (
+            <section className="content-panel contest-prose">
+              <p className="eyebrow">Mode d’emploi</p>
+              <h2>Comment participer</h2>
+              {contest.instructions && (
+                <div className="contest-rich-text">{contest.instructions}</div>
+              )}
+              {contest.participationSteps.length > 0 && (
+                <ol className="contest-instructions">
+                  {contest.participationSteps.map((step, index) => (
+                    <li key={`${index}-${step}`}>{step}</li>
+                  ))}
+                </ol>
+              )}
+              {contest.additionalInformation && <p>{contest.additionalInformation}</p>}
+              <div className="button-row">
+                {[
+                  [contest.externalUrl, "Ouvrir le lien"],
+                  [contest.telegramUrl, "Ouvrir Telegram"],
+                  [contest.instagramUrl, "Ouvrir Instagram"],
+                ].map(([href, label]) =>
+                  href ? (
+                    <a
+                      className="button button--secondary"
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      key={label}
+                    >
+                      <ExternalLink aria-hidden="true" /> {label}
+                    </a>
+                  ) : null,
+                )}
+              </div>
+            </section>
+          )}
+          {contest.terms && (
+            <section className="content-panel contest-prose">
+              <p className="eyebrow">Conditions complémentaires</p>
+              <div className="contest-rich-text">{contest.terms}</div>
+            </section>
+          )}
           <section className="content-panel contest-prose">
             <p className="eyebrow">À respecter</p>
             <h2>Règlement</h2>
@@ -128,7 +175,11 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
               </div>
               <div>
                 <dt>Places</dt>
-                <dd>{contest.maxParticipants ?? "Sans limite"}</dd>
+                <dd>
+                  {contest.maxParticipants === null
+                    ? `${contest.participantCount} · illimitées`
+                    : `${contest.participantCount} / ${contest.maxParticipants}`}
+                </dd>
               </div>
               <div>
                 <dt>Décompte</dt>

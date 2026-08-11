@@ -143,6 +143,7 @@ export async function createPartner(input: PartnerInput, actor: CurrentUser, req
         action: "PARTNER_CREATED",
         entityType: "PARTNER",
         entityId: partner.id,
+        source: "WEB_ADMIN",
         requestId,
         after: partner,
       }),
@@ -200,6 +201,7 @@ export async function updatePartner(
         action: "PARTNER_UPDATED",
         entityType: "PARTNER",
         entityId: id,
+        source: "WEB_ADMIN",
         requestId,
         before: {
           name: existing.name,
@@ -233,6 +235,7 @@ export async function softDeletePartner(id: string, actor: CurrentUser, requestI
         action: "PARTNER_DELETED",
         entityType: "PARTNER",
         entityId: id,
+        source: "WEB_ADMIN",
         requestId,
         before: { name: existing.name, isActive: existing.isActive },
         after: { isActive: false, deleted: true },

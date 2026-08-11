@@ -54,4 +54,28 @@ describe("entry validation", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts distinct collection and pressing-bag microns but rejects duplicates", () => {
+    const collection = {
+      context: "COLLECTION_SEPARATION" as const,
+      mode: "RANGE" as const,
+      minimumValue: 73,
+      maximumValue: 159,
+      multipleValues: [],
+      sourceType: "DECLARED" as const,
+    };
+    const pressingBag = {
+      context: "PRESSING_BAG" as const,
+      mode: "SINGLE" as const,
+      singleValue: 25,
+      multipleValues: [],
+      sourceType: "DECLARED" as const,
+    };
+    expect(
+      createEntrySchema.safeParse({ ...base, micronContexts: [collection, pressingBag] }).success,
+    ).toBe(true);
+    expect(
+      createEntrySchema.safeParse({ ...base, micronContexts: [collection, collection] }).success,
+    ).toBe(false);
+  });
 });
