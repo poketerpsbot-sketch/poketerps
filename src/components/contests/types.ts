@@ -48,6 +48,27 @@ export type ContestWinner = {
   participant: ContestParticipant;
 };
 
+export type ContestHallOfFameWinner = ContestWinner & {
+  guess: {
+    numericValue: number;
+    unit: string;
+  } | null;
+};
+
+export type ContestHallOfFameResult = {
+  id: string;
+  slug: string;
+  title: string;
+  contestType: ContestType;
+  endedAt: string;
+  resultPublishedAt: string;
+  resultText: string | null;
+  resultImageUrl: string | null;
+  resultWeight: number | null;
+  weightUnit: string | null;
+  winners: ContestHallOfFameWinner[];
+};
+
 export type ContestCardData = {
   id: string;
   slug: string;

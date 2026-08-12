@@ -62,6 +62,9 @@ export const contestsQuerySchema = paginationSchema.extend({
     .optional(),
 });
 export const contestLeaderboardQuerySchema = paginationSchema;
+export const contestHallOfFameQuerySchema = paginationSchema.extend({
+  limit: z.coerce.number().int().min(1).max(20).default(20),
+});
 
 export const contestParticipationInputSchema = z.object({
   entryId: z.uuid().nullable().optional(),

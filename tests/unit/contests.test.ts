@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getOptionalCurrentUser: vi.fn(),
   getPublicContest: vi.fn(),
   listAdminContests: vi.fn(),
+  listContestHallOfFame: vi.fn(),
   listPublicContests: vi.fn(),
   requireAdminUser: vi.fn(),
   enforceRateLimit: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/services/contests", () => ({
   getPublicContest: mocks.getPublicContest,
+  listContestHallOfFame: mocks.listContestHallOfFame,
   listPublicContests: mocks.listPublicContests,
 }));
 vi.mock("@/lib/services/admin-contests", () => ({
@@ -48,6 +50,7 @@ import { GET as getAdminContests, POST as postAdminContest } from "@/app/api/adm
 import { DELETE as deleteAdminContest } from "@/app/api/admin/contests/[id]/route";
 import { GET as getContest } from "@/app/api/contests/[slug]/route";
 import { GET as getContests } from "@/app/api/contests/route";
+import { GET as getContestWinners } from "@/app/api/contests/winners/route";
 
 const validContest = {
   slug: "coupe-aout",
@@ -144,6 +147,20 @@ describe("contest route contracts", () => {
     );
     expect(response.status).toBe(200);
     expect(mocks.getPublicContest).toHaveBeenCalledWith("coupe-aout", "viewer");
+  });
+
+  it("serves only the requested Hall of Fame page", async () => {
+    mocks.listContestHallOfFame.mockResolvedValue({ results: [{ id: "winner-1" }], total: 24 });
+    const response = await getContestWinners(
+      new NextRequest("https://pokedex.example.test/api/contests/winners?limit=3&offset=0"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.listContestHallOfFame).toHaveBeenCalledWith({ limit: 3, offset: 0 });
+    expect(await response.json()).toMatchObject({
+      data: [{ id: "winner-1" }],
+      pagination: { limit: 3, offset: 0, total: 24 },
+    });
   });
 
   it("separates contest moderation from contest configuration", async () => {

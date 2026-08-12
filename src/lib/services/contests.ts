@@ -28,6 +28,7 @@ import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import type {
   contestEventInputSchema,
   contestGuessInputSchema,
+  contestHallOfFameQuerySchema,
   contestLeaderboardQuerySchema,
   contestParticipationInputSchema,
   contestsQuerySchema,
@@ -35,6 +36,7 @@ import type {
 
 type ContestQuery = z.infer<typeof contestsQuerySchema>;
 type LeaderboardQuery = z.infer<typeof contestLeaderboardQuerySchema>;
+type HallOfFameQuery = z.infer<typeof contestHallOfFameQuerySchema>;
 type ParticipationInput = z.infer<typeof contestParticipationInputSchema>;
 type GuessInput = z.infer<typeof contestGuessInputSchema>;
 type ContestEventInput = z.infer<typeof contestEventInputSchema>;
@@ -173,6 +175,24 @@ export type ContestWinnerDto = {
   prize: Record<string, unknown>;
   awardedAt: Date | string;
   participant: PublicParticipant;
+};
+
+export type ContestHallOfFameWinnerDto = ContestWinnerDto & {
+  guess: { numericValue: number; unit: string } | null;
+};
+
+export type ContestHallOfFameResultDto = {
+  id: string;
+  slug: string;
+  title: string;
+  contestType: ContestRow["contest_type"];
+  endedAt: Date | string;
+  resultPublishedAt: Date | string;
+  resultText: string | null;
+  resultImageUrl: string | null;
+  resultWeight: number | null;
+  weightUnit: string | null;
+  winners: ContestHallOfFameWinnerDto[];
 };
 
 export type ContestLeaderboardItem = {
@@ -367,6 +387,143 @@ async function listContestWinners(contestId: string): Promise<ContestWinnerDto[]
       profilePhotoUrl: row.profile_photo_url,
     },
   }));
+}
+
+type HallOfFameRow = {
+  id: string;
+  slug: string;
+  title: string;
+  contest_type: ContestRow["contest_type"];
+  ends_at: Date | string;
+  result_published_at: Date | string;
+  result_text: string | null;
+  result_image_url: string | null;
+  result_image_path: string | null;
+  secret_weight: number | string | null;
+  weight_unit: string | null;
+  custom_weight_unit: string | null;
+  winners: Array<{
+    id: string;
+    rank: number | string;
+    label: string | null;
+    prize: Record<string, unknown>;
+    awarded_at: Date | string;
+    participant: {
+      id: string;
+      public_slug: string;
+      display_name: string;
+      telegram_username: string | null;
+      profile_photo_url: string | null;
+    };
+    guess: { numeric_value: number | string; unit: string } | null;
+  }>;
+};
+
+export async function listContestHallOfFame(query: HallOfFameQuery) {
+  const [envelope] = await getSqlClient().unsafe<
+    Array<{ items: HallOfFameRow[] | null; total: number | string }>
+  >(
+    `with eligible as (
+      select c.id,c.slug,c.title,c.contest_type,c.ends_at,c.result_published_at,
+        c.result_text,c.result_image_url,c.result_image_path,c.secret_weight,
+        c.weight_unit,c.custom_weight_unit
+      from contests c
+      where c.deleted_at is null
+        and c.status::text='ENDED'
+        and c.ends_at<=now()
+        and c.result_published_at is not null
+        and exists (
+          select 1
+          from contest_winners w
+          join contest_participations cp
+            on cp.id=w.participation_id and cp.contest_id=w.contest_id
+          join users u on u.id=cp.user_id
+          where w.contest_id=c.id and cp.status='APPROVED'
+            and u.account_kind='TELEGRAM' and not u.is_system
+            and u.profile_visibility='PUBLIC' and not u.is_banned and u.role<>'BANNED'
+        )
+    ), page as (
+      select * from eligible
+      order by result_published_at desc,id desc
+      limit $1 offset $2
+    ), result_page as (
+      select page.*,
+        coalesce((
+          select jsonb_agg(
+            jsonb_build_object(
+              'id',w.id,
+              'rank',w.rank,
+              'label',w.label,
+              'prize',w.prize,
+              'awarded_at',w.awarded_at,
+              'participant',jsonb_build_object(
+                'id',u.id,
+                'public_slug',u.public_slug,
+                'display_name',u.display_name,
+                'telegram_username',u.telegram_username,
+                'profile_photo_url',u.profile_photo_url
+              ),
+              'guess',case when g.id is null then null else jsonb_build_object(
+                'numeric_value',g.numeric_value::float8,
+                'unit',g.unit
+              ) end
+            ) order by w.rank,w.awarded_at,w.id
+          )
+          from contest_winners w
+          join contest_participations cp
+            on cp.id=w.participation_id and cp.contest_id=w.contest_id
+          join users u on u.id=cp.user_id
+          left join contest_guesses g on g.contest_id=w.contest_id and g.user_id=cp.user_id
+          where w.contest_id=page.id and cp.status='APPROVED'
+            and u.account_kind='TELEGRAM' and not u.is_system
+            and u.profile_visibility='PUBLIC' and not u.is_banned and u.role<>'BANNED'
+        ),'[]'::jsonb) winners
+      from page
+    )
+    select coalesce((
+      select jsonb_agg(to_jsonb(result_page) order by result_published_at desc,id desc)
+      from result_page
+    ),'[]'::jsonb) items,
+    (select count(*)::int from eligible) total`,
+    [query.limit, query.offset],
+  );
+  const rows = envelope?.items ?? [];
+  const signedImages = await signedStorageUrls(
+    "contest-results",
+    rows.flatMap((row) => (row.result_image_path ? [row.result_image_path] : [])),
+  );
+  const results: ContestHallOfFameResultDto[] = rows.map((row) => ({
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    contestType: row.contest_type,
+    endedAt: row.ends_at,
+    resultPublishedAt: row.result_published_at,
+    resultText: row.result_text,
+    resultImageUrl:
+      row.result_image_url ??
+      (row.result_image_path ? (signedImages.get(row.result_image_path) ?? null) : null),
+    resultWeight: row.secret_weight === null ? null : Number(row.secret_weight),
+    weightUnit: row.weight_unit === "CUSTOM" ? row.custom_weight_unit : row.weight_unit,
+    winners: row.winners.map((winner) => ({
+      id: winner.id,
+      rank: Number(winner.rank),
+      label: winner.label,
+      prize: winner.prize,
+      awardedAt: winner.awarded_at,
+      participant: {
+        id: winner.participant.id,
+        publicSlug: winner.participant.public_slug,
+        displayName: winner.participant.display_name,
+        username: winner.participant.telegram_username,
+        profilePhotoUrl: winner.participant.profile_photo_url,
+      },
+      guess: winner.guess
+        ? { numericValue: Number(winner.guess.numeric_value), unit: winner.guess.unit }
+        : null,
+    })),
+  }));
+  return { results, total: Number(envelope?.total ?? 0) };
 }
 
 async function getViewerParticipation(contestId: string, userId?: string | null) {

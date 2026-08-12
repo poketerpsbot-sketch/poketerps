@@ -40,6 +40,16 @@ describe("mobile and contrast CSS invariants", () => {
     expect(css).toMatch(/\.search-console \.button \{\s*min-height: 46px;/);
   });
 
+  it("keeps the contest winners modal inside iPhone safe areas without horizontal overflow", () => {
+    expect(css).toMatch(
+      /\.contest-hall-modal \{[\s\S]*?safe-area-inset-top[\s\S]*?safe-area-inset-right[\s\S]*?safe-area-inset-bottom[\s\S]*?safe-area-inset-left/,
+    );
+    expect(css).toMatch(
+      /\.contest-hall-modal__content \{[\s\S]*?overflow-x: hidden;[\s\S]*?overflow-y: auto;/,
+    );
+    expect(css).toMatch(/\.contest-hall-modal__close \{[\s\S]*?width: 48px;[\s\S]*?height: 48px;/);
+  });
+
   it("clips the closed drawer so it cannot create horizontal mobile scrolling", () => {
     expect(css).toMatch(/\.nav-drawer \{[\s\S]*?inset: 0;[\s\S]*?overflow: hidden;/);
     expect(css).toMatch(/\.bottom-nav__inner \{[\s\S]*?repeat\(7, minmax\(0, 1fr\)\);/);

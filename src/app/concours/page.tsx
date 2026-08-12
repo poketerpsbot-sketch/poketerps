@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Medal, Trophy, UsersRound } from "lucide-react";
 
 import { ContestCard } from "@/components/contests/contest-card";
+import { ContestHallOfFame } from "@/components/contests/contest-hall-of-fame";
 import type { ContestCardData } from "@/components/contests/types";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EmptyState, ErrorState } from "@/components/ui/states";
@@ -32,6 +33,8 @@ export default async function ContestsPage() {
           <UsersRound />
         </div>
       </header>
+
+      <ContestHallOfFame />
 
       {result.error ? (
         <ErrorState message={result.error} retryHref="/concours" />
