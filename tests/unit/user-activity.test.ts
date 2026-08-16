@@ -6,6 +6,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ getSqlClient: () => mocks.sql }));
+vi.mock("@/lib/env", () => ({
+  getEnv: () => ({
+    SESSION_INACTIVITY_SECONDS: 1800,
+    SESSION_MAX_DURATION_SECONDS: 43200,
+    SESSION_DEDUP_WINDOW_SECONDS: 30,
+  }),
+}));
 vi.mock("@/lib/logger", () => ({ logger: { warn: mocks.warn } }));
 
 import {
@@ -30,6 +37,10 @@ describe("PokéTerps activity events", () => {
     const eventSql = mocks.sql.mock.calls[1]?.[0] as TemplateStringsArray;
     expect(eventSql.join(" ")).toContain("where not exists");
     expect(eventSql.join(" ")).toContain("event_type='APP_OPEN'");
+    const sessionSql = mocks.sql.mock.calls[0]?.[0] as TemplateStringsArray;
+    expect(sessionSql.join(" ")).toContain("closed_stale");
+    expect(sessionSql.join(" ")).toContain("pg_advisory_xact_lock");
+    expect(sessionSql.join(" ")).toContain("SESSION_MAX_DURATION_SECONDS".replace(/.*/, "least("));
   });
 
   it("stores an event and its entity without external Telegram presence data", async () => {
@@ -47,6 +58,7 @@ describe("PokéTerps activity events", () => {
     const sqlFragments = mocks.sql.mock.calls[0]?.[0] as TemplateStringsArray;
     expect(sqlFragments.join(" ")).toContain("insert into user_activity_events");
     expect(sqlFragments.join(" ")).toContain("user_sessions");
+    expect(sqlFragments.join(" ")).toContain("closed_stale");
   });
 
   it("keeps analytics failure from breaking the user action", async () => {

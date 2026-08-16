@@ -28,6 +28,9 @@ const entryManagementMigration = read("./migrations/008_entry_management_age_gat
 const contestExperienceMigration = read(
   "./migrations/20260811231831_contest_experience_weight_stats_winner.sql",
 );
+const productEvolutionMigration = read(
+  "./migrations/20260816090000_admin_activity_xp_badges_aromas_home.sql",
+);
 const drizzle = read("../src/lib/db/schema.ts");
 
 assert(
@@ -91,9 +94,12 @@ assert(
 const contestExperienceHeader =
   "-- Evolution 009: experience concours, jeu du poids, statistiques, gagnants et diffusion.";
 const contestExperienceStart = "do $$ begin\n  create type public.contest_link_type as enum";
+const productEvolutionHeader =
+  "-- Evolution sessions, XP, badges, aromes et accueil (migration 20260816090000).";
 const contestExperienceBody = (source) => {
   const start = source.lastIndexOf(contestExperienceStart);
-  const end = source.lastIndexOf("\ncommit;");
+  const productEvolution = source.indexOf(`\n${productEvolutionHeader}`, start);
+  const end = productEvolution >= 0 ? productEvolution : source.lastIndexOf("\ncommit;");
   assert(start >= 0 && end > start, "009 evolution body is missing");
   return source.slice(start, end).trimEnd();
 };
@@ -101,6 +107,18 @@ assert(
   schema.includes(contestExperienceHeader) &&
     contestExperienceBody(schema) === contestExperienceBody(contestExperienceMigration),
   "schema.sql evolution 009 mirror is out of sync with its migration",
+);
+const productEvolutionStart = "-- Une session logique de navigateur";
+const productEvolutionBody = (source) => {
+  const start = source.lastIndexOf(productEvolutionStart);
+  const end = source.lastIndexOf("\ncommit;");
+  assert(start >= 0 && end > start, "product evolution body is missing");
+  return source.slice(start, end).trimEnd();
+};
+assert(
+  schema.includes(productEvolutionHeader) &&
+    productEvolutionBody(schema) === productEvolutionBody(productEvolutionMigration),
+  "schema.sql product evolution mirror is out of sync with its migration",
 );
 assert((schema.match(/^begin;$/gm) ?? []).length === 1, "schema must contain exactly one BEGIN");
 assert((schema.match(/^commit;$/gm) ?? []).length === 1, "schema must contain exactly one COMMIT");
@@ -173,6 +191,15 @@ assert(
 assert(
   (contestExperienceMigration.match(/\$\$/g) ?? []).length % 2 === 0,
   "unbalanced delimiters in contest experience migration",
+);
+assert(
+  (productEvolutionMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (productEvolutionMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "product evolution migration must contain one transaction",
+);
+assert(
+  (productEvolutionMigration.match(/\$\$/g) ?? []).length % 2 === 0,
+  "unbalanced delimiters in product evolution migration",
 );
 
 const sqlTables = uniqueSorted(matches(schema, /create table if not exists public\.([a-z0-9_]+)/g));

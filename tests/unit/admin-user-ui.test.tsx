@@ -75,6 +75,7 @@ const detail: AdminUserDetailDto = {
       lastActivityAt: "2026-08-11T12:00:00.000Z",
       endedAt: null,
       durationSeconds: 1800,
+      actionCount: 2,
       appVersion: null,
     },
   ],

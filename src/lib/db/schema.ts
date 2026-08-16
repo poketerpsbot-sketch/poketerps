@@ -318,6 +318,7 @@ export const userActivityEventTypeEnum = pgEnum("user_activity_event_type", [
   "MESSAGE_SENT",
   "CONTEST_JOIN",
 ]);
+export const aromaImportanceEnum = pgEnum("aroma_importance", ["PRIMARY", "SECONDARY"]);
 export const adminOutboundMessageStatusEnum = pgEnum("admin_outbound_message_status", [
   "QUEUED",
   "SENT",
@@ -457,6 +458,10 @@ export const badges = pgTable("badges", {
   name: text("name").notNull(),
   description: text("description"),
   icon: text("icon"),
+  imageUrl: text("image_url"),
+  category: text("category").notNull().default("ACHIEVEMENT"),
+  rarity: text("rarity").notNull().default("COMMON"),
+  xpReward: integer("xp_reward").notNull().default(0),
   kind: badgeKindEnum("kind").notNull().default("PERMANENT"),
   criteria: jsonb("criteria").$type<Record<string, unknown>>().notNull().default({}),
   isActive: boolean("is_active").notNull().default(true),
@@ -479,6 +484,8 @@ export const userBadges = pgTable(
     activeFrom: timestamp("active_from", { withTimezone: true }),
     activeUntil: timestamp("active_until", { withTimezone: true }),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    sourceType: text("source_type"),
+    sourceId: uuid("source_id"),
     awardedAt: timestamp("awarded_at", { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokeReason: text("revoke_reason"),
@@ -506,6 +513,23 @@ export const userExperienceEvents = pgTable(
   (table) => [index("user_experience_events_user_created_idx").on(table.userId, table.createdAt)],
 );
 
+export const experienceRules = pgTable("experience_rules", {
+  key: text("key").primaryKey(),
+  label: text("label").notNull(),
+  points: integer("points").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  description: text("description"),
+  ...timestamps,
+});
+
+export const levelDefinitions = pgTable("level_definitions", {
+  level: integer("level").primaryKey(),
+  threshold: integer("threshold").notNull(),
+  title: text("title").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  ...timestamps,
+});
+
 export const userSessions = pgTable(
   "user_sessions",
   {
@@ -519,7 +543,7 @@ export const userSessions = pgTable(
     durationSeconds: integer("duration_seconds"),
     platform: userSessionPlatformEnum("platform").notNull().default("UNKNOWN"),
     appVersion: text("app_version"),
-    clientSessionId: text("client_session_id").unique(),
+    clientSessionId: text("client_session_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -531,7 +555,15 @@ export const userSessions = pgTable(
       "user_sessions_duration_nonnegative",
       sql`${table.durationSeconds} is null or ${table.durationSeconds}>=0`,
     ),
+    check(
+      "user_sessions_duration_reasonable",
+      sql`${table.durationSeconds} is null or ${table.durationSeconds}<=86400`,
+    ),
     index("user_sessions_user_started_idx").on(table.userId, table.startedAt),
+    uniqueIndex("user_sessions_one_active_client_idx")
+      .on(table.userId, table.clientSessionId)
+      .where(sql`${table.endedAt} is null and ${table.clientSessionId} is not null`),
+    index("user_sessions_client_started_idx").on(table.clientSessionId, table.startedAt),
     index("user_sessions_active_idx")
       .on(table.lastActivityAt)
       .where(sql`${table.endedAt} is null`),
@@ -709,6 +741,41 @@ export const dynamicFieldOptions = pgTable(
   ],
 );
 
+export const aromaFamilies = pgTable(
+  "aroma_families",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull().unique(),
+    name: text("name").notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [index("aroma_families_active_sort_idx").on(table.isActive, table.sortOrder)],
+);
+
+export const aromas = pgTable(
+  "aromas",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => aromaFamilies.id, { onDelete: "restrict" }),
+    slug: text("slug").notNull().unique(),
+    name: text("name").notNull(),
+    description: text("description"),
+    synonyms: text("synonyms").array().notNull().default([]),
+    translations: jsonb("translations").$type<Record<string, string>>().notNull().default({}),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => [
+    index("aromas_family_active_sort_idx").on(table.familyId, table.isActive, table.sortOrder),
+  ],
+);
+
 export const entries = pgTable(
   "entries",
   {
@@ -771,6 +838,33 @@ export const entries = pgTable(
     index("entries_subcategory_idx").on(table.subcategoryId),
     index("entries_created_by_idx").on(table.createdById),
     index("entries_original_contributor_idx").on(table.originalContributorId),
+  ],
+);
+
+export const entryAromas = pgTable(
+  "entry_aromas",
+  {
+    entryId: uuid("entry_id")
+      .notNull()
+      .references(() => entries.id, { onDelete: "cascade" }),
+    aromaId: uuid("aroma_id")
+      .notNull()
+      .references(() => aromas.id, { onDelete: "restrict" }),
+    importance: aromaImportanceEnum("importance").notNull(),
+    customLabel: text("custom_label"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.entryId, table.aromaId] }),
+    uniqueIndex("entry_aromas_one_primary_idx")
+      .on(table.entryId)
+      .where(sql`${table.importance}='PRIMARY'`),
+    index("entry_aromas_aroma_entry_idx").on(table.aromaId, table.entryId),
+    check(
+      "entry_aromas_custom_label_length",
+      sql`${table.customLabel} is null or char_length(btrim(${table.customLabel})) between 2 and 120`,
+    ),
   ],
 );
 

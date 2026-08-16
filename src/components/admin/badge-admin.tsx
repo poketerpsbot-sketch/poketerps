@@ -12,6 +12,10 @@ export type AdminBadge = {
   name: string;
   description?: string | null;
   icon?: string | null;
+  imageUrl?: string | null;
+  category?: string | null;
+  rarity?: string | null;
+  xpReward?: number | null;
   kind?: string | null;
   criteria?: Record<string, unknown> | null;
   isActive?: boolean;
@@ -61,6 +65,10 @@ export function BadgeAdmin({
       slug: String(data.get("slug") ?? ""),
       description: String(data.get("description") ?? "") || null,
       icon: String(data.get("icon") ?? "") || null,
+      imageUrl: String(data.get("imageUrl") ?? "") || null,
+      category: String(data.get("category") ?? "ACHIEVEMENT"),
+      rarity: String(data.get("rarity") ?? "COMMON"),
+      xpReward: Number(data.get("xpReward") ?? 0),
       kind: String(data.get("kind") ?? "PERMANENT"),
       criteria: {},
       isActive: true,
@@ -83,6 +91,27 @@ export function BadgeAdmin({
     const result = await submitJson(endpoint, "PATCH", { isActive: badge.isActive === false });
     setPending("");
     setFeedback(result.ok ? "Disponibilité du badge mise à jour." : result.message);
+    if (result.ok) router.refresh();
+  }
+
+  async function update(event: FormEvent<HTMLFormElement>, badge: AdminBadge) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const endpoint = `/api/admin/badges/${encodeURIComponent(String(badge.id))}`;
+    setPending(endpoint);
+    setFeedback("");
+    const result = await submitJson(endpoint, "PATCH", {
+      name: String(data.get("name") ?? ""),
+      description: String(data.get("description") ?? "") || null,
+      imageUrl: String(data.get("imageUrl") ?? "") || null,
+      category: String(data.get("category") ?? "ACHIEVEMENT"),
+      rarity: String(data.get("rarity") ?? "COMMON"),
+      xpReward: Number(data.get("xpReward") ?? 0),
+      kind: String(data.get("kind") ?? "PERMANENT"),
+      sortOrder: Number(data.get("sortOrder") ?? 0),
+    });
+    setPending("");
+    setFeedback(result.ok ? "Badge mis à jour." : result.message);
     if (result.ok) router.refresh();
   }
 
@@ -150,6 +179,39 @@ export function BadgeAdmin({
               <input id="badge-icon" name="icon" maxLength={24} placeholder="🏅" />
             </div>
             <div className="field">
+              <label htmlFor="badge-image-url">Image</label>
+              <input
+                id="badge-image-url"
+                name="imageUrl"
+                maxLength={500}
+                placeholder="/badges/mon-badge.png"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="badge-category">Catégorie</label>
+              <select id="badge-category" name="category" defaultValue="ACHIEVEMENT">
+                <option value="LEVEL">Niveau</option>
+                <option value="ROLE">Rôle</option>
+                <option value="ACHIEVEMENT">Achievement</option>
+                <option value="PARTNER">Partenaire</option>
+                <option value="CONTEST">Concours</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="badge-rarity">Rareté</label>
+              <select id="badge-rarity" name="rarity" defaultValue="COMMON">
+                <option value="COMMON">Commun</option>
+                <option value="UNCOMMON">Peu commun</option>
+                <option value="RARE">Rare</option>
+                <option value="EPIC">Épique</option>
+                <option value="LEGENDARY">Légendaire</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="badge-xp-reward">Récompense XP</label>
+              <input id="badge-xp-reward" name="xpReward" type="number" min={0} defaultValue={0} />
+            </div>
+            <div className="field">
               <label htmlFor="badge-kind">Type</label>
               <select id="badge-kind" name="kind" defaultValue="PERMANENT">
                 <option value="PERMANENT">Permanent</option>
@@ -189,16 +251,124 @@ export function BadgeAdmin({
           return (
             <article className="content-panel admin-badge-card" key={String(badge.id)}>
               <header>
-                <span className="admin-badge-card__icon" aria-hidden="true">
-                  {badge.icon || "🏅"}
-                </span>
+                {badge.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- URL administrable et asset local.
+                  <img className="admin-badge-card__image" src={badge.imageUrl} alt="" />
+                ) : (
+                  <span className="admin-badge-card__icon" aria-hidden="true">
+                    {badge.icon || "◆"}
+                  </span>
+                )}
                 <div>
                   <p className="eyebrow">{badge.kind?.toLocaleLowerCase("fr-FR") || "badge"}</p>
                   <h2>{badge.name}</h2>
                 </div>
               </header>
               <p>{badge.description || "Aucune description."}</p>
+              <p className="muted">
+                {badge.category ?? "ACHIEVEMENT"} · {badge.rarity ?? "COMMON"} · +
+                {badge.xpReward ?? 0} XP
+              </p>
               <p className="muted">{badgeAssignments.length} attribution(s) active(s)</p>
+              <details className="admin-disclosure">
+                <summary>Modifier le badge</summary>
+                <form className="form-stack" onSubmit={(event) => update(event, badge)}>
+                  <div className="field">
+                    <label htmlFor={`badge-edit-name-${badge.id}`}>Nom</label>
+                    <input
+                      id={`badge-edit-name-${badge.id}`}
+                      name="name"
+                      defaultValue={badge.name}
+                      required
+                      maxLength={120}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`badge-edit-description-${badge.id}`}>Description</label>
+                    <textarea
+                      id={`badge-edit-description-${badge.id}`}
+                      name="description"
+                      defaultValue={badge.description ?? ""}
+                      rows={2}
+                      maxLength={2_000}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`badge-edit-image-${badge.id}`}>Image</label>
+                    <input
+                      id={`badge-edit-image-${badge.id}`}
+                      name="imageUrl"
+                      defaultValue={badge.imageUrl ?? ""}
+                      maxLength={500}
+                    />
+                  </div>
+                  <div className="form-grid">
+                    <div className="field">
+                      <label htmlFor={`badge-edit-category-${badge.id}`}>Catégorie</label>
+                      <select
+                        id={`badge-edit-category-${badge.id}`}
+                        name="category"
+                        defaultValue={badge.category ?? "ACHIEVEMENT"}
+                      >
+                        <option value="LEVEL">Niveau</option>
+                        <option value="ROLE">Rôle</option>
+                        <option value="ACHIEVEMENT">Achievement</option>
+                        <option value="PARTNER">Partenaire</option>
+                        <option value="CONTEST">Concours</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`badge-edit-rarity-${badge.id}`}>Rareté</label>
+                      <select
+                        id={`badge-edit-rarity-${badge.id}`}
+                        name="rarity"
+                        defaultValue={badge.rarity ?? "COMMON"}
+                      >
+                        <option value="COMMON">Commun</option>
+                        <option value="UNCOMMON">Peu commun</option>
+                        <option value="RARE">Rare</option>
+                        <option value="EPIC">Épique</option>
+                        <option value="LEGENDARY">Légendaire</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`badge-edit-xp-${badge.id}`}>XP</label>
+                      <input
+                        id={`badge-edit-xp-${badge.id}`}
+                        name="xpReward"
+                        type="number"
+                        min={0}
+                        defaultValue={badge.xpReward ?? 0}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`badge-edit-kind-${badge.id}`}>Type</label>
+                      <select
+                        id={`badge-edit-kind-${badge.id}`}
+                        name="kind"
+                        defaultValue={badge.kind ?? "PERMANENT"}
+                      >
+                        <option value="PERMANENT">Permanent</option>
+                        <option value="ACTIVE">Actif</option>
+                        <option value="HISTORICAL">Historique</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`badge-edit-order-${badge.id}`}>Ordre</label>
+                      <input
+                        id={`badge-edit-order-${badge.id}`}
+                        name="sortOrder"
+                        type="number"
+                        min={0}
+                        defaultValue={badge.sortOrder ?? 0}
+                      />
+                    </div>
+                  </div>
+                  <button className="button" type="submit" disabled={pending === endpoint}>
+                    <Award size={15} aria-hidden="true" /> Enregistrer
+                  </button>
+                </form>
+              </details>
               <button
                 className="button button--secondary"
                 type="button"

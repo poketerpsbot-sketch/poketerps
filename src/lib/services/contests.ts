@@ -23,6 +23,7 @@ import {
 import { getEnv } from "@/lib/env";
 import { conflict, notFound } from "@/lib/errors";
 import { auditValues } from "@/lib/services/audit";
+import { awardConfiguredExperience } from "@/lib/services/experience";
 import { publicStorageUrl, signedStorageUrls } from "@/lib/services/storage-url";
 import { tryRecordUserActivityEvent } from "@/lib/services/user-activity";
 import type {
@@ -900,6 +901,14 @@ export async function joinContest(
           .values({ ...values, contestId: contest.id, userId: actor.id })
           .returning();
     if (!participation) throw new Error("Contest participation insert failed");
+    await awardConfiguredExperience(tx, {
+      userId: actor.id,
+      ruleKey: "CONTEST_PARTICIPATION",
+      idempotencyKey: `CONTEST_PARTICIPATION:${contest.id}:${actor.id}`,
+      reason: `Participation au concours « ${contest.title} »`,
+      sourceType: "CONTEST",
+      sourceId: contest.id,
+    });
     await tx.insert(auditLogs).values(
       auditValues({
         actorUserId: actor.id,

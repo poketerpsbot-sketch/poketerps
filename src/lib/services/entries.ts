@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, isNull, max, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, max, or } from "drizzle-orm";
 import type { z } from "zod";
 
 import { hasPermission } from "@/lib/auth/rbac";
@@ -10,12 +10,15 @@ import { getDb } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import {
   auditLogs,
+  aromaFamilies,
+  aromas,
   categories,
   dynamicFieldDefinitions,
   dynamicFieldOptions,
   entries,
   entryFieldValues,
   entryImages,
+  entryAromas,
   entryMicronContexts,
   entryRevisions,
   entryTags,
@@ -31,6 +34,7 @@ import {
 import { AppError, conflict, forbidden, notFound } from "@/lib/errors";
 import { auditValues, type AuditSource } from "@/lib/services/audit";
 import { createUserNotification, sendEntryStatusTelegram } from "@/lib/services/notifications";
+import { awardConfiguredExperience, ensureUserBadge } from "@/lib/services/experience";
 import {
   finalizeEntryImagePromotion,
   prepareEntryImagePromotion,
@@ -414,6 +418,92 @@ async function validateReferences(
   }
 }
 
+async function validateAromaReferences(
+  executor: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  input: Pick<CreateEntry, "primaryAromaId" | "secondaryAromaIds" | "customAromaLabel">,
+) {
+  const secondaryAromaIds = [...new Set(input.secondaryAromaIds ?? [])];
+  const selectedIds = [
+    ...new Set([input.primaryAromaId, ...secondaryAromaIds].filter(Boolean)),
+  ] as string[];
+  if (selectedIds.length === 0) {
+    if (input.customAromaLabel) {
+      throw new AppError(
+        "CUSTOM_AROMA_WITHOUT_OTHER",
+        "Choisis « Autre » avant de saisir un arôme libre.",
+        400,
+      );
+    }
+    return {
+      primaryAromaId: null,
+      secondaryAromaIds,
+      customAromaLabel: null,
+      otherAromaId: null,
+    };
+  }
+  const rows = await executor
+    .select({ id: aromas.id, slug: aromas.slug })
+    .from(aromas)
+    .innerJoin(aromaFamilies, eq(aromas.familyId, aromaFamilies.id))
+    .where(
+      and(
+        inArray(aromas.id, selectedIds),
+        eq(aromas.isActive, true),
+        eq(aromaFamilies.isActive, true),
+      ),
+    );
+  if (rows.length !== selectedIds.length) {
+    throw new AppError("INVALID_AROMA", "Un ou plusieurs arômes sont indisponibles.", 400);
+  }
+  const otherSelected = rows.some((row) => row.slug === "autre");
+  if (otherSelected && !input.customAromaLabel) {
+    throw new AppError(
+      "CUSTOM_AROMA_REQUIRED",
+      "Précise le nom de l’arôme libre sélectionné.",
+      400,
+    );
+  }
+  if (!otherSelected && input.customAromaLabel) {
+    throw new AppError(
+      "CUSTOM_AROMA_WITHOUT_OTHER",
+      "Le texte libre est réservé à l’option « Autre ».",
+      400,
+    );
+  }
+  return {
+    primaryAromaId: input.primaryAromaId ?? null,
+    secondaryAromaIds,
+    customAromaLabel: input.customAromaLabel ?? null,
+    otherAromaId: rows.find((row) => row.slug === "autre")?.id ?? null,
+  };
+}
+
+async function replaceEntryAromas(
+  executor: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  entryId: string,
+  values: Awaited<ReturnType<typeof validateAromaReferences>>,
+) {
+  await executor.delete(entryAromas).where(eq(entryAromas.entryId, entryId));
+  const aromaValues: Array<typeof entryAromas.$inferInsert> = [];
+  if (values.primaryAromaId) {
+    aromaValues.push({
+      entryId,
+      aromaId: values.primaryAromaId,
+      importance: "PRIMARY",
+      customLabel: values.primaryAromaId === values.otherAromaId ? values.customAromaLabel : null,
+    });
+  }
+  aromaValues.push(
+    ...values.secondaryAromaIds.map((aromaId) => ({
+      entryId,
+      aromaId,
+      importance: "SECONDARY" as const,
+      customLabel: aromaId === values.otherAromaId ? values.customAromaLabel : null,
+    })),
+  );
+  if (aromaValues.length > 0) await executor.insert(entryAromas).values(aromaValues);
+}
+
 export async function createEntry(input: CreateEntry, actor: CurrentUser, requestId?: string) {
   return getDb().transaction(async (tx) => {
     const collectionContext = input.micronContexts.find(
@@ -438,6 +528,7 @@ export async function createEntry(input: CreateEntry, actor: CurrentUser, reques
       micron: normalizedMicron,
       micronContexts: normalizedMicronContexts,
     });
+    const validatedAromas = await validateAromaReferences(tx, input);
     const [entry] = await tx
       .insert(entries)
       .values({
@@ -466,6 +557,7 @@ export async function createEntry(input: CreateEntry, actor: CurrentUser, reques
         .insert(entryTags)
         .values([...new Set(input.tagIds)].map((tagId) => ({ entryId: entry.id, tagId })));
     }
+    await replaceEntryAromas(tx, entry.id, validatedAromas);
     if (normalizedMicron) {
       await tx.insert(micronSpecifications).values(micronInsertValues(entry.id, normalizedMicron));
     }
@@ -640,6 +732,34 @@ export async function updateEntry(
     if (input.subcategoryId !== undefined) set.subcategoryId = input.subcategoryId;
     if (input.rarity !== undefined) set.rarity = input.rarity;
     const [updated] = await tx.update(entries).set(set).where(eq(entries.id, id)).returning();
+
+    const aromasTouched =
+      input.primaryAromaId !== undefined ||
+      input.secondaryAromaIds !== undefined ||
+      input.customAromaLabel !== undefined;
+    if (aromasTouched) {
+      const storedAromas = await tx
+        .select({
+          aromaId: entryAromas.aromaId,
+          importance: entryAromas.importance,
+          customLabel: entryAromas.customLabel,
+        })
+        .from(entryAromas)
+        .where(eq(entryAromas.entryId, id));
+      const currentPrimary =
+        storedAromas.find((aroma) => aroma.importance === "PRIMARY")?.aromaId ?? null;
+      const currentSecondary = storedAromas
+        .filter((aroma) => aroma.importance === "SECONDARY")
+        .map((aroma) => aroma.aromaId);
+      const currentCustom = storedAromas.find((aroma) => aroma.customLabel)?.customLabel ?? null;
+      const validatedAromas = await validateAromaReferences(tx, {
+        primaryAromaId: input.primaryAromaId === undefined ? currentPrimary : input.primaryAromaId,
+        secondaryAromaIds: input.secondaryAromaIds ?? currentSecondary,
+        customAromaLabel:
+          input.customAromaLabel === undefined ? currentCustom : input.customAromaLabel,
+      });
+      await replaceEntryAromas(tx, id, validatedAromas);
+    }
 
     if (input.fields) {
       await tx.delete(entryFieldValues).where(eq(entryFieldValues.entryId, id));
@@ -1057,6 +1177,48 @@ export async function moderateEntry(
           previewPayload: { text: preview },
           createdById: actor.id,
         });
+        if (!entry.isDemo) {
+          await awardConfiguredExperience(tx, {
+            userId: entry.originalContributorId,
+            ruleKey: "ENTRY_PUBLISHED",
+            idempotencyKey: `ENTRY_PUBLISHED:${id}`,
+            reason: `Fiche « ${entry.name} » publiée`,
+            sourceType: "ENTRY",
+            sourceId: id,
+          });
+          const [publishedCount] = await tx
+            .select({ value: count() })
+            .from(entries)
+            .where(
+              and(
+                eq(entries.originalContributorId, entry.originalContributorId),
+                eq(entries.status, "PUBLISHED"),
+                eq(entries.isDemo, false),
+                isNull(entries.deletedAt),
+              ),
+            );
+          const publishedTotal = Number(publishedCount?.value ?? 0);
+          if (publishedTotal === 1) {
+            await awardConfiguredExperience(tx, {
+              userId: entry.originalContributorId,
+              ruleKey: "FIRST_ENTRY_BONUS",
+              idempotencyKey: `FIRST_ENTRY_BONUS:${entry.originalContributorId}`,
+              reason: "Première fiche publiée",
+              sourceType: "USER",
+              sourceId: entry.originalContributorId,
+            });
+          }
+          for (const milestone of [10, 50, 100] as const) {
+            if (publishedTotal >= milestone) {
+              await ensureUserBadge(tx, {
+                userId: entry.originalContributorId,
+                slug: `captures-${milestone}`,
+                sourceType: "ENTRY_MILESTONE",
+                sourceId: id,
+              });
+            }
+          }
+        }
       }
       await tx.insert(auditLogs).values(
         auditValues({

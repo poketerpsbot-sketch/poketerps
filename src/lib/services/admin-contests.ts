@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/schema";
 import { conflict, notFound } from "@/lib/errors";
 import { auditValues } from "@/lib/services/audit";
+import { awardConfiguredExperience, ensureUserBadge } from "@/lib/services/experience";
 import { slugify } from "@/lib/validation/common";
 import type {
   adminContestParticipationsQuerySchema,
@@ -814,6 +815,21 @@ export async function selectContestWinner(
         relatedContestId: contestId,
         actionUrl: `/concours/${contest.slug}`,
         metadata: { winnerId: winner.id },
+      });
+      await awardConfiguredExperience(tx, {
+        userId: participation.userId,
+        ruleKey: "CONTEST_WIN",
+        idempotencyKey: `CONTEST_WIN:${contestId}:${participation.userId}`,
+        reason: `Victoire au concours « ${contest.title} »`,
+        sourceType: "CONTEST",
+        sourceId: contestId,
+        metadata: { winnerId: winner.id, rank: input.rank },
+      });
+      await ensureUserBadge(tx, {
+        userId: participation.userId,
+        slug: "contest-winner",
+        sourceType: "CONTEST",
+        sourceId: contestId,
       });
       await tx.insert(auditLogs).values(
         auditValues({

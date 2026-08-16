@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 
 import {
+  activityCategories,
+  activityCategory,
   activityEntityHref,
   formatActivityAction,
   roleLabels,
@@ -90,8 +92,22 @@ export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDet
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [activityFilter, setActivityFilter] = useState<(typeof activityCategories)[number]>("Tout");
+  const [visibleActivityCount, setVisibleActivityCount] = useState(20);
   const { user, stats } = initialDetail;
   const avatarUrl = safeAvatarUrl(user.profilePhotoUrl);
+  const filteredActivity = initialDetail.activity.filter(
+    (event) => activityFilter === "Tout" || activityCategory(event.eventType) === activityFilter,
+  );
+  const visibleActivity = filteredActivity.slice(0, visibleActivityCount);
+  const activitySummary = initialDetail.activity.reduce<Record<string, number>>(
+    (summary, event) => {
+      const category = activityCategory(event.eventType);
+      summary[category] = (summary[category] ?? 0) + 1;
+      return summary;
+    },
+    {},
+  );
 
   async function addNote(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -530,6 +546,9 @@ export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDet
                 <div>
                   <StatusPill value={sessionState(session.endedAt)} />
                   <span>{formatDuration(session.durationSeconds)}</span>
+                  <small>
+                    {session.actionCount} action{session.actionCount > 1 ? "s" : ""}
+                  </small>
                 </div>
               </article>
             ))}
@@ -549,13 +568,42 @@ export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDet
           icon={<Activity aria-hidden="true" />}
           empty="Aucune activité enregistrée."
         >
-          {initialDetail.activity.map((event) => {
+          <div className="admin-activity-summary" aria-label="Résumé des événements">
+            <strong>{initialDetail.activity.length} actions</strong>
+            <span>{activitySummary.Avis ?? 0} avis</span>
+            <span>{activitySummary.Fiches ?? 0} fiches</span>
+            <span>{activitySummary.Messages ?? 0} messages</span>
+            <span>
+              {initialDetail.activity.length -
+                (activitySummary.Avis ?? 0) -
+                (activitySummary.Fiches ?? 0) -
+                (activitySummary.Messages ?? 0)}{" "}
+              autres
+            </span>
+          </div>
+          <div className="admin-activity-tabs" role="tablist" aria-label="Type d’activité">
+            {activityCategories.map((category) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activityFilter === category}
+                key={category}
+                onClick={() => {
+                  setActivityFilter(category);
+                  setVisibleActivityCount(20);
+                }}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+          {visibleActivity.map((event) => {
             const href = activityEntityHref(event.entityType, event.entityId);
             return (
               <article className="admin-history-row" key={event.id}>
                 <Activity aria-hidden="true" />
                 <div>
-                  <strong>{formatActivityAction(event.eventType)}</strong>
+                  <strong>{formatActivityAction(event.eventType, event.metadata)}</strong>
                   <span>{formatDateTime(event.createdAt)}</span>
                 </div>
                 {href && (
@@ -566,6 +614,21 @@ export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDet
               </article>
             );
           })}
+          {filteredActivity.length === 0 && (
+            <EmptyState
+              title="Aucun événement dans cette catégorie"
+              description="Choisis un autre onglet pour consulter l’activité disponible."
+            />
+          )}
+          {visibleActivityCount < filteredActivity.length && (
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => setVisibleActivityCount((count) => Math.min(count + 20, 100))}
+            >
+              Charger 20 événements de plus
+            </button>
+          )}
         </HistorySection>
         <HistorySection
           title="Notes internes"

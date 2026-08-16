@@ -44,6 +44,29 @@ export type EntryImageDto = {
   licenseUrl?: string | null;
 };
 
+export type AromaDto = {
+  id: Identifier;
+  familyId: Identifier;
+  slug: string;
+  name: string;
+  synonyms?: string[];
+  sortOrder?: number;
+};
+
+export type AromaFamilyDto = {
+  id: Identifier;
+  slug: string;
+  name: string;
+  sortOrder?: number;
+  aromas: AromaDto[];
+};
+
+export type EntryAromaDto = AromaDto & {
+  familyName: string;
+  importance: "PRIMARY" | "SECONDARY";
+  customLabel?: string | null;
+};
+
 export type EntrySummaryDto = {
   id: Identifier;
   slug: string;
@@ -134,6 +157,7 @@ export type EntryDetailDto = EntrySummaryDto & {
   fields?: Record<string, unknown>;
   micron?: MicronSpecificationDto | null;
   micronContexts?: MicronContextDto[];
+  aromas?: EntryAromaDto[];
   isLiked?: boolean;
   isFavorited?: boolean;
   canReview?: boolean;
@@ -153,6 +177,10 @@ export type BadgeDto = {
   id?: Identifier;
   name: string;
   icon?: string | null;
+  imageUrl?: string | null;
+  category?: string | null;
+  rarity?: string | null;
+  xpReward?: number | null;
   description?: string | null;
   slug?: string | null;
   kind?: string | null;
@@ -271,6 +299,28 @@ export type UserNotificationDto = {
   entry?: EntrySummaryDto | null;
 };
 
+export type ExperienceOverviewDto = {
+  progress: {
+    level: number;
+    title: string;
+    experiencePoints: number;
+    currentThreshold: number;
+    nextThreshold: number;
+    remaining: number;
+    percent: number;
+  };
+  events?: Array<{
+    id: Identifier;
+    points: number;
+    reason: string;
+    sourceType?: string | null;
+    sourceId?: Identifier | null;
+    createdAt?: string | null;
+  }>;
+  rules?: Array<{ key: string; label: string; points: number }>;
+  levels?: Array<{ level: number; threshold: number; title: string }>;
+};
+
 export type SubmissionDto = {
   id: Identifier;
   type?: string | null;
@@ -303,6 +353,34 @@ export type PartnerDto = {
 };
 
 export type HomeDto = {
+  sinceLastVisit?: {
+    previousEnd?: string | null;
+    newEntries: number;
+    newContests: number;
+    approvedReviews: number;
+    xpGained: number;
+  } | null;
+  viewer?:
+    | (PublicProfileDto & {
+        progress?: {
+          currentThreshold: number;
+          nextThreshold: number;
+          remaining: number;
+          percent: number;
+        };
+      })
+    | null;
+  dailyDiscovery?: EntrySummaryDto | null;
+  trendingEntries?: EntrySummaryDto[];
+  activeContest?: {
+    id: Identifier;
+    slug: string;
+    title: string;
+    summary?: string | null;
+    remainingParticipants?: number | null;
+    maxParticipants?: number | null;
+  } | null;
+  publishedEntryCount?: number;
   latestEntries?: EntrySummaryDto[];
   latest?: EntrySummaryDto[];
   popularEntries?: EntrySummaryDto[];

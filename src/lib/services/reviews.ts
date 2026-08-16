@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { CurrentUser } from "@/lib/auth/current-user";
@@ -21,6 +21,7 @@ import { getEnv } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { reviewNotificationFor } from "@/lib/reviews/presentation";
 import { auditValues, type AuditSource } from "@/lib/services/audit";
+import { awardConfiguredExperience, ensureUserBadge } from "@/lib/services/experience";
 import {
   escapeTelegramHtml,
   notifyTelegramAdmins,
@@ -310,6 +311,42 @@ export async function moderateReview(
             })
             .returning({ id: userNotifications.id })
         : [];
+      if (targetStatus === "PUBLISHED") {
+        await awardConfiguredExperience(tx, {
+          userId: review.userId,
+          ruleKey: "REVIEW_PUBLISHED",
+          idempotencyKey: `REVIEW_PUBLISHED:${id}`,
+          reason: `Avis publié sur « ${review.entryName} »`,
+          sourceType: "REVIEW",
+          sourceId: id,
+        });
+        const [publishedCount] = await tx
+          .select({ value: count() })
+          .from(reviews)
+          .where(
+            and(
+              eq(reviews.userId, review.userId),
+              eq(reviews.status, "PUBLISHED"),
+              isNull(reviews.deletedAt),
+            ),
+          );
+        if (Number(publishedCount?.value ?? 0) === 1) {
+          await awardConfiguredExperience(tx, {
+            userId: review.userId,
+            ruleKey: "FIRST_REVIEW_BONUS",
+            idempotencyKey: `FIRST_REVIEW_BONUS:${review.userId}`,
+            reason: "Premier avis publié",
+            sourceType: "USER",
+            sourceId: review.userId,
+          });
+          await ensureUserBadge(tx, {
+            userId: review.userId,
+            slug: "first-review",
+            sourceType: "REVIEW",
+            sourceId: id,
+          });
+        }
+      }
       await tx.insert(auditLogs).values(
         auditValues({
           actorUserId: actor.id,

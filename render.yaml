@@ -51,6 +51,12 @@ services:
         generateValue: true
       - key: SESSION_MAX_AGE_SECONDS
         value: "604800"
+      - key: SESSION_INACTIVITY_SECONDS
+        value: "1800"
+      - key: SESSION_MAX_DURATION_SECONDS
+        value: "43200"
+      - key: SESSION_DEDUP_WINDOW_SECONDS
+        value: "30"
       - key: RATE_LIMIT_SECRET
         generateValue: true
       - key: APP_DISPLAY_NAME

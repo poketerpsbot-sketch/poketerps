@@ -47,6 +47,12 @@ describe("team audit role boundaries", () => {
       null,
       null,
       null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
       20,
       0,
     ]);

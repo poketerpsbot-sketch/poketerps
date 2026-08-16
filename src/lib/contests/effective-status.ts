@@ -1,11 +1,5 @@
 export type ContestEffectiveStatus =
-  | "DRAFT"
-  | "UPCOMING"
-  | "OPEN"
-  | "FULL"
-  | "CLOSED"
-  | "ENDED_PENDING_RESULT"
-  | "ENDED";
+  "DRAFT" | "UPCOMING" | "OPEN" | "FULL" | "CLOSED" | "ENDED_PENDING_RESULT" | "ENDED";
 
 export type ContestSchedule = {
   status?: string | null;

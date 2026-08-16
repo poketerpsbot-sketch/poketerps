@@ -5,9 +5,12 @@ import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "dri
 import { getDb } from "@/lib/db";
 import {
   categories,
+  aromaFamilies,
+  aromas,
   entries,
   entryFieldValues,
   entryImages,
+  entryAromas,
   entryMicronContexts,
   entryTags,
   micronSpecifications,
@@ -196,43 +199,65 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
     throw notFound("Capture");
   }
 
-  const [imageRows, fieldRows, tagRows, micronRows, micronContextRows] = await Promise.all([
-    db
-      .select({
-        id: entryImages.id,
-        storagePath: entryImages.objectPath,
-        altText: entryImages.altText,
-        width: entryImages.width,
-        height: entryImages.height,
-        sortOrder: entryImages.sortOrder,
-        isPrimary: entryImages.isPrimary,
-        sourceUrl: entryImages.sourceUrl,
-        credit: entryImages.credit,
-        licenseName: entryImages.licenseName,
-        licenseUrl: entryImages.licenseUrl,
-      })
-      .from(entryImages)
-      .where(and(eq(entryImages.entryId, row.id), isNull(entryImages.deletedAt)))
-      .orderBy(desc(entryImages.isPrimary), asc(entryImages.sortOrder)),
-    db
-      .select({
-        fieldDefinitionId: entryFieldValues.fieldDefinitionId,
-        value: entryFieldValues.value,
-      })
-      .from(entryFieldValues)
-      .where(eq(entryFieldValues.entryId, row.id)),
-    db
-      .select({ id: tags.id, slug: tags.slug, name: tags.name })
-      .from(entryTags)
-      .innerJoin(tags, eq(entryTags.tagId, tags.id))
-      .where(eq(entryTags.entryId, row.id)),
-    db.select().from(micronSpecifications).where(eq(micronSpecifications.entryId, row.id)).limit(1),
-    db
-      .select()
-      .from(entryMicronContexts)
-      .where(eq(entryMicronContexts.entryId, row.id))
-      .orderBy(asc(entryMicronContexts.context)),
-  ]);
+  const [imageRows, fieldRows, tagRows, micronRows, micronContextRows, aromaRows] =
+    await Promise.all([
+      db
+        .select({
+          id: entryImages.id,
+          storagePath: entryImages.objectPath,
+          altText: entryImages.altText,
+          width: entryImages.width,
+          height: entryImages.height,
+          sortOrder: entryImages.sortOrder,
+          isPrimary: entryImages.isPrimary,
+          sourceUrl: entryImages.sourceUrl,
+          credit: entryImages.credit,
+          licenseName: entryImages.licenseName,
+          licenseUrl: entryImages.licenseUrl,
+        })
+        .from(entryImages)
+        .where(and(eq(entryImages.entryId, row.id), isNull(entryImages.deletedAt)))
+        .orderBy(desc(entryImages.isPrimary), asc(entryImages.sortOrder)),
+      db
+        .select({
+          fieldDefinitionId: entryFieldValues.fieldDefinitionId,
+          value: entryFieldValues.value,
+        })
+        .from(entryFieldValues)
+        .where(eq(entryFieldValues.entryId, row.id)),
+      db
+        .select({ id: tags.id, slug: tags.slug, name: tags.name })
+        .from(entryTags)
+        .innerJoin(tags, eq(entryTags.tagId, tags.id))
+        .where(eq(entryTags.entryId, row.id)),
+      db
+        .select()
+        .from(micronSpecifications)
+        .where(eq(micronSpecifications.entryId, row.id))
+        .limit(1),
+      db
+        .select()
+        .from(entryMicronContexts)
+        .where(eq(entryMicronContexts.entryId, row.id))
+        .orderBy(asc(entryMicronContexts.context)),
+      db
+        .select({
+          id: aromas.id,
+          familyId: aromas.familyId,
+          familyName: aromaFamilies.name,
+          slug: aromas.slug,
+          name: aromas.name,
+          synonyms: aromas.synonyms,
+          sortOrder: aromas.sortOrder,
+          importance: entryAromas.importance,
+          customLabel: entryAromas.customLabel,
+        })
+        .from(entryAromas)
+        .innerJoin(aromas, eq(entryAromas.aromaId, aromas.id))
+        .innerJoin(aromaFamilies, eq(aromas.familyId, aromaFamilies.id))
+        .where(eq(entryAromas.entryId, row.id))
+        .orderBy(asc(entryAromas.importance), asc(aromaFamilies.sortOrder), asc(aromas.sortOrder)),
+    ]);
   const { primaryImagePath, createdById, originalContributorId, ...entry } = row;
   void primaryImagePath;
   void createdById;
@@ -248,5 +273,6 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
     tags: tagRows,
     micron: micronRows[0] ?? null,
     micronContexts: micronContextRows,
+    aromas: aromaRows,
   };
 }

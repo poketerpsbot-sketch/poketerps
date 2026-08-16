@@ -76,7 +76,7 @@ export const micronContextSpecificationSchema = micronSpecificationSchema.extend
   context: z.enum(["COLLECTION_SEPARATION", "PRESSING_BAG"]),
 });
 
-export const createEntrySchema = z.object({
+const entryBaseSchema = z.object({
   name: shortTextSchema,
   shortDescription: z.string().trim().max(500).nullable().optional(),
   fullDescription: z.string().trim().max(20_000).nullable().optional(),
@@ -94,10 +94,39 @@ export const createEntrySchema = z.object({
       "Un seul relevé micron est autorisé par contexte.",
     ),
   tagIds: z.array(uuidSchema).max(30).default([]),
+  primaryAromaId: uuidSchema.nullable().optional(),
+  secondaryAromaIds: z.array(uuidSchema).max(20).optional(),
+  customAromaLabel: z.string().trim().min(2).max(80).nullable().optional(),
 });
 
-export const updateEntrySchema = createEntrySchema
+function validateAromaSelection(
+  value: { primaryAromaId?: string | null; secondaryAromaIds?: string[] },
+  context: z.RefinementCtx,
+) {
+  if (value.primaryAromaId && value.secondaryAromaIds?.includes(value.primaryAromaId)) {
+    context.addIssue({
+      code: "custom",
+      path: ["secondaryAromaIds"],
+      message: "L’arôme principal ne peut pas aussi être secondaire.",
+    });
+  }
+  if (
+    value.secondaryAromaIds &&
+    new Set(value.secondaryAromaIds).size !== value.secondaryAromaIds.length
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["secondaryAromaIds"],
+      message: "Un arôme secondaire ne peut être sélectionné qu’une fois.",
+    });
+  }
+}
+
+export const createEntrySchema = entryBaseSchema.superRefine(validateAromaSelection);
+
+export const updateEntrySchema = entryBaseSchema
   .partial()
+  .superRefine(validateAromaSelection)
   .refine((value) => Object.keys(value).length > 0, {
     message: "Au moins un champ doit être fourni.",
   });

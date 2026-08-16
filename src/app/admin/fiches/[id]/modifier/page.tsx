@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import type { CategoryDto, EntryDetailDto } from "@/components/data/types";
+import type { AromaFamilyDto, CategoryDto, EntryDetailDto } from "@/components/data/types";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import { CaptureForm } from "@/components/forms/capture-form";
 import { ErrorState } from "@/components/ui/states";
@@ -14,11 +14,16 @@ export default async function AdminEntryEditPage({ params }: { params: Promise<{
   const actor = await requireAdminUser("entry:update:any");
   const { id } = await params;
   const entryId = uuidSchema.parse(id);
-  const [entry, categoriesResult] = await Promise.all([
+  const [entry, categoriesResult, aromasResult] = await Promise.all([
     getEntryByIdOrSlug(entryId, actor),
     serverApi<unknown>("/api/categories"),
+    serverApi<unknown>("/api/aromas"),
   ]);
   const categories = unwrapList<CategoryDto>(categoriesResult.data, ["categories"]);
+  const aromaFamilies = unwrapList<AromaFamilyDto>(aromasResult.data, [
+    "aromaFamilies",
+    "families",
+  ]);
   const initialEntry = JSON.parse(JSON.stringify(entry)) as EntryDetailDto;
 
   return (
@@ -34,15 +39,16 @@ export default async function AdminEntryEditPage({ params }: { params: Promise<{
           </p>
         </div>
       </header>
-      {categoriesResult.error || categories.length === 0 ? (
+      {categoriesResult.error || aromasResult.error || categories.length === 0 ? (
         <ErrorState
           title="Taxonomie indisponible"
-          message={categoriesResult.error ?? "Aucune catégorie active."}
+          message={categoriesResult.error ?? aromasResult.error ?? "Aucune catégorie active."}
           retryHref={`/admin/fiches/${entryId}/modifier`}
         />
       ) : (
         <CaptureForm
           categories={categories}
+          aromaFamilies={aromaFamilies}
           initialEntry={initialEntry}
           allowSubmit={false}
           returnHref="/admin/fiches/gestion"

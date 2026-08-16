@@ -11,7 +11,13 @@ export async function GET(request: NextRequest): Promise<Response> {
   return handleApi(request, async () => {
     const user = await requireCurrentUser();
     const session = await readSession();
-    if (session) await touchUserSession(session.sessionId).catch(() => undefined);
+    if (session) {
+      await touchUserSession({
+        userId: session.userId,
+        clientSessionId: session.sessionId,
+        platform: session.platform,
+      }).catch(() => undefined);
+    }
     return apiJson({
       user: {
         id: user.id,

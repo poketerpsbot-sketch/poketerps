@@ -21,6 +21,29 @@ export const adminSubcategoryQuerySchema = adminTaxonomyQuerySchema.extend({
   categoryId: uuidSchema.optional(),
 });
 
+export const aromaInputSchema = z.object({
+  familyId: uuidSchema,
+  name: z.string().trim().min(1).max(120),
+  slug: slugSchema.optional(),
+  description: nullableText(2_000),
+  synonyms: z
+    .array(z.string().trim().min(1).max(80))
+    .max(50)
+    .transform((values) => [...new Set(values)])
+    .default([]),
+  translations: z
+    .record(z.string().trim().min(2).max(12), z.string().trim().min(1).max(120))
+    .default({}),
+  sortOrder: sortOrderSchema.default(0),
+  isActive: z.boolean().default(true),
+});
+
+export const updateAromaSchema = aromaInputSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "Aucune modification fournie.",
+  });
+
 export const categoryInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   technicalName: nullableText(160),
@@ -28,6 +51,10 @@ export const categoryInputSchema = z.object({
   frenchExplanation: nullableText(2_000),
   slug: slugSchema.optional(),
   icon: nullableText(80),
+  imageUrl: nullableText(500),
+  category: z.enum(["LEVEL", "ROLE", "ACHIEVEMENT", "PARTNER", "CONTEST"]).default("ACHIEVEMENT"),
+  rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).default("COMMON"),
+  xpReward: z.number().int().min(0).max(100_000).default(0),
   description: nullableText(5_000),
   disclaimer: nullableText(10_000),
   sortOrder: sortOrderSchema.default(0),
@@ -261,6 +288,10 @@ export const teamActivityQuerySchema = paginationSchema.extend({
   days: z.coerce.number().int().min(1).max(90).default(7),
   scope: z.enum(["all", "admins", "moderators"]).default("all"),
   userId: uuidSchema.optional(),
+  includeOwner: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .default(false),
 });
 
 export const teamAuditQuerySchema = paginationSchema.extend({
@@ -311,6 +342,10 @@ export const badgeInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: nullableText(2_000),
   icon: nullableText(80),
+  imageUrl: nullableText(500),
+  category: z.enum(["LEVEL", "ROLE", "ACHIEVEMENT", "PARTNER", "CONTEST"]).default("ACHIEVEMENT"),
+  rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).default("COMMON"),
+  xpReward: z.coerce.number().int().min(0).max(100_000).default(0),
   kind: z.enum(["ACTIVE", "HISTORICAL", "PERMANENT"]).default("PERMANENT"),
   criteria: z.record(z.string(), z.json()).default({}),
   isActive: z.boolean().default(true),

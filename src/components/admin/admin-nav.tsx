@@ -16,6 +16,9 @@ import {
   ScrollText,
   Send,
   Settings,
+  Siren,
+  Sparkles,
+  Star,
   Tags,
   Users,
 } from "lucide-react";
@@ -36,10 +39,13 @@ const links = [
   { href: "/admin/messages", label: "Messages & signalements", icon: Mail },
   { href: "/admin/concours", label: "Concours", icon: Medal },
   { href: "/admin/categories", label: "Catégories", icon: Tags, fullAdmin: true },
+  { href: "/admin/aromes", label: "Arômes", icon: Sparkles, fullAdmin: true },
   { href: "/admin/publications", label: "Publications", icon: Send, fullAdmin: true },
   { href: "/admin/utilisateurs", label: "Utilisateurs & équipe", icon: Users, fullAdmin: true },
   { href: "/admin/equipe", label: "Équipe & activité", icon: Activity, teamActivity: true },
   { href: "/admin/badges", label: "Badges", icon: Award, fullAdmin: true },
+  { href: "/admin/experience", label: "XP & niveaux", icon: Star, ownerOnly: true },
+  { href: "/admin/systeme", label: "Santé système", icon: Siren, ownerOnly: true },
   { href: "/admin/partenaires", label: "Partenaires", icon: Handshake, fullAdmin: true },
   { href: "/admin/statistiques", label: "Statistiques", icon: BarChart3, fullAdmin: true },
   { href: "/admin/journal", label: "Journal", icon: ScrollText, fullAdmin: true },
@@ -61,6 +67,7 @@ export function AdminNav({
   const visibleLinks = links.filter(
     (link) =>
       (!("fullAdmin" in link && link.fullAdmin) || fullAdmin) &&
+      (!("ownerOnly" in link && link.ownerOnly) || role === "OWNER") &&
       (!("teamActivity" in link && link.teamActivity) || canViewTeamActivity),
   );
 

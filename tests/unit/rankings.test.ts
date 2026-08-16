@@ -36,6 +36,9 @@ describe("competitive rankings", () => {
       badge_slug: "pionnier",
       badge_name: "Pionnier",
       badge_icon: "◆",
+      badge_image_url: "/badges/level-5.png",
+      badge_category: "LEVEL",
+      badge_rarity: "UNCOMMON",
     };
     unsafe.mockResolvedValue([{ items: [raw], total: 52, current_user: raw }]);
 
@@ -62,7 +65,12 @@ describe("competitive rankings", () => {
           likesReceived: 9,
           viewsReceived: 120,
           experiencePoints: 1250,
-          badge: expect.objectContaining({ name: "Pionnier" }),
+          badge: expect.objectContaining({
+            name: "Pionnier",
+            imageUrl: "/badges/level-5.png",
+            category: "LEVEL",
+            rarity: "UNCOMMON",
+          }),
         }),
       ],
       total: 52,

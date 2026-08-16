@@ -67,6 +67,9 @@ const serverEnvSchema = z.object({
   ENTRY_VIEW_DEDUP_HOURS: z.coerce.number().int().min(1).max(168).default(6),
   TELEGRAM_AUTH_MAX_AGE_SECONDS: z.coerce.number().int().min(30).max(3_600).default(300),
   SESSION_MAX_AGE_SECONDS: z.coerce.number().int().min(300).max(2_592_000).default(604_800),
+  SESSION_INACTIVITY_SECONDS: z.coerce.number().int().min(300).max(14_400).default(1_800),
+  SESSION_MAX_DURATION_SECONDS: z.coerce.number().int().min(1_800).max(86_400).default(43_200),
+  SESSION_DEDUP_WINDOW_SECONDS: z.coerce.number().int().min(5).max(300).default(30),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

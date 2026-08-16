@@ -7,6 +7,7 @@ import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
 import { z } from "zod";
 import { Camera, CircleHelp, Save, Send, ShieldCheck } from "lucide-react";
 import type {
+  AromaFamilyDto,
   CategoryDto,
   DynamicFieldDefinitionDto,
   EntryDetailDto,
@@ -224,14 +225,152 @@ function DynamicFieldControl({
   );
 }
 
+function AromaSelector({
+  families,
+  primaryAromaId,
+  secondaryAromaIds,
+  customLabel,
+  onPrimaryChange,
+  onSecondaryChange,
+  onCustomLabelChange,
+}: {
+  families: AromaFamilyDto[];
+  primaryAromaId: string;
+  secondaryAromaIds: string[];
+  customLabel: string;
+  onPrimaryChange: (id: string) => void;
+  onSecondaryChange: (ids: string[]) => void;
+  onCustomLabelChange: (label: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase("fr");
+  const filteredFamilies = families
+    .map((family) => ({
+      ...family,
+      aromas: family.aromas.filter((aroma) => {
+        if (!normalizedQuery) return true;
+        return [family.name, aroma.name, ...(aroma.synonyms ?? [])].some((value) =>
+          value.toLocaleLowerCase("fr").includes(normalizedQuery),
+        );
+      }),
+    }))
+    .filter((family) => family.aromas.length > 0);
+  const other = families.flatMap((family) => family.aromas).find((aroma) => aroma.slug === "autre");
+  const customSelected = Boolean(
+    other && (String(other.id) === primaryAromaId || secondaryAromaIds.includes(String(other.id))),
+  );
+
+  return (
+    <section className="form-section aroma-picker">
+      <div>
+        <p className="eyebrow">Profil sensoriel</p>
+        <h2>Arômes</h2>
+        <p>Choisis un arôme principal et, si utile, plusieurs notes secondaires.</p>
+      </div>
+      <div className="field">
+        <label htmlFor="aroma-search">Rechercher un arôme</label>
+        <input
+          id="aroma-search"
+          type="search"
+          value={query}
+          placeholder="Citron, diesel, pin…"
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </div>
+      <div className="aroma-picker__legend" aria-hidden="true">
+        <span>Principal : un choix</span>
+        <span>Secondaires : choix multiples</span>
+      </div>
+      <div className="aroma-picker__families">
+        {filteredFamilies.map((family) => (
+          <fieldset className="aroma-picker__family" key={String(family.id)}>
+            <legend>{family.name}</legend>
+            <div className="aroma-picker__options">
+              {family.aromas.map((aroma) => {
+                const id = String(aroma.id);
+                const isPrimary = primaryAromaId === id;
+                const isSecondary = secondaryAromaIds.includes(id);
+                return (
+                  <div className="aroma-picker__option" key={id}>
+                    <span>{aroma.name}</span>
+                    <label title={`Définir ${aroma.name} comme arôme principal`}>
+                      <input
+                        type="radio"
+                        name="primary-aroma"
+                        value={id}
+                        checked={isPrimary}
+                        onChange={() => {
+                          onPrimaryChange(id);
+                          if (isSecondary) {
+                            onSecondaryChange(secondaryAromaIds.filter((value) => value !== id));
+                          }
+                        }}
+                      />
+                      Principal
+                    </label>
+                    <label title={`Ajouter ${aroma.name} aux arômes secondaires`}>
+                      <input
+                        type="checkbox"
+                        value={id}
+                        checked={isSecondary}
+                        disabled={isPrimary}
+                        onChange={(event) =>
+                          onSecondaryChange(
+                            event.target.checked
+                              ? [...secondaryAromaIds, id]
+                              : secondaryAromaIds.filter((value) => value !== id),
+                          )
+                        }
+                      />
+                      Secondaire
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+          </fieldset>
+        ))}
+      </div>
+      {filteredFamilies.length === 0 && (
+        <p className="empty-inline">Aucun arôme ne correspond à « {query} ».</p>
+      )}
+      {primaryAromaId && (
+        <button
+          className="button button--ghost button--small"
+          type="button"
+          onClick={() => onPrimaryChange("")}
+        >
+          Retirer l’arôme principal
+        </button>
+      )}
+      {customSelected && (
+        <div className="field">
+          <label htmlFor="custom-aroma-label">Nom de l’arôme libre</label>
+          <input
+            id="custom-aroma-label"
+            value={customLabel}
+            maxLength={80}
+            required
+            placeholder="Décris l’arôme en quelques mots"
+            onChange={(event) => onCustomLabelChange(event.target.value)}
+          />
+          <p className="field__hint">Cette option permet d’ajouter un arôme absent de la liste.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function CaptureForm({
   categories,
+  aromaFamilies,
   initialEntry,
   allowSubmit = true,
   moderationMessage,
   returnHref = "/profil/fiches",
 }: {
   categories: CategoryDto[];
+  aromaFamilies: AromaFamilyDto[];
   initialEntry?: EntryDetailDto;
   allowSubmit?: boolean;
   moderationMessage?: string | null;
@@ -250,6 +389,17 @@ export function CaptureForm({
   const [customMicrons, setCustomMicrons] = useState<
     Partial<Record<MicronContextType, { minimum: string; maximum: string }>>
   >(initialMicrons.custom);
+  const [primaryAromaId, setPrimaryAromaId] = useState(
+    String(initialEntry?.aromas?.find((aroma) => aroma.importance === "PRIMARY")?.id ?? ""),
+  );
+  const [secondaryAromaIds, setSecondaryAromaIds] = useState<string[]>(() =>
+    (initialEntry?.aromas ?? [])
+      .filter((aroma) => aroma.importance === "SECONDARY")
+      .map((aroma) => String(aroma.id)),
+  );
+  const [customAromaLabel, setCustomAromaLabel] = useState(
+    initialEntry?.aromas?.find((aroma) => aroma.customLabel)?.customLabel ?? "",
+  );
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -289,6 +439,9 @@ export function CaptureForm({
       ? []
       : micronProfilesFor(category?.slug, subcategory?.slug, subcategory?.micronPresets);
   const dynamicFields = uniqueFields([...(category?.fields ?? []), ...(subcategory?.fields ?? [])]);
+  const otherAromaId = aromaFamilies
+    .flatMap((family) => family.aromas)
+    .find((aroma) => aroma.slug === "autre")?.id;
 
   function serializedFields() {
     const fields: Record<string, string | number | boolean | string[]> = {};
@@ -398,6 +551,18 @@ export function CaptureForm({
       });
       return;
     }
+    if (
+      otherAromaId &&
+      (primaryAromaId === String(otherAromaId) ||
+        secondaryAromaIds.includes(String(otherAromaId))) &&
+      customAromaLabel.trim().length < 2
+    ) {
+      setFeedback({
+        type: "error",
+        message: "Précise le nom de l’arôme libre sélectionné.",
+      });
+      return;
+    }
     const imageError = validateImage(image);
     if (imageError) {
       setFeedback({ type: "error", message: imageError });
@@ -437,6 +602,9 @@ export function CaptureForm({
             tag.id === null || tag.id === undefined ? [] : [String(tag.id)],
           )
         : ([] as string[]),
+      primaryAromaId: primaryAromaId || null,
+      secondaryAromaIds,
+      customAromaLabel: customAromaLabel.trim() || null,
     };
     let result = editing
       ? await submitJson<CreatedEntry>(
@@ -616,6 +784,16 @@ export function CaptureForm({
           </div>
         </div>
       </section>
+
+      <AromaSelector
+        families={aromaFamilies}
+        primaryAromaId={primaryAromaId}
+        secondaryAromaIds={secondaryAromaIds}
+        customLabel={customAromaLabel}
+        onPrimaryChange={setPrimaryAromaId}
+        onSecondaryChange={setSecondaryAromaIds}
+        onCustomLabelChange={setCustomAromaLabel}
+      />
 
       {dynamicFields.length > 0 && (
         <section className="form-section">

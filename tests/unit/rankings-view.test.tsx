@@ -16,7 +16,12 @@ const trainer: TrainerRankingDto = {
   publicSlug: "alice",
   displayName: "Alice",
   telegramUsername: "alice_tg",
-  badge: { name: "Pionnière", icon: "◆" },
+  badge: {
+    name: "Pionnière",
+    icon: "◆",
+    imageUrl: "/badges/level-5.png",
+    rarity: "UNCOMMON",
+  },
 };
 
 function renderRankings(overrides: Partial<Parameters<typeof RankingsView>[0]> = {}) {
@@ -47,6 +52,7 @@ describe("competitive rankings view", () => {
     expect(html).toContain("J’aime");
     expect(html).toContain("120");
     expect(html).toContain("Pionnière");
+    expect(html).toContain("/badges/level-5.png");
     expect(html).toContain("trainersPage=2");
     expect(html).toContain('aria-label="Page suivante"');
   });

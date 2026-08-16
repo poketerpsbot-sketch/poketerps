@@ -94,6 +94,8 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
   const micronContexts = (entry.micronContexts ?? [])
     .map((context) => ({ ...context, label: micronSpecificationLabel(context) }))
     .filter((context) => context.label);
+  const primaryAroma = entry.aromas?.find((aroma) => aroma.importance === "PRIMARY");
+  const secondaryAromas = entry.aromas?.filter((aroma) => aroma.importance === "SECONDARY") ?? [];
   const heroImage = entry.images?.find((image) => image.isPrimary) ?? entry.images?.[0];
   const heroImageUrl = entry.primaryImageUrl ?? heroImage?.url ?? null;
   const hasImageAttribution = Boolean(
@@ -173,6 +175,33 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
               <p>Cette capture ne possède pas encore de description éditoriale détaillée.</p>
             )}
           </section>
+
+          {(primaryAroma || secondaryAromas.length > 0) && (
+            <section className="content-panel aroma-profile">
+              <p className="eyebrow">Profil sensoriel</p>
+              <h2>Arômes</h2>
+              {primaryAroma && (
+                <div className="aroma-profile__group">
+                  <h3>Arôme principal</h3>
+                  <span className="aroma-chip aroma-chip--primary">
+                    {primaryAroma.customLabel ?? primaryAroma.name}
+                  </span>
+                </div>
+              )}
+              {secondaryAromas.length > 0 && (
+                <div className="aroma-profile__group">
+                  <h3>Arômes secondaires</h3>
+                  <div className="aroma-profile__chips">
+                    {secondaryAromas.map((aroma) => (
+                      <span className="aroma-chip" key={String(aroma.id)}>
+                        {aroma.customLabel ?? aroma.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           {(fields.length > 0 || micron || micronContexts.length > 0 || entry.subcategory) && (
             <section className="content-panel">

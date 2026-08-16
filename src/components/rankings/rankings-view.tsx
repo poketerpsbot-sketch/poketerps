@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Award, Eye, Flame, Heart, Medal, Sparkles, Star, Trophy, Zap } from "lucide-react";
+import { Award, Eye, Flame, Heart, Medal, Star, Trophy, Zap } from "lucide-react";
 
 import type { EntryRankingDto, EntrySummaryDto, TrainerRankingDto } from "@/components/data/types";
 import { EntryCard } from "@/components/entries/entry-card";
@@ -70,6 +70,28 @@ function RankingAvatar({ item }: { item: TrainerRankingDto }) {
       aria-hidden={avatarUrl ? undefined : true}
     >
       {!avatarUrl && initials(user.displayName)}
+    </span>
+  );
+}
+
+function RankingBadge({ item, compact = false }: { item: TrainerRankingDto; compact?: boolean }) {
+  if (!item.badge?.name) return null;
+  return (
+    <span
+      className={
+        "ranking-badge ranking-badge--" +
+        String(item.badge.rarity ?? "common").toLocaleLowerCase("fr-FR") +
+        (compact ? " ranking-badge--compact" : "")
+      }
+      title={item.badge.name}
+    >
+      {item.badge.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- asset local ou URL administrable.
+        <img src={item.badge.imageUrl} alt="" />
+      ) : (
+        <span aria-hidden="true">{item.badge.icon ?? "◆"}</span>
+      )}
+      <span>{item.badge.name}</span>
     </span>
   );
 }
@@ -347,11 +369,7 @@ export function RankingsView({
                         {experience(item).toLocaleString("fr-CH")} XP
                       </span>
                       <TrainerMetrics item={item} compact />
-                      {item.badge?.name && (
-                        <span className="tag podium-card__badge">
-                          {item.badge.icon ?? "◆"} {item.badge.name}
-                        </span>
-                      )}
+                      <RankingBadge item={item} />
                     </Link>
                   );
                 })}
@@ -373,11 +391,7 @@ export function RankingsView({
                       <span className="rank-row__copy">
                         <span className="competition-rank-row__heading">
                           <h3>{user.displayName}</h3>
-                          {item.badge?.name && (
-                            <span className="competition-rank-row__badge">
-                              <Sparkles aria-hidden="true" /> {item.badge.name}
-                            </span>
-                          )}
+                          {item.badge?.name && <RankingBadge item={item} compact />}
                         </span>
                         <p>
                           {user.telegramUsername

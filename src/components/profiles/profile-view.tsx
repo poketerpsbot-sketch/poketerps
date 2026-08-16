@@ -21,11 +21,13 @@ import {
 import type {
   BadgeDto,
   EntrySummaryDto,
+  ExperienceOverviewDto,
   PublicProfileDto,
   ReviewDto,
   SubmissionDto,
 } from "@/components/data/types";
 import { EntryGrid } from "@/components/entries/entry-card";
+import { XpProgressCard } from "@/components/profiles/xp-progress-card";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, SectionHeading, StatusPill, formatDate } from "@/components/ui/states";
 import {
@@ -63,6 +65,7 @@ type TelegramIdentity = {
 };
 
 export type ProfilePayload = PublicProfileDto & {
+  experience?: ExperienceOverviewDto;
   entries?: EntrySummaryDto[];
   captures?: EntrySummaryDto[];
   publishedEntries?: EntrySummaryDto[];
@@ -118,6 +121,7 @@ export function extractProfilePayload(payload: unknown): ProfilePayload | null {
       typeof root.unreadNotificationCount === "number"
         ? root.unreadNotificationCount
         : profile.unreadNotificationCount,
+    experience: (root.experience as ExperienceOverviewDto | undefined) ?? profile.experience,
   };
 }
 
@@ -190,7 +194,13 @@ export function ProfileHero({ profile }: { profile: PublicProfileDto }) {
           <div className="badge-row" aria-label="Badges du Dresseur">
             {profile.badges.slice(0, 4).map((badge, index) => (
               <span className="tag" key={String(badge.id ?? `${badge.name}-${index}`)}>
-                {badge.icon ?? "◆"} {badge.name}
+                {badge.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- asset local ou URL administrée.
+                  <img className="profile-badge-mini" src={badge.imageUrl} alt="" />
+                ) : (
+                  (badge.icon ?? "◆")
+                )}{" "}
+                {badge.name}
               </span>
             ))}
           </div>
@@ -223,6 +233,7 @@ export function PublicProfileView({ profile }: { profile: ProfilePayload }) {
   return (
     <div className="page-shell page-stack">
       <ProfileHero profile={profile} />
+      {profile.experience && <XpProgressCard experience={profile.experience} />}
       <div className="button-row">
         <Link className="button button--dark" href="/classements">
           <Trophy size={17} aria-hidden="true" /> Voir le classement
@@ -352,12 +363,22 @@ function BadgeGallery({ badges }: { badges: BadgeDto[] }) {
     <div className="profile-badge-grid">
       {badges.map((badge, index) => (
         <article className="profile-badge-card" key={String(badge.id ?? `${badge.name}-${index}`)}>
-          <span className="profile-badge-card__icon" aria-hidden="true">
-            {badge.icon ?? "◆"}
-          </span>
+          {badge.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- asset local ou URL administrée.
+            <img className="profile-badge-card__image" src={badge.imageUrl} alt="" />
+          ) : (
+            <span className="profile-badge-card__icon" aria-hidden="true">
+              {badge.icon ?? "◆"}
+            </span>
+          )}
           <div>
             <h3>{badge.name}</h3>
             <p>{badge.description ?? "Récompense communautaire"}</p>
+            {badge.rarity && (
+              <span className={`badge-rarity badge-rarity--${badge.rarity.toLocaleLowerCase()}`}>
+                {badge.rarity}
+              </span>
+            )}
             <small>
               Obtenu {formatDate(badge.awardedAt)}
               {badge.activeUntil ? ` · valable jusqu’au ${formatDate(badge.activeUntil)}` : ""}
@@ -507,6 +528,7 @@ export function MyProfileView({ profile }: { profile: ProfilePayload }) {
   return (
     <div className="page-shell page-stack profile-dashboard">
       <ProfileHero profile={profileWithIdentity} />
+      {profile.experience && <XpProgressCard experience={profile.experience} showHistory />}
 
       {canModerate && (
         <aside className="profile-admin-access" aria-labelledby="profile-admin-title">

@@ -34,6 +34,20 @@ export function TelegramBridge() {
 
     if (!webApp.initData) return;
     const controller = new AbortController();
+    let lastSessionTouch = Date.now();
+    const touchSession = () => {
+      const now = Date.now();
+      if (now - lastSessionTouch < 60_000) return;
+      lastSessionTouch = now;
+      void fetch("/api/auth/session", { cache: "no-store" }).catch(() => undefined);
+    };
+    const touchVisibleSession = () => {
+      if (document.visibilityState === "visible") touchSession();
+    };
+    window.addEventListener("pointerdown", touchSession, { passive: true });
+    window.addEventListener("keydown", touchSession);
+    window.addEventListener("focus", touchSession);
+    document.addEventListener("visibilitychange", touchVisibleSession);
     void fetch("/api/auth/session", { signal: controller.signal })
       .then(async (response) => {
         if (response.ok) return;
@@ -71,7 +85,13 @@ export function TelegramBridge() {
         );
       });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      window.removeEventListener("pointerdown", touchSession);
+      window.removeEventListener("keydown", touchSession);
+      window.removeEventListener("focus", touchSession);
+      document.removeEventListener("visibilitychange", touchVisibleSession);
+    };
   }, [router]);
 
   return feedback ? (

@@ -111,6 +111,7 @@ async function getUserRankings(userId: string) {
 
 export async function getAdminUserDetail(userId: string, actor: CurrentUser) {
   const sql = getSqlClient();
+  const env = getEnv();
   const [
     [user],
     [stats],
@@ -201,21 +202,25 @@ export async function getAdminUserDetail(userId: string, actor: CurrentUser) {
         (select count(*) from user_sessions s
           where s.user_id=${userId}::uuid and s.started_at>=now()-interval '30 days') sessions_30d,
         (select count(*) from user_sessions s where s.user_id=${userId}::uuid) sessions_total,
-        (select coalesce(sum(coalesce(s.duration_seconds,0)),0) from user_sessions s
-          where s.user_id=${userId}::uuid) session_duration_total,
-        (select coalesce(round(avg(coalesce(s.duration_seconds,0))),0) from user_sessions s
-          where s.user_id=${userId}::uuid) session_duration_average,
+        (select coalesce(sum(s.duration_seconds),0) from user_sessions s
+          where s.user_id=${userId}::uuid and s.duration_seconds between 0
+            and ${env.SESSION_MAX_DURATION_SECONDS}) session_duration_total,
+        (select coalesce(round(avg(s.duration_seconds)),0) from user_sessions s
+          where s.user_id=${userId}::uuid and s.duration_seconds between 0
+            and ${env.SESSION_MAX_DURATION_SECONDS}) session_duration_average,
         (select coalesce(jsonb_agg(jsonb_build_object(
           'platform',platform,'sessions',sessions,'durationSeconds',duration_seconds
         ) order by sessions desc),'[]'::jsonb) from (
           select s.platform::text platform,count(*)::int sessions,
             coalesce(sum(coalesce(s.duration_seconds,0)),0)::bigint duration_seconds
-          from user_sessions s where s.user_id=${userId}::uuid group by s.platform
+          from user_sessions s where s.user_id=${userId}::uuid
+            and s.duration_seconds between 0 and ${env.SESSION_MAX_DURATION_SECONDS}
+          group by s.platform
         ) platform_totals) session_platforms,
-        (select count(distinct (s.last_activity_at at time zone 'UTC')::date)
+        (select count(distinct (s.last_activity_at at time zone ${env.APP_TIMEZONE})::date)
           from user_sessions s where s.user_id=${userId}::uuid
             and s.last_activity_at>=now()-interval '7 days') active_days_7d,
-        (select count(distinct (s.last_activity_at at time zone 'UTC')::date)
+        (select count(distinct (s.last_activity_at at time zone ${env.APP_TIMEZONE})::date)
           from user_sessions s where s.user_id=${userId}::uuid
             and s.last_activity_at>=now()-interval '30 days') active_days_30d,
         (select count(*) from user_activity_events e
@@ -283,10 +288,18 @@ export async function getAdminUserDetail(userId: string, actor: CurrentUser) {
         last_activity_at: string;
         duration_seconds: number;
         app_version: string | null;
+        action_count: CountValue;
       }>
     >`
-      select id,platform::text,started_at,ended_at,last_activity_at,duration_seconds,app_version
-      from user_sessions where user_id=${userId}::uuid
+      select s.id,s.platform::text,s.started_at,
+        coalesce(s.ended_at,case when s.last_activity_at<now()-make_interval(
+          secs=>${env.SESSION_INACTIVITY_SECONDS}::int) then s.last_activity_at end) ended_at,
+        s.last_activity_at,
+        least(${env.SESSION_MAX_DURATION_SECONDS}::int,greatest(0,
+          extract(epoch from (coalesce(s.ended_at,s.last_activity_at)-s.started_at))::int
+        )) duration_seconds,s.app_version,
+        (select count(*) from user_activity_events e where e.session_id=s.id) action_count
+      from user_sessions s where s.user_id=${userId}::uuid
       order by started_at desc limit 50
     `,
     sql<
@@ -489,6 +502,7 @@ export async function getAdminUserDetail(userId: string, actor: CurrentUser) {
       endedAt: row.ended_at,
       lastActivityAt: row.last_activity_at,
       durationSeconds: Number(row.duration_seconds),
+      actionCount: count(row.action_count),
       appVersion: row.app_version,
     })),
     activity: activity.map((row) => ({
@@ -766,9 +780,15 @@ export async function sendAdminUserTelegramMessage(
 }
 
 export async function getTeamActivity(
-  input: { days: number; scope: "all" | "admins" | "moderators"; userId?: string },
+  input: {
+    days: number;
+    scope: "all" | "admins" | "moderators";
+    userId?: string;
+    includeOwner?: boolean;
+  },
   actor: CurrentUser,
 ) {
+  const timezone = getEnv().APP_TIMEZONE;
   const permissions = await resolvedTeamPermissions(actor);
   const canAdmins = permissions.VIEW_ADMIN_ACTIVITY;
   const canModerators = permissions.VIEW_MODERATOR_ACTIVITY;
@@ -778,7 +798,11 @@ export async function getTeamActivity(
   if (input.scope === "moderators" && !canModerators)
     throw forbidden("Activité de modération inaccessible.");
   const roles: string[] = [];
-  if (input.scope !== "moderators" && canAdmins) roles.push("OWNER", "ADMIN");
+  const includeOwner = actor.role === "OWNER" && input.includeOwner === true;
+  if (input.scope !== "moderators" && canAdmins) {
+    roles.push("ADMIN");
+    if (includeOwner) roles.push("OWNER");
+  }
   if (input.scope !== "admins" && canModerators) roles.push("MODERATOR");
   const sql = getSqlClient();
   const members = await sql.unsafe<
@@ -795,6 +819,7 @@ export async function getTeamActivity(
       sessions_7d: CountValue;
       active_days_7d: CountValue;
       actions_7d: CountValue;
+      duration_seconds_period: CountValue;
       sessions_30d: CountValue;
       active_days_30d: CountValue;
       actions_30d: CountValue;
@@ -821,9 +846,12 @@ export async function getTeamActivity(
         and a.created_at>=now()-interval '7 days')) is_active_7d,
       (select count(*) from user_sessions s where s.user_id=u.id
         and s.started_at>=now()-($1::int*interval '1 day')) sessions_7d,
-      (select count(distinct (s.last_activity_at at time zone 'UTC')::date)
+      (select count(distinct (s.last_activity_at at time zone $7::text)::date)
         from user_sessions s where s.user_id=u.id
         and s.last_activity_at>=now()-($1::int*interval '1 day')) active_days_7d,
+      (select coalesce(sum(s.duration_seconds),0) from user_sessions s where s.user_id=u.id
+        and s.started_at>=now()-($1::int*interval '1 day')
+        and s.duration_seconds between 0 and $6::int) duration_seconds_period,
       (select count(*) from audit_logs a where a.actor_user_id=u.id
         and a.created_at>=now()-($1::int*interval '1 day')) actions_7d,
       (select count(*) from user_sessions s where s.user_id=u.id
@@ -864,7 +892,15 @@ export async function getTeamActivity(
     from users u where u.role::text=any($2::text[]) and not u.is_system
       and ($3::uuid is null or u.id=$3::uuid)
     order by actions_7d desc,u.display_name asc limit $4 offset $5`,
-    [input.days, roles, input.userId ?? null, 100, 0],
+    [
+      input.days,
+      roles,
+      input.userId ?? null,
+      100,
+      0,
+      getEnv().SESSION_MAX_DURATION_SECONDS,
+      timezone,
+    ],
   );
   const recentAudit = permissions.VIEW_TEAM_AUDIT_LOG
     ? await sql.unsafe<
@@ -909,6 +945,7 @@ export async function getTeamActivity(
     sessions7d: count(row.sessions_7d),
     activeDays7d: count(row.active_days_7d),
     actions7d: count(row.actions_7d),
+    activeDurationSeconds: count(row.duration_seconds_period),
     sessions30d: count(row.sessions_30d),
     activeDays30d: count(row.active_days_30d),
     actions30d: count(row.actions_30d),
@@ -929,6 +966,7 @@ export async function getTeamActivity(
   return {
     permissions,
     periodDays: input.days,
+    ownerIncluded: includeOwner,
     activeStaff: normalized.filter((row) => row.sessions7d > 0 || row.actions7d > 0).length,
     activeStaff7d: normalized.filter((row) => row.isActive7d).length,
     activeAdmins7d: normalized.filter(
@@ -937,6 +975,7 @@ export async function getTeamActivity(
     activeModerators7d: normalized.filter((row) => row.isActive7d && row.role === "MODERATOR")
       .length,
     sessions: sum("sessions7d"),
+    activeDurationSeconds: sum("activeDurationSeconds"),
     actions: sum("actions7d"),
     actions30d: sum("actions30d"),
     entriesModerated: sum("entriesModerated7d"),
@@ -969,6 +1008,12 @@ export async function listTeamAuditLogs(
     actorId?: string;
     action?: string;
     entityType?: string;
+    entityId?: string;
+    role?: string;
+    source?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    query?: string;
     limit: number;
     offset: number;
   },
@@ -977,6 +1022,7 @@ export async function listTeamAuditLogs(
   const roles = await visibleTeamAuditRoles(actor);
   const action = input.action ?? null;
   const entityType = input.entityType ?? null;
+  const search = input.query ? `%${input.query.replace(/[\\%_]/g, "\\$&")}%` : null;
   const rows = await getSqlClient().unsafe<
     Array<{
       id: string;
@@ -1005,13 +1051,26 @@ export async function listTeamAuditLogs(
       and ($3::uuid is null or a.actor_user_id=$3::uuid)
       and ($4::text is null or a.action=$4::text)
       and ($5::text is null or a.entity_type=$5::text)
-    order by a.created_at desc limit $6 offset $7`,
+      and ($6::text is null or a.entity_id::text=$6::text)
+      and ($7::text is null or coalesce(a.actor_role,u.role)::text=$7::text)
+      and ($8::text is null or a.source::text=$8::text)
+      and ($9::date is null or a.created_at >= $9::date)
+      and ($10::date is null or a.created_at < ($10::date + interval '1 day'))
+      and ($11::text is null or a.action ilike $11 escape '\\'
+        or a.entity_type ilike $11 escape '\\' or coalesce(u.display_name,'') ilike $11 escape '\\')
+    order by a.created_at desc limit $12 offset $13`,
     [
       roles,
       input.days ?? null,
       input.actorId ?? null,
       action,
       entityType,
+      input.entityId ?? null,
+      input.role ?? null,
+      input.source ?? null,
+      input.dateFrom ?? null,
+      input.dateTo ?? null,
+      search,
       input.limit,
       input.offset,
     ],

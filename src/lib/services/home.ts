@@ -2,12 +2,14 @@ import "server-only";
 
 import { asc, eq } from "drizzle-orm";
 
-import { getDb } from "@/lib/db";
-import { homeSections } from "@/lib/db/schema";
+import { getOptionalCurrentUser } from "@/lib/auth/current-user";
+import { getDb, getSqlClient } from "@/lib/db";
+import { homeSections, users } from "@/lib/db/schema";
 import { searchCatalogue } from "@/lib/services/catalogue";
-import { listCategories } from "@/lib/services/categories";
+import { listPublicContests } from "@/lib/services/contests";
 import { listPartners } from "@/lib/services/partners";
 import { getTrainerRankings } from "@/lib/services/rankings";
+import { experienceProgress } from "@/lib/xp";
 
 async function listHomeSections() {
   return getDb()
@@ -22,27 +24,111 @@ async function listHomeSections() {
     .orderBy(asc(homeSections.sortOrder));
 }
 
+type SinceLastVisitRow = {
+  previous_end: string | null;
+  gap_seconds: number | string;
+  new_entries: number | string;
+  new_contests: number | string;
+  approved_reviews: number | string;
+  xp_gained: number | string;
+};
+
+async function getSinceLastVisit(userId: string) {
+  try {
+    const [row] = await getSqlClient()<SinceLastVisitRow[]>`
+      with recent_sessions as (
+        select started_at,last_activity_at,
+          row_number() over(order by started_at desc) position
+        from user_sessions where user_id=${userId}::uuid
+        order by started_at desc limit 2
+      ), visit as (
+        select previous.last_activity_at previous_end,
+          extract(epoch from (current.started_at-previous.last_activity_at))::bigint gap_seconds
+        from recent_sessions current join recent_sessions previous
+          on current.position=1 and previous.position=2
+      )
+      select visit.previous_end,visit.gap_seconds,
+        (select count(*) from entries e where e.status='PUBLISHED' and e.deleted_at is null
+          and e.is_demo=false and e.published_at>visit.previous_end)::bigint new_entries,
+        (select count(*) from contests c where c.deleted_at is null
+          and c.status::text in ('ACTIVE','OPEN','SCHEDULED')
+          and greatest(c.created_at,c.updated_at)>visit.previous_end)::bigint new_contests,
+        (select count(*) from reviews r where r.user_id=${userId}::uuid
+          and r.status='PUBLISHED' and r.published_at>visit.previous_end)::bigint approved_reviews,
+        (select coalesce(sum(x.points),0) from user_experience_events x
+          where x.user_id=${userId}::uuid and x.created_at>visit.previous_end)::bigint xp_gained
+      from visit
+    `;
+    if (!row || Number(row.gap_seconds) < 21_600) return null;
+    const summary = {
+      previousEnd: row.previous_end,
+      newEntries: Number(row.new_entries),
+      newContests: Number(row.new_contests),
+      approvedReviews: Number(row.approved_reviews),
+      xpGained: Number(row.xp_gained),
+    };
+    return summary.newEntries || summary.newContests || summary.approvedReviews || summary.xpGained
+      ? summary
+      : null;
+  } catch {
+    // Une session précédente ne doit jamais empêcher l'accueil de charger.
+    return null;
+  }
+}
+
 export async function getHomeData() {
-  const baseQuery = { limit: 8, offset: 0, sort: "recent" as const };
-  const [latest, viewed, liked, rated, categories, trainers, featuredPartners, sections] =
-    await Promise.all([
-      searchCatalogue(baseQuery),
-      searchCatalogue({ ...baseQuery, sort: "views" }),
-      searchCatalogue({ ...baseQuery, sort: "likes" }),
-      searchCatalogue({ ...baseQuery, sort: "rating" }),
-      listCategories(),
-      getTrainerRankings("week", 5, 0),
-      listPartners({ featured: true, includeInactive: false, limit: 4, offset: 0 }),
-      listHomeSections(),
-    ]);
+  const actor = await getOptionalCurrentUser();
+  const [
+    latest,
+    trending,
+    trainers,
+    featuredPartners,
+    sections,
+    contests,
+    viewerRows,
+    sinceLastVisit,
+  ] = await Promise.all([
+    searchCatalogue({ limit: 12, offset: 0, sort: "recent" }),
+    searchCatalogue({ limit: 3, offset: 0, sort: "views" }),
+    getTrainerRankings("week", 3, 0),
+    listPartners({ featured: true, includeInactive: false, limit: 1, offset: 0 }),
+    listHomeSections(),
+    listPublicContests({ phase: "active", limit: 1, offset: 0 }),
+    actor
+      ? getDb()
+          .select({
+            id: users.id,
+            publicSlug: users.publicSlug,
+            displayName: users.displayName,
+            telegramUsername: users.telegramUsername,
+            profilePhotoUrl: users.profilePhotoUrl,
+            profileTitle: users.profileTitle,
+            experiencePoints: users.experiencePoints,
+            level: users.level,
+          })
+          .from(users)
+          .where(eq(users.id, actor.id))
+          .limit(1)
+      : Promise.resolve([]),
+    actor ? getSinceLastVisit(actor.id) : Promise.resolve(null),
+  ]);
+  const viewer = viewerRows[0];
+  const progress = viewer ? experienceProgress(viewer.experiencePoints) : null;
+  const dayIndex = Math.floor(Date.now() / 86_400_000);
+  const dailyDiscovery = latest.entries.length
+    ? latest.entries[dayIndex % latest.entries.length]
+    : null;
   return {
-    latest: latest.entries,
-    mostViewed: viewed.entries,
-    mostLiked: liked.entries,
-    bestRated: rated.entries,
-    categories,
+    viewer: viewer && progress ? { ...viewer, level: progress.level, progress } : null,
+    sinceLastVisit,
+    dailyDiscovery,
+    latest: latest.entries.slice(0, 3),
+    trendingEntries: trending.entries,
+    mostViewed: trending.entries,
     topTrainers: trainers,
     featuredPartners: featuredPartners.partners,
+    activeContest: contests.contests[0] ?? null,
+    publishedEntryCount: latest.total,
     sections,
   };
 }

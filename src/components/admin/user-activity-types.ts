@@ -77,6 +77,7 @@ export type UserSessionDto = {
   lastActivityAt: string;
   endedAt: string | null;
   durationSeconds: number;
+  actionCount: number;
   appVersion: string | null;
   isCurrent?: boolean;
 };
@@ -179,6 +180,7 @@ export type TeamMemberActivityDto = {
   sessions7d: number;
   activeDays7d: number;
   actions7d: number;
+  activeDurationSeconds: number;
   sessions30d: number;
   activeDays30d: number;
   actions30d: number;
@@ -201,11 +203,13 @@ export type TeamActivitySummaryDto = {
     boolean
   >;
   periodDays: number;
+  ownerIncluded: boolean;
   activeStaff: number;
   activeStaff7d: number;
   activeAdmins7d: number;
   activeModerators7d: number;
   sessions: number;
+  activeDurationSeconds: number;
   actions: number;
   actions30d: number;
   entriesModerated: number;

@@ -19,8 +19,10 @@ import {
 import { getEnv } from "@/lib/env";
 import { notFound } from "@/lib/errors";
 import { listFavorites } from "@/lib/services/favorites";
+import { getExperienceOverview } from "@/lib/services/experience";
 import { countUnreadNotifications } from "@/lib/services/notifications";
 import { publicStorageUrl } from "@/lib/services/storage-url";
+import { experienceProgress } from "@/lib/xp";
 
 const myEntrySelection = {
   id: entries.id,
@@ -209,6 +211,10 @@ export async function getPublicProfile(slug: string) {
         name: badges.name,
         description: badges.description,
         icon: badges.icon,
+        imageUrl: badges.imageUrl,
+        category: badges.category,
+        rarity: badges.rarity,
+        xpReward: badges.xpReward,
         awardedAt: userBadges.awardedAt,
         activeUntil: userBadges.activeUntil,
       })
@@ -226,7 +232,14 @@ export async function getPublicProfile(slug: string) {
   ]);
   const { id, ...publicProfile } = profile;
   void id;
-  return { ...publicProfile, ranks, captures: captureRows, reviews: reviewRows, badges: badgeRows };
+  return {
+    ...publicProfile,
+    ranks,
+    captures: captureRows,
+    reviews: reviewRows,
+    badges: badgeRows,
+    experience: { progress: experienceProgress(profile.experiencePoints) },
+  };
 }
 
 export async function getMyProfile(actor: CurrentUser) {
@@ -249,6 +262,7 @@ export async function getMyProfile(actor: CurrentUser) {
     recentViewCountRows,
     badgeRows,
     unreadNotificationCount,
+    experience,
   ] = await Promise.all([
     getDb()
       .select({
@@ -457,6 +471,10 @@ export async function getMyProfile(actor: CurrentUser) {
         name: badges.name,
         description: badges.description,
         icon: badges.icon,
+        imageUrl: badges.imageUrl,
+        category: badges.category,
+        rarity: badges.rarity,
+        xpReward: badges.xpReward,
         kind: badges.kind,
         awardedAt: userBadges.awardedAt,
         activeUntil: userBadges.activeUntil,
@@ -474,6 +492,7 @@ export async function getMyProfile(actor: CurrentUser) {
       )
       .orderBy(desc(userBadges.awardedAt)),
     countUnreadNotifications(actor.id),
+    getExperienceOverview(actor.id),
   ]);
 
   const entryCountMap = statusCounts(entryCounts);
@@ -546,5 +565,6 @@ export async function getMyProfile(actor: CurrentUser) {
       submissions: submissionCountMap,
     },
     unreadNotificationCount,
+    experience,
   };
 }

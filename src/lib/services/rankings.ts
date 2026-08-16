@@ -33,6 +33,9 @@ type RawTrainerRanking = {
   badge_slug: string | null;
   badge_name: string | null;
   badge_icon: string | null;
+  badge_image_url: string | null;
+  badge_category: string | null;
+  badge_rarity: string | null;
 };
 
 type RawTrainerRankingEnvelope = {
@@ -67,6 +70,9 @@ function trainerRankingDto(row: RawTrainerRanking) {
           slug: row.badge_slug,
           name: row.badge_name,
           icon: row.badge_icon,
+          imageUrl: row.badge_image_url,
+          category: row.badge_category,
+          rarity: row.badge_rarity,
         }
       : null,
   };
@@ -116,13 +122,15 @@ export async function getTrainerRankingPage(
         coalesce(views.period_views_received, 0)::int period_views_received,
         coalesce(views.total_views_received, 0)::int total_views_received,
         featured_badge.id badge_id, featured_badge.slug badge_slug,
-        featured_badge.name badge_name, featured_badge.icon badge_icon
+        featured_badge.name badge_name, featured_badge.icon badge_icon,
+        featured_badge.image_url badge_image_url, featured_badge.category badge_category,
+        featured_badge.rarity badge_rarity
       from users u
       join capture_stats captures on captures.user_id=u.id
       left join like_stats likes on likes.user_id=u.id
       left join view_stats views on views.user_id=u.id
       left join lateral (
-        select b.id, b.slug, b.name, b.icon
+        select b.id, b.slug, b.name, b.icon, b.image_url, b.category, b.rarity
         from user_badges ub join badges b on b.id=ub.badge_id
         where ub.user_id=u.id and ub.is_active=true and b.is_active=true
           and (ub.active_from is null or ub.active_from <= now())

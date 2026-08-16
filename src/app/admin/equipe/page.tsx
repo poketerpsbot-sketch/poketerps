@@ -21,22 +21,34 @@ import type { TeamActivitySummaryDto } from "@/components/admin/user-activity-ty
 import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, ErrorState, StatusPill, formatDate } from "@/components/ui/states";
+import { getOptionalCurrentUser } from "@/lib/auth/current-user";
 
 export const metadata: Metadata = { title: "Équipe & activité · Administration" };
 
 const scopes = new Set(["all", "admins", "moderators"]);
 
+function formatTeamDuration(seconds: number) {
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
 export default async function AdminTeamActivityPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string; scope?: string }>;
+  searchParams: Promise<{ days?: string; scope?: string; includeOwner?: string }>;
 }) {
   const params = await searchParams;
   const days = [7, 14, 30, 90].includes(Number(params.days)) ? Number(params.days) : 7;
   const scope = params.scope && scopes.has(params.scope) ? params.scope : "all";
-  const result = await serverApi<unknown>(
-    `/api/admin/team-activity?days=${days}&scope=${encodeURIComponent(scope)}&limit=100&offset=0`,
-  );
+  const includeOwner = params.includeOwner === "true";
+  const [result, currentUser] = await Promise.all([
+    serverApi<unknown>(
+      `/api/admin/team-activity?days=${days}&scope=${encodeURIComponent(scope)}&includeOwner=${includeOwner}&limit=100&offset=0`,
+    ),
+    getOptionalCurrentUser(),
+  ]);
   const activity = unwrapObject<TeamActivitySummaryDto>(result.data);
 
   if (result.error || !activity) {
@@ -61,6 +73,7 @@ export default async function AdminTeamActivityPage({
     ["Administrateurs actifs (7 j)", activity.activeAdmins7d, ShieldCheck],
     ["Modérateurs actifs (7 j)", activity.activeModerators7d, UsersRound],
     ["Sessions", activity.sessions, Clock3],
+    ["Temps actif", formatTeamDuration(activity.activeDurationSeconds), CalendarDays],
     ["Actions", activity.actions, ListChecks],
     ["Actions sur 30 jours", activity.actions30d, Activity],
     ["Fiches modérées", activity.entriesModerated, FileCheck2],
@@ -113,6 +126,17 @@ export default async function AdminTeamActivityPage({
         <button className="button" type="submit">
           Appliquer
         </button>
+        {currentUser?.role === "OWNER" && (
+          <label className="admin-team-owner-toggle">
+            <input
+              type="checkbox"
+              name="includeOwner"
+              value="true"
+              defaultChecked={activity.ownerIncluded}
+            />
+            Inclure mes actions OWNER
+          </label>
+        )}
       </form>
 
       <section
@@ -164,6 +188,10 @@ export default async function AdminTeamActivityPage({
                   <div>
                     <dt>Actions</dt>
                     <dd>{member.actions7d}</dd>
+                  </div>
+                  <div>
+                    <dt>Temps actif</dt>
+                    <dd>{formatTeamDuration(member.activeDurationSeconds)}</dd>
                   </div>
                   <div>
                     <dt>Fiches</dt>

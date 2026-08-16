@@ -29,6 +29,23 @@ export const adminReviewsQuerySchema = paginationSchema.extend({
 export const auditQuerySchema = paginationSchema.extend({
   entityType: z.string().trim().min(1).max(80).optional(),
   action: z.string().trim().min(1).max(120).optional(),
+  entityId: z.string().trim().max(120).optional(),
+  actorId: z.uuid().optional(),
+  role: z.enum(["OWNER", "ADMIN", "MODERATOR"]).optional(),
+  source: z
+    .enum(["WEB", "TELEGRAM", "SYSTEM", "WEB_ADMIN", "TELEGRAM_ADMIN", "MINI_APP", "API"])
+    .optional(),
+  dateFrom: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  dateTo: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  query: z.string().trim().max(120).optional(),
 });
 
 export const moderateCorrectionSubmissionSchema = z.object({
