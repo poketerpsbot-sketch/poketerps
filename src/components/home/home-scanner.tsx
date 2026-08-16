@@ -65,6 +65,7 @@ export function HomeScanner({
   const [phase, setPhase] = useState<ScanPhase>("idle");
   const [result, setResult] = useState<ScanResult | null>(null);
   const recentResultIdsRef = useRef<string[]>([]);
+  const recentResultKindsRef = useRef<ScanResult["kind"][]>([]);
   const scanInProgressRef = useRef(false);
   const scanning = phase === "scanning" || phase === "detected";
 
@@ -273,10 +274,16 @@ export function HomeScanner({
     await new Promise((resolve) => setTimeout(resolve, 850));
     const choices = buildPossibilities();
     const recentResultIds = recentResultIdsRef.current;
-    const unseenChoices = choices.filter((choice) => !recentResultIds.includes(choice.id));
-    const eligibleChoices = unseenChoices.length
-      ? unseenChoices
-      : choices.filter((choice) => choice.id !== recentResultIds.at(-1));
+    const recentResultKinds = recentResultKindsRef.current;
+    const freshKindChoices = choices.filter(
+      (choice) => !recentResultIds.includes(choice.id) && !recentResultKinds.includes(choice.kind),
+    );
+    const freshResultChoices = choices.filter((choice) => !recentResultIds.includes(choice.id));
+    const eligibleChoices = freshKindChoices.length
+      ? freshKindChoices
+      : freshResultChoices.length
+        ? freshResultChoices
+        : choices.filter((choice) => choice.id !== recentResultIds.at(-1));
     const pool = eligibleChoices.length ? eligibleChoices : choices;
     const selected = pool[Math.floor(Math.random() * pool.length)] ?? null;
     setResult(selected);
@@ -284,6 +291,10 @@ export function HomeScanner({
       recentResultIdsRef.current = [
         ...recentResultIds.filter((id) => id !== selected.id),
         selected.id,
+      ].slice(-4);
+      recentResultKindsRef.current = [
+        ...recentResultKinds.filter((kind) => kind !== selected.kind),
+        selected.kind,
       ].slice(-4);
     }
     setPhase("detected");
