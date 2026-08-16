@@ -81,4 +81,17 @@ describe("profile dashboard", () => {
     expect(html).toContain("Notifications");
     expect(html).toContain("3 non lues");
   });
+
+  it("keeps identity, XP and empty sections visible for a brand-new member", () => {
+    const html = renderToStaticMarkup(
+      <MyProfileView profile={{ displayName: "Nouveau", role: "MEMBER", experiencePoints: 0 }} />,
+    );
+
+    expect(html).toContain("Nouveau");
+    expect(html).toContain("Niveau 1");
+    expect(html).toContain("0 / 100 XP");
+    expect(html).toContain("Aucun badge pour le moment");
+    expect(html).toContain("Aucune fiche publiée");
+    expect(html).not.toContain("NaN");
+  });
 });

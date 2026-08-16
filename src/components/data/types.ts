@@ -353,6 +353,19 @@ export type PartnerDto = {
 };
 
 export type HomeDto = {
+  availability?: Partial<
+    Record<
+      | "viewer"
+      | "latest"
+      | "trending"
+      | "trainers"
+      | "partners"
+      | "configuration"
+      | "contests"
+      | "sinceLastVisit",
+      boolean
+    >
+  >;
   sinceLastVisit?: {
     previousEnd?: string | null;
     newEntries: number;

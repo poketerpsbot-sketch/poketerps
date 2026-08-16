@@ -36,6 +36,7 @@ import {
   roleLabels,
 } from "@/lib/auth/ui-access";
 import type { UserRole } from "@/lib/db/schema";
+import { experienceProgress } from "@/lib/xp";
 
 export type ProfileStats = {
   entriesAdded?: number;
@@ -131,6 +132,17 @@ function profileUsername(profile: PublicProfileDto) {
 
 function profileTitle(profile: PublicProfileDto) {
   return profile.profileTitle ?? profile.title ?? "Dresseur";
+}
+
+function experienceForProfile(profile: ProfilePayload): ExperienceOverviewDto {
+  return (
+    profile.experience ?? {
+      progress: experienceProgress(profile.experiencePoints ?? 0),
+      events: [],
+      rules: [],
+      levels: [],
+    }
+  );
 }
 
 function initials(value: string) {
@@ -230,10 +242,11 @@ export function ProfileHero({ profile }: { profile: PublicProfileDto }) {
 
 export function PublicProfileView({ profile }: { profile: ProfilePayload }) {
   const entries = profile.entries ?? [];
+  const experience = experienceForProfile(profile);
   return (
     <div className="page-shell page-stack">
       <ProfileHero profile={profile} />
-      {profile.experience && <XpProgressCard experience={profile.experience} />}
+      <XpProgressCard experience={experience} />
       <div className="button-row">
         <Link className="button button--dark" href="/classements">
           <Trophy size={17} aria-hidden="true" /> Voir le classement
@@ -499,6 +512,7 @@ export function MyProfileView({ profile }: { profile: ProfilePayload }) {
   const submissions = profile.submissions ?? [];
   const reviews = profile.reviews ?? [];
   const badges = profile.badges ?? [];
+  const experience = experienceForProfile(profile);
   const stats = profile.stats ?? {};
   const telegramName = identity.displayName ?? profile.displayName;
   const telegramUsername = identity.username ?? profileUsername(profile);
@@ -528,7 +542,7 @@ export function MyProfileView({ profile }: { profile: ProfilePayload }) {
   return (
     <div className="page-shell page-stack profile-dashboard">
       <ProfileHero profile={profileWithIdentity} />
-      {profile.experience && <XpProgressCard experience={profile.experience} showHistory />}
+      <XpProgressCard experience={experience} showHistory />
 
       {canModerate && (
         <aside className="profile-admin-access" aria-labelledby="profile-admin-title">

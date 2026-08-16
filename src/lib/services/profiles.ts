@@ -18,11 +18,21 @@ import {
 } from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
 import { notFound } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { listFavorites } from "@/lib/services/favorites";
 import { getExperienceOverview } from "@/lib/services/experience";
 import { countUnreadNotifications } from "@/lib/services/notifications";
 import { publicStorageUrl } from "@/lib/services/storage-url";
 import { experienceProgress } from "@/lib/xp";
+
+async function loadProfileSection<T>(section: string, loader: () => Promise<T>, fallback: T) {
+  try {
+    return await loader();
+  } catch (error) {
+    logger.warn("profile_section_unavailable", { area: "profile", section, error });
+    return fallback;
+  }
+}
 
 const myEntrySelection = {
   id: entries.id,
@@ -163,72 +173,94 @@ export async function getPublicProfile(slug: string) {
   if (!profile) throw notFound("Dresseur");
 
   const [ranks, captureRows, reviewRows, badgeRows] = await Promise.all([
-    getProfileRanks(profile.id),
-    getDb()
-      .select({
-        id: entries.id,
-        publicNumber: entries.publicNumber,
-        slug: entries.slug,
-        name: entries.name,
-        shortDescription: entries.shortDescription,
-        averageRating: entries.averageRating,
-        viewCount: entries.viewCount,
-        likeCount: entries.likeCount,
-        publishedAt: entries.publishedAt,
-      })
-      .from(entries)
-      .where(
-        and(
-          eq(entries.originalContributorId, profile.id),
-          eq(entries.status, "PUBLISHED"),
-          eq(entries.isDemo, false),
-          isNull(entries.deletedAt),
-        ),
-      )
-      .orderBy(desc(entries.publishedAt))
-      .limit(30),
-    getDb()
-      .select({
-        id: reviews.id,
-        entryId: reviews.entryId,
-        content: reviews.content,
-        overallRating: reviews.overallRating,
-        publishedAt: reviews.publishedAt,
-      })
-      .from(reviews)
-      .where(
-        and(
-          eq(reviews.userId, profile.id),
-          eq(reviews.status, "PUBLISHED"),
-          isNull(reviews.deletedAt),
-        ),
-      )
-      .orderBy(desc(reviews.publishedAt))
-      .limit(30),
-    getDb()
-      .select({
-        slug: badges.slug,
-        name: badges.name,
-        description: badges.description,
-        icon: badges.icon,
-        imageUrl: badges.imageUrl,
-        category: badges.category,
-        rarity: badges.rarity,
-        xpReward: badges.xpReward,
-        awardedAt: userBadges.awardedAt,
-        activeUntil: userBadges.activeUntil,
-      })
-      .from(userBadges)
-      .innerJoin(badges, eq(userBadges.badgeId, badges.id))
-      .where(
-        and(
-          eq(userBadges.userId, profile.id),
-          eq(userBadges.isActive, true),
-          eq(badges.isActive, true),
-          or(isNull(userBadges.activeFrom), lte(userBadges.activeFrom, new Date())),
-          or(isNull(userBadges.activeUntil), gt(userBadges.activeUntil, new Date())),
-        ),
-      ),
+    loadProfileSection("public-rankings", () => getProfileRanks(profile.id), {
+      weekRank: null,
+      monthRank: null,
+      allRank: null,
+      weekCaptures: 0,
+      monthCaptures: 0,
+      totalCaptures: 0,
+    }),
+    loadProfileSection(
+      "public-captures",
+      async () =>
+        getDb()
+          .select({
+            id: entries.id,
+            publicNumber: entries.publicNumber,
+            slug: entries.slug,
+            name: entries.name,
+            shortDescription: entries.shortDescription,
+            averageRating: entries.averageRating,
+            viewCount: entries.viewCount,
+            likeCount: entries.likeCount,
+            publishedAt: entries.publishedAt,
+          })
+          .from(entries)
+          .where(
+            and(
+              eq(entries.originalContributorId, profile.id),
+              eq(entries.status, "PUBLISHED"),
+              eq(entries.isDemo, false),
+              isNull(entries.deletedAt),
+            ),
+          )
+          .orderBy(desc(entries.publishedAt))
+          .limit(30),
+      [],
+    ),
+    loadProfileSection(
+      "public-reviews",
+      async () =>
+        getDb()
+          .select({
+            id: reviews.id,
+            entryId: reviews.entryId,
+            content: reviews.content,
+            overallRating: reviews.overallRating,
+            publishedAt: reviews.publishedAt,
+          })
+          .from(reviews)
+          .where(
+            and(
+              eq(reviews.userId, profile.id),
+              eq(reviews.status, "PUBLISHED"),
+              isNull(reviews.deletedAt),
+            ),
+          )
+          .orderBy(desc(reviews.publishedAt))
+          .limit(30),
+      [],
+    ),
+    loadProfileSection(
+      "public-badges",
+      async () =>
+        getDb()
+          .select({
+            slug: badges.slug,
+            name: badges.name,
+            description: badges.description,
+            icon: badges.icon,
+            imageUrl: badges.imageUrl,
+            category: badges.category,
+            rarity: badges.rarity,
+            xpReward: badges.xpReward,
+            awardedAt: userBadges.awardedAt,
+            activeUntil: userBadges.activeUntil,
+          })
+          .from(userBadges)
+          .innerJoin(badges, eq(userBadges.badgeId, badges.id))
+          .where(
+            and(
+              eq(userBadges.userId, profile.id),
+              eq(userBadges.isActive, true),
+              eq(badges.isActive, true),
+              or(isNull(userBadges.activeFrom), lte(userBadges.activeFrom, new Date())),
+              or(isNull(userBadges.activeUntil), gt(userBadges.activeUntil, new Date())),
+            ),
+          ),
+      [],
+    ),
   ]);
   const { id, ...publicProfile } = profile;
   void id;
@@ -264,174 +296,244 @@ export async function getMyProfile(actor: CurrentUser) {
     unreadNotificationCount,
     experience,
   ] = await Promise.all([
-    getDb()
-      .select({
-        slug: users.publicSlug,
-        displayName: users.displayName,
-        username: users.telegramUsername,
-        profilePhotoUrl: users.profilePhotoUrl,
-        profileTitle: users.profileTitle,
-        bio: users.bio,
-        role: users.role,
-        profileVisibility: users.profileVisibility,
-        level: users.level,
-        experiencePoints: users.experiencePoints,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .where(eq(users.id, actor.id))
-      .limit(1),
-    getDb()
-      .select({ status: entries.status, count: count() })
-      .from(entries)
-      .where(and(eq(entries.createdById, actor.id), isNull(entries.deletedAt)))
-      .groupBy(entries.status),
-    getDb()
-      .select({ status: reviews.status, count: count() })
-      .from(reviews)
-      .where(and(eq(reviews.userId, actor.id), isNull(reviews.deletedAt)))
-      .groupBy(reviews.status),
-    getDb()
-      .select({ status: submissions.status, count: count() })
-      .from(submissions)
-      .where(and(eq(submissions.userId, actor.id), isNull(submissions.deletedAt)))
-      .groupBy(submissions.status),
-    getProfileRanks(actor.id),
-    getDb()
-      .select(myEntrySelection)
-      .from(entries)
-      .innerJoin(categories, eq(entries.categoryId, categories.id))
-      .where(and(eq(entries.createdById, actor.id), isNull(entries.deletedAt)))
-      .orderBy(desc(entries.updatedAt))
-      .limit(50),
-    getDb()
-      .select(myEntrySelection)
-      .from(entries)
-      .innerJoin(categories, eq(entries.categoryId, categories.id))
-      .where(
-        and(
-          eq(entries.originalContributorId, actor.id),
-          eq(entries.status, "PUBLISHED"),
-          eq(entries.isDemo, false),
-          isNull(entries.deletedAt),
-        ),
-      )
-      .orderBy(desc(entries.publishedAt))
-      .limit(24),
-    getDb()
-      .select({ count: count() })
-      .from(entries)
-      .where(
-        and(
-          eq(entries.originalContributorId, actor.id),
-          eq(entries.status, "PUBLISHED"),
-          eq(entries.isDemo, false),
-          isNull(entries.deletedAt),
-        ),
-      ),
-    getDb()
-      .select({
-        id: reviews.id,
-        entryId: reviews.entryId,
-        entryName: entries.name,
-        entrySlug: entries.slug,
-        content: reviews.content,
-        overallRating: reviews.overallRating,
-        status: reviews.status,
-        moderationReason: reviews.moderationReason,
-        createdAt: reviews.createdAt,
-        updatedAt: reviews.updatedAt,
-        publishedAt: reviews.publishedAt,
-      })
-      .from(reviews)
-      .innerJoin(entries, eq(reviews.entryId, entries.id))
-      .where(and(eq(reviews.userId, actor.id), isNull(reviews.deletedAt)))
-      .orderBy(desc(reviews.updatedAt))
-      .limit(50),
-    getDb()
-      .select({
-        id: submissions.id,
-        type: submissions.type,
-        status: submissions.status,
-        title: submissions.title,
-        entryId: submissions.entryId,
-        entryName: entries.name,
-        entrySlug: entries.slug,
-        moderationReason: submissions.reviewReason,
-        createdAt: submissions.createdAt,
-        updatedAt: submissions.updatedAt,
-        submittedAt: submissions.submittedAt,
-        resolvedAt: submissions.reviewedAt,
-      })
-      .from(submissions)
-      .leftJoin(entries, eq(submissions.entryId, entries.id))
-      .where(and(eq(submissions.userId, actor.id), isNull(submissions.deletedAt)))
-      .orderBy(desc(submissions.updatedAt))
-      .limit(30),
-    listFavorites(actor.id, 24, 0),
-    getDb()
-      .select({ count: count() })
-      .from(favorites)
-      .innerJoin(entries, eq(favorites.entryId, entries.id))
-      .where(
-        and(
-          eq(favorites.userId, actor.id),
-          eq(entries.status, "PUBLISHED"),
-          isNull(entries.deletedAt),
-        ),
-      ),
-    getDb()
-      .select({
-        ...myEntrySelection,
-        likedAt: entryLikes.createdAt,
-      })
-      .from(entryLikes)
-      .innerJoin(entries, eq(entryLikes.entryId, entries.id))
-      .innerJoin(categories, eq(entries.categoryId, categories.id))
-      .where(
-        and(
-          eq(entryLikes.userId, actor.id),
-          eq(entries.status, "PUBLISHED"),
-          isNull(entries.deletedAt),
-        ),
-      )
-      .orderBy(desc(entryLikes.createdAt))
-      .limit(24),
-    getDb()
-      .select({ count: count() })
-      .from(entryLikes)
-      .innerJoin(entries, eq(entryLikes.entryId, entries.id))
-      .where(
-        and(
-          eq(entryLikes.userId, actor.id),
-          eq(entries.status, "PUBLISHED"),
-          isNull(entries.deletedAt),
-        ),
-      ),
-    getSqlClient()<
-      Array<{
-        id: string;
-        public_number: number;
-        slug: string;
-        name: string;
-        short_description: string | null;
-        status: string;
-        average_rating: string | number;
-        review_count: number;
-        view_count: number;
-        like_count: number;
-        favorite_count: number;
-        category_id: string;
-        category_slug: string;
-        category_name: string;
-        created_at: Date;
-        updated_at: Date;
-        published_at: Date | null;
-        primary_image_path: string | null;
-        viewed_at: Date;
-      }>
-    >`
-      select recent.* from (
+    loadProfileSection(
+      "identity",
+      async () =>
+        getDb()
+          .select({
+            slug: users.publicSlug,
+            displayName: users.displayName,
+            username: users.telegramUsername,
+            profilePhotoUrl: users.profilePhotoUrl,
+            profileTitle: users.profileTitle,
+            bio: users.bio,
+            role: users.role,
+            profileVisibility: users.profileVisibility,
+            level: users.level,
+            experiencePoints: users.experiencePoints,
+            createdAt: users.createdAt,
+          })
+          .from(users)
+          .where(eq(users.id, actor.id))
+          .limit(1),
+      [],
+    ),
+    loadProfileSection(
+      "entry-counts",
+      async () =>
+        getDb()
+          .select({ status: entries.status, count: count() })
+          .from(entries)
+          .where(and(eq(entries.createdById, actor.id), isNull(entries.deletedAt)))
+          .groupBy(entries.status),
+      [],
+    ),
+    loadProfileSection(
+      "review-counts",
+      async () =>
+        getDb()
+          .select({ status: reviews.status, count: count() })
+          .from(reviews)
+          .where(and(eq(reviews.userId, actor.id), isNull(reviews.deletedAt)))
+          .groupBy(reviews.status),
+      [],
+    ),
+    loadProfileSection(
+      "submission-counts",
+      async () =>
+        getDb()
+          .select({ status: submissions.status, count: count() })
+          .from(submissions)
+          .where(and(eq(submissions.userId, actor.id), isNull(submissions.deletedAt)))
+          .groupBy(submissions.status),
+      [],
+    ),
+    loadProfileSection("rankings", () => getProfileRanks(actor.id), {
+      weekRank: null,
+      monthRank: null,
+      allRank: null,
+      weekCaptures: 0,
+      monthCaptures: 0,
+      totalCaptures: 0,
+    }),
+    loadProfileSection(
+      "entries",
+      async () =>
+        getDb()
+          .select(myEntrySelection)
+          .from(entries)
+          .innerJoin(categories, eq(entries.categoryId, categories.id))
+          .where(and(eq(entries.createdById, actor.id), isNull(entries.deletedAt)))
+          .orderBy(desc(entries.updatedAt))
+          .limit(50),
+      [],
+    ),
+    loadProfileSection(
+      "published-entries",
+      async () =>
+        getDb()
+          .select(myEntrySelection)
+          .from(entries)
+          .innerJoin(categories, eq(entries.categoryId, categories.id))
+          .where(
+            and(
+              eq(entries.originalContributorId, actor.id),
+              eq(entries.status, "PUBLISHED"),
+              eq(entries.isDemo, false),
+              isNull(entries.deletedAt),
+            ),
+          )
+          .orderBy(desc(entries.publishedAt))
+          .limit(24),
+      [],
+    ),
+    loadProfileSection(
+      "published-entry-count",
+      async () =>
+        getDb()
+          .select({ count: count() })
+          .from(entries)
+          .where(
+            and(
+              eq(entries.originalContributorId, actor.id),
+              eq(entries.status, "PUBLISHED"),
+              eq(entries.isDemo, false),
+              isNull(entries.deletedAt),
+            ),
+          ),
+      [],
+    ),
+    loadProfileSection(
+      "reviews",
+      async () =>
+        getDb()
+          .select({
+            id: reviews.id,
+            entryId: reviews.entryId,
+            entryName: entries.name,
+            entrySlug: entries.slug,
+            content: reviews.content,
+            overallRating: reviews.overallRating,
+            status: reviews.status,
+            moderationReason: reviews.moderationReason,
+            createdAt: reviews.createdAt,
+            updatedAt: reviews.updatedAt,
+            publishedAt: reviews.publishedAt,
+          })
+          .from(reviews)
+          .innerJoin(entries, eq(reviews.entryId, entries.id))
+          .where(and(eq(reviews.userId, actor.id), isNull(reviews.deletedAt)))
+          .orderBy(desc(reviews.updatedAt))
+          .limit(50),
+      [],
+    ),
+    loadProfileSection(
+      "submissions",
+      async () =>
+        getDb()
+          .select({
+            id: submissions.id,
+            type: submissions.type,
+            status: submissions.status,
+            title: submissions.title,
+            entryId: submissions.entryId,
+            entryName: entries.name,
+            entrySlug: entries.slug,
+            moderationReason: submissions.reviewReason,
+            createdAt: submissions.createdAt,
+            updatedAt: submissions.updatedAt,
+            submittedAt: submissions.submittedAt,
+            resolvedAt: submissions.reviewedAt,
+          })
+          .from(submissions)
+          .leftJoin(entries, eq(submissions.entryId, entries.id))
+          .where(and(eq(submissions.userId, actor.id), isNull(submissions.deletedAt)))
+          .orderBy(desc(submissions.updatedAt))
+          .limit(30),
+      [],
+    ),
+    loadProfileSection("favorites", () => listFavorites(actor.id, 24, 0), []),
+    loadProfileSection(
+      "favorite-count",
+      async () =>
+        getDb()
+          .select({ count: count() })
+          .from(favorites)
+          .innerJoin(entries, eq(favorites.entryId, entries.id))
+          .where(
+            and(
+              eq(favorites.userId, actor.id),
+              eq(entries.status, "PUBLISHED"),
+              isNull(entries.deletedAt),
+            ),
+          ),
+      [],
+    ),
+    loadProfileSection(
+      "liked-entries",
+      async () =>
+        getDb()
+          .select({
+            ...myEntrySelection,
+            likedAt: entryLikes.createdAt,
+          })
+          .from(entryLikes)
+          .innerJoin(entries, eq(entryLikes.entryId, entries.id))
+          .innerJoin(categories, eq(entries.categoryId, categories.id))
+          .where(
+            and(
+              eq(entryLikes.userId, actor.id),
+              eq(entries.status, "PUBLISHED"),
+              isNull(entries.deletedAt),
+            ),
+          )
+          .orderBy(desc(entryLikes.createdAt))
+          .limit(24),
+      [],
+    ),
+    loadProfileSection(
+      "liked-entry-count",
+      async () =>
+        getDb()
+          .select({ count: count() })
+          .from(entryLikes)
+          .innerJoin(entries, eq(entryLikes.entryId, entries.id))
+          .where(
+            and(
+              eq(entryLikes.userId, actor.id),
+              eq(entries.status, "PUBLISHED"),
+              isNull(entries.deletedAt),
+            ),
+          ),
+      [],
+    ),
+    loadProfileSection(
+      "recent-views",
+      async () => {
+        const rows = await getSqlClient()<
+          Array<{
+            id: string;
+            public_number: number;
+            slug: string;
+            name: string;
+            short_description: string | null;
+            status: string;
+            average_rating: string | number;
+            review_count: number;
+            view_count: number;
+            like_count: number;
+            favorite_count: number;
+            category_id: string;
+            category_slug: string;
+            category_name: string;
+            created_at: Date;
+            updated_at: Date;
+            published_at: Date | null;
+            primary_image_path: string | null;
+            viewed_at: Date;
+          }>
+        >`
+          select recent.* from (
         select distinct on (e.id)
           e.id, e.public_number, e.slug, e.name, e.short_description,
           e.status::text, e.average_rating, e.review_count, e.view_count,
@@ -451,48 +553,67 @@ export async function getMyProfile(actor: CurrentUser) {
         order by e.id, event.created_at desc
       ) recent
       order by recent.viewed_at desc
-      limit 24
-    `,
-    getDb()
-      .select({ count: sql<number>`count(distinct ${entryViewEvents.entryId})` })
-      .from(entryViewEvents)
-      .innerJoin(entries, eq(entryViewEvents.entryId, entries.id))
-      .where(
-        and(
-          eq(entryViewEvents.userId, actor.id),
-          eq(entries.status, "PUBLISHED"),
-          isNull(entries.deletedAt),
-        ),
-      ),
-    getDb()
-      .select({
-        id: badges.id,
-        slug: badges.slug,
-        name: badges.name,
-        description: badges.description,
-        icon: badges.icon,
-        imageUrl: badges.imageUrl,
-        category: badges.category,
-        rarity: badges.rarity,
-        xpReward: badges.xpReward,
-        kind: badges.kind,
-        awardedAt: userBadges.awardedAt,
-        activeUntil: userBadges.activeUntil,
-      })
-      .from(userBadges)
-      .innerJoin(badges, eq(userBadges.badgeId, badges.id))
-      .where(
-        and(
-          eq(userBadges.userId, actor.id),
-          eq(userBadges.isActive, true),
-          eq(badges.isActive, true),
-          or(isNull(userBadges.activeFrom), lte(userBadges.activeFrom, new Date())),
-          or(isNull(userBadges.activeUntil), gt(userBadges.activeUntil, new Date())),
-        ),
-      )
-      .orderBy(desc(userBadges.awardedAt)),
-    countUnreadNotifications(actor.id),
-    getExperienceOverview(actor.id),
+          limit 24
+        `;
+        return Array.from(rows);
+      },
+      [],
+    ),
+    loadProfileSection(
+      "recent-view-count",
+      async () =>
+        getDb()
+          .select({ count: sql<number>`count(distinct ${entryViewEvents.entryId})` })
+          .from(entryViewEvents)
+          .innerJoin(entries, eq(entryViewEvents.entryId, entries.id))
+          .where(
+            and(
+              eq(entryViewEvents.userId, actor.id),
+              eq(entries.status, "PUBLISHED"),
+              isNull(entries.deletedAt),
+            ),
+          ),
+      [],
+    ),
+    loadProfileSection(
+      "badges",
+      async () =>
+        getDb()
+          .select({
+            id: badges.id,
+            slug: badges.slug,
+            name: badges.name,
+            description: badges.description,
+            icon: badges.icon,
+            imageUrl: badges.imageUrl,
+            category: badges.category,
+            rarity: badges.rarity,
+            xpReward: badges.xpReward,
+            kind: badges.kind,
+            awardedAt: userBadges.awardedAt,
+            activeUntil: userBadges.activeUntil,
+          })
+          .from(userBadges)
+          .innerJoin(badges, eq(userBadges.badgeId, badges.id))
+          .where(
+            and(
+              eq(userBadges.userId, actor.id),
+              eq(userBadges.isActive, true),
+              eq(badges.isActive, true),
+              or(isNull(userBadges.activeFrom), lte(userBadges.activeFrom, new Date())),
+              or(isNull(userBadges.activeUntil), gt(userBadges.activeUntil, new Date())),
+            ),
+          )
+          .orderBy(desc(userBadges.awardedAt)),
+      [],
+    ),
+    loadProfileSection("notifications", () => countUnreadNotifications(actor.id), 0),
+    loadProfileSection("experience", () => getExperienceOverview(actor.id), {
+      progress: experienceProgress(0),
+      events: [],
+      rules: [],
+      levels: [],
+    }),
   ]);
 
   const entryCountMap = statusCounts(entryCounts);
@@ -519,13 +640,27 @@ export async function getMyProfile(actor: CurrentUser) {
     }),
   );
 
+  const identity = privateProfile[0] ?? {
+    slug: actor.publicSlug,
+    displayName: actor.displayName,
+    username: actor.username,
+    profilePhotoUrl: actor.profilePhotoUrl,
+    profileTitle: null,
+    bio: null,
+    role: actor.role,
+    profileVisibility: "PUBLIC",
+    level: 1,
+    experiencePoints: 0,
+    createdAt: null,
+  };
+
   return {
-    ...(privateProfile[0] ?? {}),
+    ...identity,
     captureCount: Number(publishedCountRows[0]?.count ?? 0),
     telegramIdentity: {
-      displayName: privateProfile[0]?.displayName ?? actor.displayName,
-      username: privateProfile[0]?.username ?? actor.username,
-      profilePhotoUrl: privateProfile[0]?.profilePhotoUrl ?? actor.profilePhotoUrl,
+      displayName: identity.displayName,
+      username: identity.username,
+      profilePhotoUrl: identity.profilePhotoUrl,
     },
     ranks,
     entries: entryRows.map((entry) => myEntryDto(entry)),

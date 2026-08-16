@@ -4,6 +4,14 @@ import { useRef } from "react";
 import { Sparkles, X } from "lucide-react";
 
 import type { ExperienceOverviewDto } from "@/components/data/types";
+import { BASE_LEVELS, experienceProgress } from "@/lib/xp";
+
+const DEFAULT_XP_RULES = [
+  { key: "ENTRY_PUBLISHED", label: "Fiche publiée", points: 20 },
+  { key: "REVIEW_PUBLISHED", label: "Avis publié", points: 8 },
+  { key: "CONTEST_PARTICIPATION", label: "Participation à un concours", points: 3 },
+  { key: "CONTEST_WIN", label: "Victoire de concours", points: 25 },
+] as const;
 
 export function XpProgressCard({
   experience,
@@ -13,7 +21,36 @@ export function XpProgressCard({
   showHistory?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const { progress } = experience;
+  const suppliedPoints = Number(experience.progress?.experiencePoints ?? 0);
+  const computedProgress = experienceProgress(Number.isFinite(suppliedPoints) ? suppliedPoints : 0);
+  const suppliedProgress = experience.progress;
+  const currentThreshold = Number(suppliedProgress?.currentThreshold);
+  const nextThreshold = Number(suppliedProgress?.nextThreshold);
+  const suppliedPercent = Number(suppliedProgress?.percent);
+  const progress = {
+    ...computedProgress,
+    level:
+      Number.isFinite(suppliedProgress?.level) && suppliedProgress.level > 0
+        ? Math.floor(suppliedProgress.level)
+        : computedProgress.level,
+    title: suppliedProgress?.title || computedProgress.title,
+    currentThreshold:
+      Number.isFinite(currentThreshold) && currentThreshold >= 0
+        ? currentThreshold
+        : computedProgress.currentThreshold,
+    nextThreshold:
+      Number.isFinite(nextThreshold) && nextThreshold > Math.max(0, currentThreshold)
+        ? nextThreshold
+        : computedProgress.nextThreshold,
+    remaining: Number.isFinite(suppliedProgress?.remaining)
+      ? Math.max(0, suppliedProgress.remaining)
+      : computedProgress.remaining,
+    percent: Number.isFinite(suppliedPercent)
+      ? Math.min(100, Math.max(0, suppliedPercent))
+      : computedProgress.percent,
+  };
+  const rules = experience.rules?.length ? experience.rules : DEFAULT_XP_RULES;
+  const levels = experience.levels?.length ? experience.levels : BASE_LEVELS;
 
   return (
     <section className="xp-profile-card content-panel" aria-labelledby="xp-profile-title">
@@ -78,7 +115,7 @@ export function XpProgressCard({
           <section>
             <h3>Comment gagner de l’XP</h3>
             <div className="xp-rule-list">
-              {(experience.rules ?? []).map((rule) => (
+              {rules.map((rule) => (
                 <div key={rule.key}>
                   <span>{rule.label}</span>
                   <strong>+{rule.points} XP</strong>
@@ -89,7 +126,7 @@ export function XpProgressCard({
           <section>
             <h3>Prochains niveaux</h3>
             <div className="xp-level-list">
-              {(experience.levels ?? [])
+              {levels
                 .filter((level) => level.level >= progress.level)
                 .slice(0, 5)
                 .map((level) => (

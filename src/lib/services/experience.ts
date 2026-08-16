@@ -11,7 +11,17 @@ import {
   userExperienceEvents,
   users,
 } from "@/lib/db/schema";
+import { logger } from "@/lib/logger";
 import { experienceProgress } from "@/lib/xp";
+
+async function loadExperienceSection<T>(section: string, loader: () => Promise<T>, fallback: T) {
+  try {
+    return await loader();
+  } catch (error) {
+    logger.warn("profile_section_unavailable", { area: "profile", section, error });
+    return fallback;
+  }
+}
 
 export type ExperienceRuleKey =
   | "ENTRY_PUBLISHED"
@@ -135,43 +145,63 @@ async function syncProgressBadges(executor: ExperienceExecutor, userId: string) 
 export async function getExperienceOverview(userId: string, limit = 50) {
   const db = getDb();
   const [userRows, events, rules, levels] = await Promise.all([
-    db
-      .select({ experiencePoints: users.experiencePoints })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1),
-    db
-      .select({
-        id: userExperienceEvents.id,
-        points: userExperienceEvents.points,
-        reason: userExperienceEvents.reason,
-        sourceType: userExperienceEvents.sourceType,
-        sourceId: userExperienceEvents.sourceId,
-        metadata: userExperienceEvents.metadata,
-        createdAt: userExperienceEvents.createdAt,
-      })
-      .from(userExperienceEvents)
-      .where(eq(userExperienceEvents.userId, userId))
-      .orderBy(desc(userExperienceEvents.createdAt))
-      .limit(Math.min(100, Math.max(1, limit))),
-    db
-      .select({
-        key: experienceRules.key,
-        label: experienceRules.label,
-        points: experienceRules.points,
-      })
-      .from(experienceRules)
-      .where(eq(experienceRules.isActive, true))
-      .orderBy(desc(experienceRules.points)),
-    db
-      .select({
-        level: levelDefinitions.level,
-        threshold: levelDefinitions.threshold,
-        title: levelDefinitions.title,
-      })
-      .from(levelDefinitions)
-      .where(eq(levelDefinitions.isActive, true))
-      .orderBy(levelDefinitions.level),
+    loadExperienceSection(
+      "experience-points",
+      async () =>
+        db
+          .select({ experiencePoints: users.experiencePoints })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1),
+      [],
+    ),
+    loadExperienceSection(
+      "experience-history",
+      async () =>
+        db
+          .select({
+            id: userExperienceEvents.id,
+            points: userExperienceEvents.points,
+            reason: userExperienceEvents.reason,
+            sourceType: userExperienceEvents.sourceType,
+            sourceId: userExperienceEvents.sourceId,
+            metadata: userExperienceEvents.metadata,
+            createdAt: userExperienceEvents.createdAt,
+          })
+          .from(userExperienceEvents)
+          .where(eq(userExperienceEvents.userId, userId))
+          .orderBy(desc(userExperienceEvents.createdAt))
+          .limit(Math.min(100, Math.max(1, limit))),
+      [],
+    ),
+    loadExperienceSection(
+      "experience-rules",
+      async () =>
+        db
+          .select({
+            key: experienceRules.key,
+            label: experienceRules.label,
+            points: experienceRules.points,
+          })
+          .from(experienceRules)
+          .where(eq(experienceRules.isActive, true))
+          .orderBy(desc(experienceRules.points)),
+      [],
+    ),
+    loadExperienceSection(
+      "experience-levels",
+      async () =>
+        db
+          .select({
+            level: levelDefinitions.level,
+            threshold: levelDefinitions.threshold,
+            title: levelDefinitions.title,
+          })
+          .from(levelDefinitions)
+          .where(eq(levelDefinitions.isActive, true))
+          .orderBy(levelDefinitions.level),
+      [],
+    ),
   ]);
   const points = userRows[0]?.experiencePoints ?? 0;
   return { progress: experienceProgress(points), events, rules, levels };
