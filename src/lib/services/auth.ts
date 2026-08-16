@@ -4,6 +4,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { lt, sql } from "drizzle-orm";
 
 import { verifyTelegramInitData } from "@/lib/auth/telegram";
+import { telegramPhotoUpdate } from "@/lib/auth/telegram-photo";
 import { getDb } from "@/lib/db";
 import { getSqlClient } from "@/lib/db";
 import { auditLogs, telegramAuthReplays, users, type UserRole } from "@/lib/db/schema";
@@ -60,9 +61,9 @@ export async function authenticateTelegram(initData: string, requestId?: string)
       telegramUsername: verified.user.username ?? null,
       telegramUsernameSnapshot: verified.user.username ?? null,
       displayName,
-      profilePhotoUrl: verified.user.photo_url ?? null,
       lastSeenAt: new Date(),
       updatedAt: new Date(),
+      ...telegramPhotoUpdate(verified.user.photo_url),
     };
     const synchronizedStaffRole =
       role === "OWNER" || role === "ADMIN" || role === "MODERATOR" ? role : null;

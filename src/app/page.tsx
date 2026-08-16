@@ -70,13 +70,17 @@ export default async function HomePage() {
               </span>
             </div>
             <div
-              className="xp-progress"
+              className="xp-progress xp-progress--device"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(viewer.progress.percent)}
             >
-              <span style={{ width: `${viewer.progress.percent}%` }} />
+              <span
+                className="xp-progress__fill"
+                style={{ width: `${viewer.progress.percent}%` }}
+              />
+              <span className="xp-progress__ticks" aria-hidden="true" />
             </div>
             <Link href="/profil">Voir ma progression</Link>
           </div>

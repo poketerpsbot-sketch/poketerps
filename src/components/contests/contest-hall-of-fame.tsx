@@ -9,6 +9,7 @@ import type {
   ContestHallOfFameWinner,
   ContestType,
 } from "@/components/contests/types";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 const PAGE_SIZE = 20;
 
@@ -36,18 +37,6 @@ function safeImageUrl(value?: string | null) {
   } catch {
     return null;
   }
-}
-
-function initials(value: string) {
-  return (
-    value
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part.charAt(0))
-      .join("")
-      .toLocaleUpperCase("fr-FR") || "?"
-  );
 }
 
 function formatResultDate(value: string) {
@@ -94,17 +83,12 @@ async function fetchResults(
 }
 
 function WinnerAvatar({ winner }: { winner: ContestHallOfFameWinner }) {
-  const avatarUrl = safeImageUrl(winner.participant.profilePhotoUrl);
   return (
-    <span
-      className={`avatar contest-hall__avatar${avatarUrl ? " contest-hall__avatar--image" : ""}`}
-      style={avatarUrl ? { backgroundImage: `url(${avatarUrl})` } : undefined}
-      role={avatarUrl ? "img" : undefined}
-      aria-label={avatarUrl ? `Photo de profil de ${winner.participant.displayName}` : undefined}
-      aria-hidden={avatarUrl ? undefined : true}
-    >
-      {avatarUrl ? null : initials(winner.participant.displayName)}
-    </span>
+    <UserAvatar
+      className="contest-hall__avatar"
+      displayName={winner.participant.displayName}
+      src={winner.participant.profilePhotoUrl}
+    />
   );
 }
 

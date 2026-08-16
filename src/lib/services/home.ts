@@ -4,13 +4,13 @@ import { asc, eq } from "drizzle-orm";
 
 import { getOptionalCurrentUser } from "@/lib/auth/current-user";
 import { getDb, getSqlClient } from "@/lib/db";
-import { homeSections, users } from "@/lib/db/schema";
+import { homeSections, levelDefinitions, users } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { searchCatalogue } from "@/lib/services/catalogue";
 import { listPublicContests } from "@/lib/services/contests";
 import { listPartners } from "@/lib/services/partners";
 import { getTrainerRankings } from "@/lib/services/rankings";
-import { experienceProgress } from "@/lib/xp";
+import { effectiveExperienceProgress } from "@/lib/xp";
 
 type HomeSectionKey =
   | "viewer"
@@ -111,6 +111,7 @@ export async function getHomeData() {
     sectionsResult,
     contestsResult,
     viewerRowsResult,
+    levelRowsResult,
     sinceLastVisitResult,
   ] = await Promise.all([
     loadHomeSection("latest", () => searchCatalogue({ limit: 12, offset: 0, sort: "recent" }), {
@@ -147,10 +148,27 @@ export async function getHomeData() {
                 profileTitle: users.profileTitle,
                 experiencePoints: users.experiencePoints,
                 level: users.level,
+                role: users.role,
               })
               .from(users)
               .where(eq(users.id, actor.id))
               .limit(1),
+          [],
+        )
+      : Promise.resolve({ value: [], available: actorResult.available }),
+    actor
+      ? loadHomeSection(
+          "viewer",
+          () =>
+            getDb()
+              .select({
+                level: levelDefinitions.level,
+                threshold: levelDefinitions.threshold,
+                title: levelDefinitions.title,
+              })
+              .from(levelDefinitions)
+              .where(eq(levelDefinitions.isActive, true))
+              .orderBy(asc(levelDefinitions.level)),
           [],
         )
       : Promise.resolve({ value: [], available: actorResult.available }),
@@ -165,15 +183,26 @@ export async function getHomeData() {
   const sections = sectionsResult.value;
   const contests = contestsResult.value;
   const viewerRows = viewerRowsResult.value;
+  const levelRows = levelRowsResult.value;
   const sinceLastVisit = sinceLastVisitResult.value;
   const viewer = viewerRows[0];
-  const progress = viewer ? experienceProgress(viewer.experiencePoints) : null;
+  const progress = viewer
+    ? effectiveExperienceProgress(viewer.experiencePoints, viewer.role, levelRows)
+    : null;
   const dayIndex = Math.floor(Date.now() / 86_400_000);
   const dailyDiscovery = latest.entries.length
     ? latest.entries[dayIndex % latest.entries.length]
     : null;
   return {
-    viewer: viewer && progress ? { ...viewer, level: progress.level, progress } : null,
+    viewer:
+      viewer && progress
+        ? {
+            ...viewer,
+            level: progress.level,
+            experiencePoints: progress.experiencePoints,
+            progress,
+          }
+        : null,
     sinceLastVisit,
     dailyDiscovery,
     latest: latest.entries.slice(0, 3),

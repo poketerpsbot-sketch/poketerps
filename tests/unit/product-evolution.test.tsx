@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { HomeScanner } from "@/components/home/home-scanner";
 import {
   BASE_LEVELS,
+  effectiveExperienceProgress,
   experienceProgress,
   experienceThresholdForLevel,
   levelFromExperience,
@@ -28,6 +29,37 @@ describe("progression XP", () => {
     expect(experienceProgress(700)).toMatchObject({ level: 5, percent: 0, remaining: 300 });
     expect(experienceProgress(850)).toMatchObject({ level: 5, percent: 50, remaining: 150 });
     expect(experienceProgress(-20)).toMatchObject({ level: 1, experiencePoints: 0, percent: 0 });
+  });
+
+  it.each(["OWNER", "ADMIN"] as const)(
+    "affiche le plus haut niveau actif à %s sans modifier son XP réel",
+    (role) => {
+      const levels = [...BASE_LEVELS, { level: 17, threshold: 15_000, title: "Maître système" }];
+      const progress = effectiveExperienceProgress(320, role, levels);
+      expect(progress).toMatchObject({
+        level: 17,
+        title: "Maître système",
+        experiencePoints: 15_000,
+        realExperiencePoints: 320,
+        percent: 100,
+        isRoleBoosted: true,
+      });
+      expect(experienceProgress(320).experiencePoints).toBe(320);
+    },
+  );
+
+  it("conserve strictement la progression normale des membres et modérateurs", () => {
+    expect(effectiveExperienceProgress(320, "MEMBER", BASE_LEVELS)).toMatchObject({
+      level: 3,
+      experiencePoints: 320,
+      realExperiencePoints: 320,
+      isRoleBoosted: false,
+    });
+    expect(effectiveExperienceProgress(320, "MODERATOR", BASE_LEVELS)).toMatchObject({
+      level: 3,
+      experiencePoints: 320,
+      isRoleBoosted: false,
+    });
   });
 });
 

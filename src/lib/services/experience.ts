@@ -12,7 +12,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
-import { experienceProgress } from "@/lib/xp";
+import { effectiveExperienceProgress, experienceProgressFromLevels } from "@/lib/xp";
 
 async function loadExperienceSection<T>(section: string, loader: () => Promise<T>, fallback: T) {
   try {
@@ -149,7 +149,7 @@ export async function getExperienceOverview(userId: string, limit = 50) {
       "experience-points",
       async () =>
         db
-          .select({ experiencePoints: users.experiencePoints })
+          .select({ experiencePoints: users.experiencePoints, role: users.role })
           .from(users)
           .where(eq(users.id, userId))
           .limit(1),
@@ -204,5 +204,12 @@ export async function getExperienceOverview(userId: string, limit = 50) {
     ),
   ]);
   const points = userRows[0]?.experiencePoints ?? 0;
-  return { progress: experienceProgress(points), events, rules, levels };
+  const role = userRows[0]?.role ?? "MEMBER";
+  return {
+    progress: effectiveExperienceProgress(points, role, levels),
+    realProgress: experienceProgressFromLevels(points, levels),
+    events,
+    rules,
+    levels,
+  };
 }

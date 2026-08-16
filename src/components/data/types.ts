@@ -308,7 +308,12 @@ export type ExperienceOverviewDto = {
     nextThreshold: number;
     remaining: number;
     percent: number;
+    isMaxLevel?: boolean;
+    realExperiencePoints?: number;
+    isRoleBoosted?: boolean;
+    roleBoostRole?: "OWNER" | "ADMIN" | null;
   };
+  realProgress?: ExperienceOverviewDto["progress"];
   events?: Array<{
     id: Identifier;
     points: number;
@@ -380,6 +385,13 @@ export type HomeDto = {
           nextThreshold: number;
           remaining: number;
           percent: number;
+          experiencePoints?: number;
+          level?: number;
+          title?: string;
+          isMaxLevel?: boolean;
+          realExperiencePoints?: number;
+          isRoleBoosted?: boolean;
+          roleBoostRole?: "OWNER" | "ADMIN" | null;
         };
       })
     | null;
@@ -392,6 +404,10 @@ export type HomeDto = {
     summary?: string | null;
     remainingParticipants?: number | null;
     maxParticipants?: number | null;
+    participantCount?: number | null;
+    coverImageUrl?: string | null;
+    registrationEndsAt?: string | null;
+    endsAt?: string | null;
   } | null;
   publishedEntryCount?: number;
   latestEntries?: EntrySummaryDto[];

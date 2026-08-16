@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef } from "react";
-import { Sparkles, X } from "lucide-react";
+import { ArrowRight, Cpu, ShieldCheck, Sparkles, X, Zap } from "lucide-react";
 
 import type { ExperienceOverviewDto } from "@/components/data/types";
-import { BASE_LEVELS, experienceProgress } from "@/lib/xp";
+import { BASE_LEVELS, experienceProgress, experienceProgressFromLevels } from "@/lib/xp";
 
 const DEFAULT_XP_RULES = [
   { key: "ENTRY_PUBLISHED", label: "Fiche publiée", points: 20 },
@@ -48,40 +48,85 @@ export function XpProgressCard({
     percent: Number.isFinite(suppliedPercent)
       ? Math.min(100, Math.max(0, suppliedPercent))
       : computedProgress.percent,
+    isMaxLevel: Boolean(suppliedProgress?.isMaxLevel),
+    realExperiencePoints: Number(
+      suppliedProgress?.realExperiencePoints ?? suppliedProgress?.experiencePoints ?? 0,
+    ),
+    isRoleBoosted: Boolean(suppliedProgress?.isRoleBoosted),
+    roleBoostRole: suppliedProgress?.roleBoostRole ?? null,
   };
   const rules = experience.rules?.length ? experience.rules : DEFAULT_XP_RULES;
   const levels = experience.levels?.length ? experience.levels : BASE_LEVELS;
+  const latestGain = !progress.isRoleBoosted
+    ? (experience.events ?? []).find((event) => event.points > 0)
+    : null;
+  const previousProgress = latestGain
+    ? experienceProgressFromLevels(
+        Math.max(0, progress.realExperiencePoints - latestGain.points),
+        levels,
+      )
+    : null;
+  const hasLevelUp = Boolean(previousProgress && previousProgress.level < progress.level);
+  const nextLevel = levels.find((level) => level.level > progress.level);
 
   return (
     <section className="xp-profile-card content-panel" aria-labelledby="xp-profile-title">
-      <div className="xp-profile-card__badge" aria-hidden="true">
-        <Sparkles />
+      <div className="xp-profile-card__badge" aria-label={`Niveau ${progress.level}`}>
+        <span className="xp-profile-card__status-light" aria-hidden="true" />
+        <Cpu aria-hidden="true" />
         <strong>{progress.level}</strong>
+        <small>NIV.</small>
       </div>
       <div className="xp-profile-card__content">
-        <p className="eyebrow">Progression PokéTerps</p>
-        <h2 id="xp-profile-title">
-          Niveau {progress.level} · {progress.title}
-        </h2>
+        <div className="xp-profile-card__heading">
+          <div>
+            <p className="eyebrow">Module d’expérience</p>
+            <h2 id="xp-profile-title">
+              Niveau {progress.level} · {progress.title}
+            </h2>
+          </div>
+          {latestGain && (
+            <span className={`xp-gain${hasLevelUp ? " is-level-up" : ""}`}>
+              <Zap aria-hidden="true" /> +{latestGain.points} XP
+            </span>
+          )}
+        </div>
+        {hasLevelUp && (
+          <p className="xp-level-up">
+            <Sparkles aria-hidden="true" /> Niveau supérieur débloqué
+          </p>
+        )}
         <div
-          className="xp-progress"
+          className="xp-progress xp-progress--device"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(progress.percent)}
         >
-          <span style={{ width: `${progress.percent}%` }} />
+          <span className="xp-progress__fill" style={{ width: `${progress.percent}%` }} />
+          <span className="xp-progress__ticks" aria-hidden="true" />
         </div>
         <div className="xp-profile-card__numbers">
           <strong>
             {progress.experiencePoints.toLocaleString("fr-CH")} /{" "}
             {progress.nextThreshold.toLocaleString("fr-CH")} XP
           </strong>
-          <span>
-            Plus que {progress.remaining.toLocaleString("fr-CH")} XP avant le niveau{" "}
-            {progress.level + 1}.
-          </span>
+          {progress.isMaxLevel ? (
+            <span>Niveau maximal actif · jauge synchronisée à 100 %</span>
+          ) : (
+            <span>
+              {progress.remaining.toLocaleString("fr-CH")} XP avant le niveau{" "}
+              {nextLevel?.level ?? progress.level + 1} <ArrowRight aria-hidden="true" />
+            </span>
+          )}
         </div>
+        {progress.isRoleBoosted && (
+          <p className="xp-role-boost">
+            <ShieldCheck aria-hidden="true" /> Niveau maximal affiché pour le rôle{" "}
+            {progress.roleBoostRole}. XP réel conservé :{" "}
+            {progress.realExperiencePoints.toLocaleString("fr-CH")} XP.
+          </p>
+        )}
         <button
           className="button button--secondary button--small"
           type="button"
@@ -112,6 +157,13 @@ export function XpProgressCard({
             L’XP récompense uniquement les contributions réellement validées. Les vues, recherches,
             J’aime et ouvertures de l’application ne rapportent aucun point.
           </p>
+          {progress.isRoleBoosted && (
+            <p className="xp-dialog__notice">
+              Ton rôle {progress.roleBoostRole} affiche le niveau maximal actif. Ta progression
+              réelle ({progress.realExperiencePoints.toLocaleString("fr-CH")} XP) reste enregistrée
+              séparément et le classement communautaire utilise uniquement cette valeur réelle.
+            </p>
+          )}
           <section>
             <h3>Comment gagner de l’XP</h3>
             <div className="xp-rule-list">

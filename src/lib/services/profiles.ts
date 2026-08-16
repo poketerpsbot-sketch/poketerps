@@ -23,7 +23,7 @@ import { listFavorites } from "@/lib/services/favorites";
 import { getExperienceOverview } from "@/lib/services/experience";
 import { countUnreadNotifications } from "@/lib/services/notifications";
 import { publicStorageUrl } from "@/lib/services/storage-url";
-import { experienceProgress } from "@/lib/xp";
+import { effectiveExperienceProgress, experienceProgress } from "@/lib/xp";
 
 async function loadProfileSection<T>(section: string, loader: () => Promise<T>, fallback: T) {
   try {
@@ -157,6 +157,7 @@ export async function getPublicProfile(slug: string) {
       profilePhotoUrl: users.profilePhotoUrl,
       profileTitle: users.profileTitle,
       bio: users.bio,
+      role: users.role,
       level: users.level,
       experiencePoints: users.experiencePoints,
       createdAt: users.createdAt,
@@ -262,15 +263,28 @@ export async function getPublicProfile(slug: string) {
       [],
     ),
   ]);
+  const experience = await loadProfileSection(
+    "public-experience",
+    () => getExperienceOverview(profile.id, 1),
+    {
+      progress: effectiveExperienceProgress(profile.experiencePoints, profile.role),
+      realProgress: experienceProgress(profile.experiencePoints),
+      events: [],
+      rules: [],
+      levels: [],
+    },
+  );
   const { id, ...publicProfile } = profile;
   void id;
   return {
     ...publicProfile,
+    level: experience.progress.level,
+    experiencePoints: experience.progress.experiencePoints,
     ranks,
     captures: captureRows,
     reviews: reviewRows,
     badges: badgeRows,
-    experience: { progress: experienceProgress(profile.experiencePoints) },
+    experience,
   };
 }
 
@@ -609,7 +623,8 @@ export async function getMyProfile(actor: CurrentUser) {
     ),
     loadProfileSection("notifications", () => countUnreadNotifications(actor.id), 0),
     loadProfileSection("experience", () => getExperienceOverview(actor.id), {
-      progress: experienceProgress(0),
+      progress: effectiveExperienceProgress(0, actor.role),
+      realProgress: experienceProgress(0),
       events: [],
       rules: [],
       levels: [],
@@ -656,6 +671,8 @@ export async function getMyProfile(actor: CurrentUser) {
 
   return {
     ...identity,
+    level: experience.progress.level,
+    experiencePoints: experience.progress.experiencePoints,
     captureCount: Number(publishedCountRows[0]?.count ?? 0),
     telegramIdentity: {
       displayName: identity.displayName,

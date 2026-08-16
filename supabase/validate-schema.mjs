@@ -31,6 +31,7 @@ const contestExperienceMigration = read(
 const productEvolutionMigration = read(
   "./migrations/20260816090000_admin_activity_xp_badges_aromas_home.sql",
 );
+const badgeVisualMigration = read("./migrations/20260816193112_badge_visual_collection_v2.sql");
 const drizzle = read("../src/lib/db/schema.ts");
 
 assert(
@@ -109,9 +110,11 @@ assert(
   "schema.sql evolution 009 mirror is out of sync with its migration",
 );
 const productEvolutionStart = "-- Une session logique de navigateur";
+const badgeVisualHeader = "-- Evolution visuelle badges V2 (migration 20260816193112).";
 const productEvolutionBody = (source) => {
   const start = source.lastIndexOf(productEvolutionStart);
-  const end = source.lastIndexOf("\ncommit;");
+  const badgeVisual = source.indexOf(`\n${badgeVisualHeader}`, start);
+  const end = badgeVisual >= 0 ? badgeVisual : source.lastIndexOf("\ncommit;");
   assert(start >= 0 && end > start, "product evolution body is missing");
   return source.slice(start, end).trimEnd();
 };
@@ -119,6 +122,17 @@ assert(
   schema.includes(productEvolutionHeader) &&
     productEvolutionBody(schema) === productEvolutionBody(productEvolutionMigration),
   "schema.sql product evolution mirror is out of sync with its migration",
+);
+const badgeVisualUrls = matches(badgeVisualMigration, /then '(\/badges\/v2\/[^']+)'/g);
+assert(schema.includes(badgeVisualHeader), "schema.sql badge visual V2 snapshot is missing");
+assert(
+  badgeVisualUrls.length === 19 && uniqueSorted(badgeVisualUrls).length === 19,
+  "badge visual migration must map 19 unique assets",
+);
+assert(
+  (badgeVisualMigration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (badgeVisualMigration.match(/^commit;$/gm) ?? []).length === 1,
+  "badge visual migration must contain one transaction",
 );
 assert((schema.match(/^begin;$/gm) ?? []).length === 1, "schema must contain exactly one BEGIN");
 assert((schema.match(/^commit;$/gm) ?? []).length === 1, "schema must contain exactly one COMMIT");

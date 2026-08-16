@@ -4347,6 +4347,15 @@ revoke all on public.aroma_families,public.aromas,public.entry_aromas from publi
 grant select on public.aroma_families,public.aromas,public.entry_aromas to anon,authenticated;
 grant all on public.aroma_families,public.aromas,public.entry_aromas to service_role;
 
+-- Evolution visuelle badges V2 (migration 20260816193112).
+update public.badges set image_url = '/badges/v2/' || slug ||
+  case when slug in ('role-owner','role-admin','role-moderator') then '.webp' else '.svg' end,
+  updated_at=now()
+where slug in ('role-owner','role-admin','role-moderator','role-editor','trainer-of-the-week',
+  'trainer-of-the-month','capture-streak','top-trainer','historic-contributor','first-review',
+  'captures-10','captures-50','captures-100','contest-winner','level-1','level-5','level-10',
+  'level-15','partner');
+
 
 
 commit;

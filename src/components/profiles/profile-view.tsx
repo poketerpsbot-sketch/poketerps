@@ -30,13 +30,14 @@ import { EntryGrid } from "@/components/entries/entry-card";
 import { XpProgressCard } from "@/components/profiles/xp-progress-card";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, SectionHeading, StatusPill, formatDate } from "@/components/ui/states";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import {
   canAccessFullAdminConsole,
   canAccessModerationConsole,
   roleLabels,
 } from "@/lib/auth/ui-access";
 import type { UserRole } from "@/lib/db/schema";
-import { experienceProgress } from "@/lib/xp";
+import { effectiveExperienceProgress } from "@/lib/xp";
 
 export type ProfileStats = {
   entriesAdded?: number;
@@ -137,7 +138,7 @@ function profileTitle(profile: PublicProfileDto) {
 function experienceForProfile(profile: ProfilePayload): ExperienceOverviewDto {
   return (
     profile.experience ?? {
-      progress: experienceProgress(profile.experiencePoints ?? 0),
+      progress: effectiveExperienceProgress(profile.experiencePoints ?? 0, profile.role),
       events: [],
       rules: [],
       levels: [],
@@ -145,27 +146,13 @@ function experienceForProfile(profile: ProfilePayload): ExperienceOverviewDto {
   );
 }
 
-function initials(value: string) {
-  return (
-    value
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part.charAt(0))
-      .join("")
-      .toLocaleUpperCase("fr-FR") || "?"
-  );
-}
-
-function safeAvatarUrl(value?: string | null) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
+const rarityLabels: Record<string, string> = {
+  COMMON: "Commun",
+  UNCOMMON: "Peu commun",
+  RARE: "Rare",
+  EPIC: "Épique",
+  LEGENDARY: "Légendaire",
+};
 
 const userRoles: UserRole[] = ["OWNER", "ADMIN", "MODERATOR", "EDITOR", "MEMBER", "BANNED"];
 
@@ -175,22 +162,13 @@ function normalizedRole(value?: string | null): UserRole {
 
 export function ProfileHero({ profile }: { profile: PublicProfileDto }) {
   const username = profileUsername(profile);
-  const avatarUrl = safeAvatarUrl(profile.profilePhotoUrl);
   const role = profile.role ? normalizedRole(profile.role) : null;
 
   return (
     <section className="profile-hero">
       <div>
         <div className="profile-identity">
-          <span
-            className={`avatar${avatarUrl ? " profile-avatar--image" : ""}`}
-            style={avatarUrl ? { backgroundImage: `url(${avatarUrl})` } : undefined}
-            role={avatarUrl ? "img" : undefined}
-            aria-label={avatarUrl ? `Photo de profil de ${profile.displayName}` : undefined}
-            aria-hidden={avatarUrl ? undefined : true}
-          >
-            {!avatarUrl && initials(profile.displayName)}
-          </span>
+          <UserAvatar displayName={profile.displayName} src={profile.profilePhotoUrl} eager />
           <div className="profile-identity__copy">
             <p className="eyebrow">Profil de Dresseur</p>
             <h1>{profile.displayName}</h1>
@@ -389,7 +367,7 @@ function BadgeGallery({ badges }: { badges: BadgeDto[] }) {
             <p>{badge.description ?? "Récompense communautaire"}</p>
             {badge.rarity && (
               <span className={`badge-rarity badge-rarity--${badge.rarity.toLocaleLowerCase()}`}>
-                {badge.rarity}
+                {rarityLabels[badge.rarity.toLocaleUpperCase()] ?? badge.rarity}
               </span>
             )}
             <small>

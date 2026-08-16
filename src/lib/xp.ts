@@ -16,6 +16,9 @@ export const BASE_LEVELS = [
   { level: 15, threshold: 10_250, title: "Légende PokéTerps" },
 ] as const;
 
+export type ExperienceLevel = { level: number; threshold: number; title: string };
+export type ExperienceDisplayRole = "OWNER" | "ADMIN" | string | null | undefined;
+
 const RARE_TITLES = ["Légende confirmée", "Sage du Pokédex", "Icône des Archives"] as const;
 
 export function experienceThresholdForLevel(level: number): number {
@@ -56,5 +59,66 @@ export function experienceProgress(experiencePoints: number) {
     nextThreshold,
     remaining: Math.max(0, nextThreshold - xp),
     percent: Math.min(100, Math.max(0, ((xp - currentThreshold) / span) * 100)),
+  };
+}
+
+export function experienceProgressFromLevels(
+  experiencePoints: number,
+  definitions: readonly ExperienceLevel[],
+) {
+  const levels = [...definitions]
+    .filter(
+      (item) => Number.isFinite(item.level) && Number.isFinite(item.threshold) && item.level > 0,
+    )
+    .sort((left, right) => left.level - right.level);
+  if (!levels.length) return experienceProgress(experiencePoints);
+  const xp = Math.max(0, Math.floor(experiencePoints));
+  const current = [...levels].reverse().find((item) => item.threshold <= xp) ?? levels[0];
+  const next = levels.find((item) => item.level > current.level) ?? current;
+  const isMaxLevel = next.level === current.level;
+  const span = Math.max(1, next.threshold - current.threshold);
+  return {
+    level: current.level,
+    title: current.title,
+    experiencePoints: xp,
+    currentThreshold: current.threshold,
+    nextThreshold: next.threshold,
+    remaining: isMaxLevel ? 0 : Math.max(0, next.threshold - xp),
+    percent: isMaxLevel ? 100 : Math.min(100, Math.max(0, ((xp - current.threshold) / span) * 100)),
+    isMaxLevel,
+  };
+}
+
+export function effectiveExperienceProgress(
+  realExperiencePoints: number,
+  role: ExperienceDisplayRole,
+  definitions: readonly ExperienceLevel[] = BASE_LEVELS,
+) {
+  const realProgress = experienceProgressFromLevels(realExperiencePoints, definitions);
+  if (role !== "OWNER" && role !== "ADMIN") {
+    return {
+      ...realProgress,
+      realExperiencePoints: realProgress.experiencePoints,
+      isRoleBoosted: false,
+      roleBoostRole: null,
+    };
+  }
+  const highest = [...definitions]
+    .filter((item) => Number.isFinite(item.level) && Number.isFinite(item.threshold))
+    .sort((left, right) => right.level - left.level)[0];
+  if (!highest) return effectiveExperienceProgress(realExperiencePoints, null, BASE_LEVELS);
+  const boostedRole: "OWNER" | "ADMIN" = role === "OWNER" ? "OWNER" : "ADMIN";
+  return {
+    level: highest.level,
+    title: highest.title,
+    experiencePoints: highest.threshold,
+    currentThreshold: highest.threshold,
+    nextThreshold: highest.threshold,
+    remaining: 0,
+    percent: 100,
+    isMaxLevel: true,
+    realExperiencePoints: realProgress.experiencePoints,
+    isRoleBoosted: true,
+    roleBoostRole: boostedRole,
   };
 }

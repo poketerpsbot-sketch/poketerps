@@ -40,6 +40,7 @@ import type {
 import { submitJson } from "@/components/forms/form-api";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, StatusPill } from "@/components/ui/states";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 function formatDateTime(value?: string | null) {
   if (!value) return "Date inconnue";
@@ -74,16 +75,6 @@ function platformLabel(value: string) {
   return labels[value] ?? value;
 }
 
-function safeAvatarUrl(value?: string | null) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
 export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDetailDto }) {
   const [notes, setNotes] = useState(initialDetail.notes);
   const [messages, setMessages] = useState(initialDetail.telegramMessages);
@@ -95,7 +86,6 @@ export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDet
   const [activityFilter, setActivityFilter] = useState<(typeof activityCategories)[number]>("Tout");
   const [visibleActivityCount, setVisibleActivityCount] = useState(20);
   const { user, stats } = initialDetail;
-  const avatarUrl = safeAvatarUrl(user.profilePhotoUrl);
   const filteredActivity = initialDetail.activity.filter(
     (event) => activityFilter === "Tout" || activityCategory(event.eventType) === activityFilter,
   );
@@ -241,15 +231,12 @@ export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDet
   return (
     <div className="admin-user-detail page-stack">
       <section className="content-panel admin-user-identity">
-        <div
-          className={`admin-user-identity__avatar${avatarUrl ? " ranking-avatar--image" : ""}`}
-          style={avatarUrl ? { backgroundImage: `url(${avatarUrl})` } : undefined}
-          role={avatarUrl ? "img" : undefined}
-          aria-label={avatarUrl ? `Photo de profil de ${user.displayName}` : undefined}
-          aria-hidden={avatarUrl ? undefined : true}
-        >
-          {!avatarUrl && user.displayName.charAt(0).toLocaleUpperCase("fr-FR")}
-        </div>
+        <UserAvatar
+          className="admin-user-identity__avatar"
+          displayName={user.displayName}
+          src={user.profilePhotoUrl}
+          eager
+        />
         <div className="admin-user-identity__copy">
           <p className="eyebrow">Dossier interne PokéTerps</p>
           <h2>{user.displayName}</h2>

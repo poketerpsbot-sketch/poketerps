@@ -4,6 +4,7 @@ import { Award, Eye, Flame, Heart, Medal, Star, Trophy, Zap } from "lucide-react
 import type { EntryRankingDto, EntrySummaryDto, TrainerRankingDto } from "@/components/data/types";
 import { EntryCard } from "@/components/entries/entry-card";
 import { EmptyState, ErrorState, SectionHeading, formatCount } from "@/components/ui/states";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 export type RankingPeriod = "week" | "month" | "all";
 export type RankingMetric = "views" | "likes" | "rating" | "recent";
@@ -36,41 +37,14 @@ function profile(item: TrainerRankingDto) {
   );
 }
 
-function initials(value: string) {
-  return (
-    value
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part.charAt(0))
-      .join("")
-      .toLocaleUpperCase("fr-FR") || "?"
-  );
-}
-
-function safeAvatarUrl(value?: string | null) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
 function RankingAvatar({ item }: { item: TrainerRankingDto }) {
   const user = profile(item);
-  const avatarUrl = safeAvatarUrl(user.profilePhotoUrl ?? item.profilePhotoUrl);
   return (
-    <span
-      className={"avatar ranking-avatar" + (avatarUrl ? " ranking-avatar--image" : "")}
-      style={avatarUrl ? { backgroundImage: "url(" + avatarUrl + ")" } : undefined}
-      role={avatarUrl ? "img" : undefined}
-      aria-label={avatarUrl ? "Photo de profil de " + user.displayName : undefined}
-      aria-hidden={avatarUrl ? undefined : true}
-    >
-      {!avatarUrl && initials(user.displayName)}
-    </span>
+    <UserAvatar
+      className="ranking-avatar"
+      displayName={user.displayName}
+      src={user.profilePhotoUrl ?? item.profilePhotoUrl}
+    />
   );
 }
 

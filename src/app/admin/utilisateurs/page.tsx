@@ -5,6 +5,7 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import { UserAdminActions } from "@/components/admin/user-admin-actions";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 export const metadata: Metadata = { title: "Utilisateurs · Administration" };
 
@@ -33,40 +34,13 @@ type Pagination = { limit: number; offset: number; total: number };
 
 const allowedRoles = new Set(["OWNER", "ADMIN", "MODERATOR", "EDITOR", "MEMBER", "BANNED"]);
 
-function initials(value: string) {
-  return (
-    value
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part.charAt(0))
-      .join("")
-      .toLocaleUpperCase("fr-FR") || "?"
-  );
-}
-
-function safeAvatarUrl(value?: string | null) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
 function AdminUserAvatar({ user }: { user: AdminUser }) {
-  const avatarUrl = safeAvatarUrl(user.profilePhotoUrl);
   return (
-    <span
-      className={`avatar ranking-avatar${avatarUrl ? " ranking-avatar--image" : ""}`}
-      style={avatarUrl ? { backgroundImage: `url(${avatarUrl})` } : undefined}
-      role={avatarUrl ? "img" : undefined}
-      aria-label={avatarUrl ? `Photo de profil de ${user.displayName}` : undefined}
-      aria-hidden={avatarUrl ? undefined : true}
-    >
-      {!avatarUrl && initials(user.displayName)}
-    </span>
+    <UserAvatar
+      className="ranking-avatar"
+      displayName={user.displayName}
+      src={user.profilePhotoUrl}
+    />
   );
 }
 
