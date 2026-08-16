@@ -7,6 +7,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HomeScanner } from "@/components/home/home-scanner";
+import { XpProgressCard } from "@/components/profiles/xp-progress-card";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { telegramPhotoUpdate } from "@/lib/auth/telegram-photo";
 
@@ -29,7 +30,10 @@ describe("photo Telegram", () => {
 });
 
 describe("résultat du scanner", () => {
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
 
   it("enchaîne analyse, détection et carte de résultat avec nouveau scan", async () => {
     vi.useFakeTimers();
@@ -55,6 +59,70 @@ describe("résultat du scanner", () => {
     await act(async () => vi.advanceTimersByTimeAsync(220));
     expect(screen.getByText("Scan terminé")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Scanner à nouveau" })).toBeTruthy();
+  });
+
+  it("varie les résultats et ne répète pas les quatre derniers scans", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    render(
+      <HomeScanner
+        dailyDiscovery={{
+          id: "entry-1",
+          slug: "static-sift",
+          name: "Static Sift",
+          category: { name: "Hash", slug: "hash" },
+        }}
+        trendingEntries={[]}
+        contest={null}
+        publishedEntryCount={18}
+      />,
+    );
+
+    const labels = new Set<string>();
+    for (let index = 0; index < 5; index += 1) {
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: index === 0 ? "Scanner le Pokédex" : "Scanner à nouveau",
+        }),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(1_070));
+      const label = document.querySelector(".scan-result-card__signal strong")?.textContent;
+      expect(label).toBeTruthy();
+      labels.add(label!);
+    }
+
+    expect(labels.size).toBe(5);
+    expect(labels).toContain("Découverte du Pokédex");
+    expect(labels).toContain("Mission communautaire");
+  });
+});
+
+describe("jauge XP maximale", () => {
+  it("affiche un remplissage complet et le bon titre pour un rôle renforcé", () => {
+    const { container } = render(
+      <XpProgressCard
+        experience={{
+          progress: {
+            level: 15,
+            title: "Légende PokéTerps",
+            experiencePoints: 10_250,
+            realExperiencePoints: 320,
+            currentThreshold: 8_350,
+            nextThreshold: 10_250,
+            remaining: 0,
+            percent: 100,
+            isMaxLevel: true,
+            isRoleBoosted: true,
+            roleBoostRole: "OWNER",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("Niveau 15 · Légende PokéTerps").length).toBeGreaterThan(0);
+    expect(screen.getByText("Niveau maximal actif · jauge synchronisée à 100 %")).toBeTruthy();
+    expect(container.querySelector(".xp-progress.is-complete")).toBeTruthy();
+    expect(container.querySelector<HTMLElement>(".xp-progress__fill")?.style.width).toBe("100%");
   });
 });
 

@@ -1,9 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { Archive, BarChart3, Dices, Flame, Gift, ScanSearch, Sparkles, Trophy } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  Archive,
+  BarChart3,
+  Dices,
+  FilePlus2,
+  Flame,
+  Gift,
+  Medal,
+  Search,
+  ScanSearch,
+  Sparkles,
+  Telescope,
+  Trophy,
+  UsersRound,
+} from "lucide-react";
 
-import type { EntrySummaryDto, HomeDto, TrainerRankingDto } from "@/components/data/types";
+import type {
+  EntrySummaryDto,
+  HomeDto,
+  PartnerDto,
+  TrainerRankingDto,
+} from "@/components/data/types";
 import { ScanResultCard, type ScanResult } from "@/components/home/scan-result-card";
 
 type ScanPhase = "idle" | "scanning" | "detected" | "result";
@@ -25,70 +44,73 @@ function asStats(items: Array<{ label: string; value: string } | null>) {
 export function HomeScanner({
   dailyDiscovery,
   trendingEntries,
+  latestEntries = [],
   contest,
   viewer,
   trainer,
+  trainers = [],
+  partner,
   publishedEntryCount,
 }: {
   dailyDiscovery?: EntrySummaryDto | null;
   trendingEntries: EntrySummaryDto[];
+  latestEntries?: EntrySummaryDto[];
   contest?: NonNullable<HomeDto["activeContest"]> | null;
   viewer?: HomeDto["viewer"];
   trainer?: TrainerRankingDto;
+  trainers?: TrainerRankingDto[];
+  partner?: PartnerDto | null;
   publishedEntryCount: number;
 }) {
   const [phase, setPhase] = useState<ScanPhase>("idle");
   const [result, setResult] = useState<ScanResult | null>(null);
+  const recentResultIdsRef = useRef<string[]>([]);
+  const scanInProgressRef = useRef(false);
   const scanning = phase === "scanning" || phase === "detected";
 
   function buildPossibilities(): ScanResult[] {
     const items: ScanResult[] = [];
-    if (dailyDiscovery) {
+    const usedEntrySlugs = new Set<string>();
+
+    function addEntry(entry: EntrySummaryDto, kind: "discovery" | "trend" | "recent") {
+      if (usedEntrySlugs.has(entry.slug)) return;
+      usedEntrySlugs.add(entry.slug);
+      const rating = Number(entry.averageRating ?? 0);
       items.push({
-        kind: "discovery",
-        label: "Découverte du Pokédex",
-        title: dailyDiscovery.name,
-        subtitle: entrySubtitle(dailyDiscovery),
-        href: `/fiches/${encodeURIComponent(dailyDiscovery.slug)}`,
-        action: "Découvrir",
-        icon: Dices,
-        imageUrl: dailyDiscovery.primaryImageUrl,
+        id: `entry:${entry.slug}`,
+        kind,
+        label:
+          kind === "discovery"
+            ? "Découverte du Pokédex"
+            : kind === "trend"
+              ? "Fiche tendance"
+              : "Archive fraîchement publiée",
+        title: entry.name,
+        subtitle: entrySubtitle(entry),
+        href: `/fiches/${encodeURIComponent(entry.slug)}`,
+        action: kind === "discovery" ? "Découvrir" : "Voir la fiche",
+        icon: kind === "discovery" ? Dices : kind === "trend" ? Flame : Telescope,
+        imageUrl: entry.primaryImageUrl,
         stats: asStats([
-          Number(dailyDiscovery.viewCount ?? 0) > 0
-            ? { label: "Vues", value: Number(dailyDiscovery.viewCount).toLocaleString("fr-CH") }
+          { label: "Vues", value: Number(entry.viewCount ?? 0).toLocaleString("fr-CH") },
+          Number(entry.likeCount ?? 0) > 0
+            ? { label: "J’aime", value: Number(entry.likeCount).toLocaleString("fr-CH") }
             : null,
-          Number(dailyDiscovery.likeCount ?? 0) > 0
-            ? { label: "J’aime", value: Number(dailyDiscovery.likeCount).toLocaleString("fr-CH") }
-            : null,
-        ]),
-      });
-    }
-    const trend = trendingEntries[Math.floor(Math.random() * Math.max(1, trendingEntries.length))];
-    if (trend) {
-      const trendRating = Number(trend.averageRating ?? 0);
-      items.push({
-        kind: "trend",
-        label: "Fiche tendance",
-        title: trend.name,
-        subtitle: entrySubtitle(trend),
-        href: `/fiches/${encodeURIComponent(trend.slug)}`,
-        action: "Voir la fiche",
-        icon: Flame,
-        imageUrl: trend.primaryImageUrl,
-        stats: asStats([
-          { label: "Vues", value: Number(trend.viewCount ?? 0).toLocaleString("fr-CH") },
-          Number(trend.likeCount ?? 0) > 0
-            ? { label: "J’aime", value: Number(trend.likeCount).toLocaleString("fr-CH") }
-            : null,
-          trendRating > 0
+          rating > 0
             ? {
                 label: "Note",
-                value: `${trendRating.toLocaleString("fr-CH", { maximumFractionDigits: 1 })} / 5`,
+                value: `${rating.toLocaleString("fr-CH", { maximumFractionDigits: 1 })} / 5`,
               }
             : null,
         ]),
       });
     }
+
+    if (dailyDiscovery) {
+      addEntry(dailyDiscovery, "discovery");
+    }
+    trendingEntries.slice(0, 4).forEach((entry) => addEntry(entry, "trend"));
+    latestEntries.slice(0, 5).forEach((entry) => addEntry(entry, "recent"));
     if (contest) {
       const participants =
         contest.participantCount ??
@@ -96,6 +118,7 @@ export function HomeScanner({
           ? Math.max(0, contest.maxParticipants - contest.remainingParticipants)
           : null);
       items.push({
+        id: `contest:${String(contest.id)}`,
         kind: "contest",
         label: "Concours détecté",
         title: contest.title,
@@ -116,12 +139,25 @@ export function HomeScanner({
             : null,
         ]),
       });
+    } else {
+      items.push({
+        id: "contest-hub",
+        kind: "contest-hub",
+        label: "Radar des concours",
+        title: "Le prochain défi t’attend",
+        subtitle: "Explore les concours, leurs récompenses et les prochaines inscriptions.",
+        href: "/concours",
+        action: "Voir les concours",
+        icon: Gift,
+        stats: [{ label: "Mode", value: "Compétition" }],
+      });
     }
     if (viewer?.progress) {
       items.push({
+        id: "viewer-progress",
         kind: "progress",
         label: "Analyse du Dresseur",
-        title: `Niveau ${viewer.level} · ${viewer.profileTitle ?? viewer.progress.title ?? "Dresseur"}`,
+        title: `Niveau ${viewer.level} · ${viewer.progress.title ?? viewer.profileTitle ?? "Dresseur"}`,
         subtitle: viewer.progress.isMaxLevel
           ? "Niveau maximal actif atteint."
           : `Plus que ${viewer.progress.remaining} XP avant le niveau ${(viewer.level ?? 1) + 1}.`,
@@ -137,24 +173,47 @@ export function HomeScanner({
         ],
       });
     }
-    const profile = trainer?.profile ?? trainer?.user;
-    if (trainer && profile) {
+    const trainerCandidates = [trainer, ...trainers].filter(
+      (candidate): candidate is TrainerRankingDto => Boolean(candidate),
+    );
+    const usedTrainerSlugs = new Set<string>();
+    for (const candidate of trainerCandidates.slice(0, 4)) {
+      const profile = candidate.profile ?? candidate.user;
+      const slug = profile?.publicSlug ?? profile?.slug;
+      if (!profile || !slug || usedTrainerSlugs.has(slug)) continue;
+      usedTrainerSlugs.add(slug);
       items.push({
+        id: `trainer:${slug}`,
         kind: "trainer",
         label: "Dresseur détecté",
         title: profile.telegramUsername ? `@${profile.telegramUsername}` : profile.displayName,
         subtitle: profile.displayName,
-        href: `/profil/${encodeURIComponent(profile.publicSlug ?? profile.slug ?? "")}`,
+        href: `/profil/${encodeURIComponent(slug)}`,
         action: "Voir le profil",
         icon: Trophy,
         avatarUrl: profile.profilePhotoUrl,
         stats: [
-          { label: "Niveau", value: String(profile.level ?? trainer.level ?? 1) },
-          { label: "Captures", value: Number(trainer.captures ?? 0).toLocaleString("fr-CH") },
+          { label: "Niveau", value: String(profile.level ?? candidate.level ?? 1) },
+          { label: "Captures", value: Number(candidate.captures ?? 0).toLocaleString("fr-CH") },
         ],
       });
     }
+    if (partner) {
+      items.push({
+        id: `partner:${partner.slug}`,
+        kind: "partner",
+        label: "Partenaire sous le radar",
+        title: partner.name,
+        subtitle: partner.description,
+        href: `/partenaires/${encodeURIComponent(partner.slug)}`,
+        action: "Découvrir",
+        icon: UsersRound,
+        imageUrl: partner.logoUrl ?? partner.coverUrl,
+        stats: [{ label: "Signal", value: "Partenaire vérifié" }],
+      });
+    }
     items.push({
+      id: "archive-overview",
       kind: "archive",
       label: "Signal des archives",
       title: `${publishedEntryCount.toLocaleString("fr-CH")} fiches publiées`,
@@ -164,19 +223,73 @@ export function HomeScanner({
       icon: Archive,
       stats: [{ label: "Signal", value: "Archives en ligne" }],
     });
+    items.push(
+      {
+        id: "community-mission",
+        kind: "mission",
+        label: "Mission communautaire",
+        title: "Documente une nouvelle découverte",
+        subtitle: "Ajoute une fiche complète : l’équipe la vérifiera avant sa publication.",
+        href: "/capturer",
+        action: "Proposer une fiche",
+        icon: FilePlus2,
+        stats: [{ label: "Récompense", value: "XP après validation" }],
+      },
+      {
+        id: "ranking-challenge",
+        kind: "ranking",
+        label: "Défi des Dresseurs",
+        title: "Grimpe dans les classements",
+        subtitle: "Compare tes captures sur la semaine, le mois et le classement général.",
+        href: "/classements",
+        action: "Voir les classements",
+        icon: Medal,
+        stats: [
+          { label: "Périodes", value: "3" },
+          { label: "Objectif", value: "Top Dresseur" },
+        ],
+      },
+      {
+        id: "advanced-search",
+        kind: "search",
+        label: "Recherche avancée",
+        title: "Trouve ta prochaine fiche",
+        subtitle:
+          "Combine catégories, notes, popularité et caractéristiques pour explorer autrement.",
+        href: "/explorer",
+        action: "Lancer une recherche",
+        icon: Search,
+        stats: [{ label: "Mode", value: "Filtres avancés" }],
+      },
+    );
     return items;
   }
 
   async function scan() {
-    if (scanning) return;
+    if (scanInProgressRef.current) return;
+    scanInProgressRef.current = true;
     setPhase("scanning");
     setResult(null);
     await new Promise((resolve) => setTimeout(resolve, 850));
     const choices = buildPossibilities();
-    setResult(choices[Math.floor(Math.random() * choices.length)] ?? null);
+    const recentResultIds = recentResultIdsRef.current;
+    const unseenChoices = choices.filter((choice) => !recentResultIds.includes(choice.id));
+    const eligibleChoices = unseenChoices.length
+      ? unseenChoices
+      : choices.filter((choice) => choice.id !== recentResultIds.at(-1));
+    const pool = eligibleChoices.length ? eligibleChoices : choices;
+    const selected = pool[Math.floor(Math.random() * pool.length)] ?? null;
+    setResult(selected);
+    if (selected) {
+      recentResultIdsRef.current = [
+        ...recentResultIds.filter((id) => id !== selected.id),
+        selected.id,
+      ].slice(-4);
+    }
     setPhase("detected");
     await new Promise((resolve) => setTimeout(resolve, 220));
     setPhase("result");
+    scanInProgressRef.current = false;
   }
 
   return (

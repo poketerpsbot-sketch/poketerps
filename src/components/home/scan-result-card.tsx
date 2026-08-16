@@ -7,7 +7,20 @@ import Link from "next/link";
 import { UserAvatar } from "@/components/ui/user-avatar";
 
 export type ScanResult = {
-  kind: "trend" | "discovery" | "contest" | "progress" | "trainer" | "archive";
+  id: string;
+  kind:
+    | "trend"
+    | "discovery"
+    | "recent"
+    | "contest"
+    | "contest-hub"
+    | "progress"
+    | "trainer"
+    | "partner"
+    | "ranking"
+    | "search"
+    | "mission"
+    | "archive";
   label: string;
   title: string;
   subtitle?: string | null;

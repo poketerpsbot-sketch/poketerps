@@ -55,7 +55,7 @@ export default async function HomePage() {
           </h1>
           <p>
             {viewer
-              ? `Niveau ${viewer.level ?? 1} · ${viewer.profileTitle ?? "Dresseur"}`
+              ? `Niveau ${viewer.level ?? 1} · ${viewer.progress?.title ?? viewer.profileTitle ?? "Dresseur"}`
               : "Découvre, documente et partage des fiches vérifiées par la communauté."}
           </p>
         </div>
@@ -63,14 +63,17 @@ export default async function HomePage() {
           <div className="xp-compact">
             <div className="xp-compact__labels">
               <strong>
-                {viewer.experiencePoints ?? 0} / {viewer.progress.nextThreshold} XP
+                {viewer.progress.experiencePoints ?? viewer.experiencePoints ?? 0} /{" "}
+                {viewer.progress.nextThreshold} XP
               </strong>
               <span>
-                {viewer.progress.remaining} XP avant le niveau {(viewer.level ?? 1) + 1}
+                {viewer.progress.isMaxLevel
+                  ? "Niveau maximal actif · jauge à 100 %"
+                  : `${viewer.progress.remaining} XP avant le niveau ${(viewer.level ?? 1) + 1}`}
               </span>
             </div>
             <div
-              className="xp-progress xp-progress--device"
+              className={`xp-progress xp-progress--device${viewer.progress.isMaxLevel ? " is-complete" : ""}`}
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -129,9 +132,12 @@ export default async function HomePage() {
         <HomeScanner
           dailyDiscovery={home?.dailyDiscovery}
           trendingEntries={trending}
+          latestEntries={latest}
           contest={home?.activeContest}
           viewer={viewer}
           trainer={trainers[0]}
+          trainers={trainers}
+          partner={featuredPartner}
           publishedEntryCount={home?.publishedEntryCount ?? 0}
         />
 

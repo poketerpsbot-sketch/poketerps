@@ -97,7 +97,7 @@ export function XpProgressCard({
           </p>
         )}
         <div
-          className="xp-progress xp-progress--device"
+          className={`xp-progress xp-progress--device${progress.isMaxLevel ? " is-complete" : ""}`}
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
