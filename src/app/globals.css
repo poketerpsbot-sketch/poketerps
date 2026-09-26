@@ -6432,6 +6432,8 @@ body.is-age-gate-open .app-shell {
   align-items: center;
   gap: 0.35rem;
   max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: 0.25rem 0.55rem;
   border: 2px solid var(--ink);
   border-radius: 999px;
@@ -6464,8 +6466,22 @@ body.is-age-gate-open .app-shell {
 
 .ranking-badge--epic,
 .ranking-badge--legendary {
-  background: var(--ink);
-  color: var(--cream);
+  color: var(--ink);
+}
+
+.ranking-badge--epic {
+  background: #eee0ff;
+}
+
+.ranking-badge--legendary {
+  background: #fff0b8;
+}
+
+.ranking-badge > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .home-return-summary summary {
@@ -6722,18 +6738,22 @@ body.is-age-gate-open .app-shell {
     align-items: flex-start;
   }
   .competition-podium {
-    gap: 3px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
   }
   .competition-podium .podium-card {
-    min-height: 202px;
-    padding: 9px 3px;
+    width: 100%;
+    min-height: 0;
+    padding: 14px 12px;
+    order: initial;
   }
   .competition-podium .podium-card--first {
-    min-height: 224px;
-    padding-top: 13px;
+    min-height: 0;
+    padding-top: 14px;
   }
   .competition-podium .podium-card--second {
-    min-height: 210px;
+    min-height: 0;
   }
   .competition-podium .podium-card .avatar {
     width: 42px;
