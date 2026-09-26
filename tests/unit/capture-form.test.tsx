@@ -28,6 +28,22 @@ const category = {
   fields: [],
 } as unknown as CategoryDto;
 
+const aromaFamilies = [
+  {
+    id: "fruity",
+    name: "Fruité",
+    aromas: [
+      { id: "red-fruits", name: "Fruits rouges", slug: "fruits-rouges" },
+      { id: "strawberry", name: "Fraise", slug: "fraise" },
+    ],
+  },
+  {
+    id: "fuel",
+    name: "Carburant",
+    aromas: [{ id: "diesel", name: "Diesel", slug: "diesel" }],
+  },
+] as unknown as AromaFamilyDto[];
+
 describe("capture form wizard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -66,5 +82,31 @@ describe("capture form wizard", () => {
     expect(submitJson).toHaveBeenCalledTimes(2);
     expect(vi.mocked(submitJson).mock.calls[1]?.[0]).toBe("/api/entries/draft-1");
     expect(vi.mocked(submitJson).mock.calls[1]?.[1]).toBe("PATCH");
+  });
+
+  it("keeps aroma families collapsed and shows direct search results", async () => {
+    render(<CaptureForm categories={[category]} aromaFamilies={aromaFamilies} />);
+
+    fireEvent.change(screen.getByLabelText(/Nom de la fiche/), {
+      target: { value: "Hash Rosin" },
+    });
+    fireEvent.change(screen.getByLabelText(/Catégorie/), {
+      target: { value: "category-id" },
+    });
+    await waitFor(() => expect(screen.getByRole("option", { name: "Hash Rosin" })).toBeTruthy());
+    fireEvent.change(screen.getByLabelText(/Sous-catégorie/), {
+      target: { value: "subcategory-id" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Continuer/ }));
+    await waitFor(() => expect(screen.getByText("Ajouter quelques détails")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /Passer cette étape/ }));
+    await waitFor(() => expect(screen.getByText("Enrichir la fiche")).toBeTruthy());
+
+    expect(screen.queryByText("Fraise")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Rechercher un arôme"), {
+      target: { value: "diesel" },
+    });
+    expect(screen.getByText("Diesel")).toBeTruthy();
+    expect(screen.queryByText("Fraise")).toBeNull();
   });
 });

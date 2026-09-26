@@ -5561,6 +5561,74 @@ body.is-age-gate-open .app-shell {
   font-weight: 800;
 }
 
+.aroma-picker__selected {
+  display: grid;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--red-700) 35%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--red-100) 55%, var(--paper));
+}
+
+.aroma-picker__selected > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.aroma-picker__selected span,
+.aroma-picker__family-tab {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.aroma-picker__selected span {
+  padding: 5px 8px;
+}
+
+.aroma-picker__family-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.aroma-picker__family-tab {
+  min-height: 42px;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.aroma-picker__family-tab:hover,
+.aroma-picker__family-tab.is-active {
+  border-color: var(--red-700);
+  background: var(--red-700);
+  color: white;
+}
+
+.aroma-picker__family-tab small {
+  opacity: 0.75;
+}
+
+.aroma-picker__search-results,
+.aroma-picker__family--open {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 2px solid color-mix(in srgb, var(--ink) 70%, transparent);
+  border-radius: 0.8rem;
+}
+
+.aroma-picker__search-results .field__hint {
+  margin: 0 0 0.65rem;
+}
+
+.aroma-picker__browse-hint {
+  margin: 0;
+}
+
 .aroma-picker__families {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5598,8 +5666,17 @@ body.is-age-gate-open .app-shell {
 }
 
 .aroma-picker__option > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 750;
+}
+
+.aroma-picker__option > span small {
+  color: #716a63;
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 
 .aroma-picker__option label {

@@ -297,6 +297,7 @@ function AromaSelector({
   onCustomLabelChange: (label: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [openFamilyId, setOpenFamilyId] = useState<string | null>(null);
   const normalizedQuery = query.trim().toLocaleLowerCase("fr");
   const filteredFamilies = families
     .map((family) => ({
@@ -309,10 +310,64 @@ function AromaSelector({
       }),
     }))
     .filter((family) => family.aromas.length > 0);
+  const matchingAromas = filteredFamilies.flatMap((family) =>
+    family.aromas.map((aroma) => ({ aroma, familyName: family.name })),
+  );
+  const selectedAromas = families
+    .flatMap((family) => family.aromas)
+    .filter(
+      (aroma) =>
+        String(aroma.id) === primaryAromaId || secondaryAromaIds.includes(String(aroma.id)),
+    );
   const other = families.flatMap((family) => family.aromas).find((aroma) => aroma.slug === "autre");
   const customSelected = Boolean(
     other && (String(other.id) === primaryAromaId || secondaryAromaIds.includes(String(other.id))),
   );
+
+  function renderAromaOption(aroma: AromaFamilyDto["aromas"][number], familyName?: string) {
+    const id = String(aroma.id);
+    const isPrimary = primaryAromaId === id;
+    const isSecondary = secondaryAromaIds.includes(id);
+    return (
+      <div className="aroma-picker__option" key={id}>
+        <span>
+          {aroma.name}
+          {familyName && <small>{familyName}</small>}
+        </span>
+        <label title={`Définir ${aroma.name} comme arôme principal`}>
+          <input
+            type="radio"
+            name="primary-aroma"
+            value={id}
+            checked={isPrimary}
+            onChange={() => {
+              onPrimaryChange(id);
+              if (isSecondary) {
+                onSecondaryChange(secondaryAromaIds.filter((value) => value !== id));
+              }
+            }}
+          />
+          Principal
+        </label>
+        <label title={`Ajouter ${aroma.name} aux arômes secondaires`}>
+          <input
+            type="checkbox"
+            value={id}
+            checked={isSecondary}
+            disabled={isPrimary}
+            onChange={(event) =>
+              onSecondaryChange(
+                event.target.checked
+                  ? [...secondaryAromaIds, id]
+                  : secondaryAromaIds.filter((value) => value !== id),
+              )
+            }
+          />
+          Secondaire
+        </label>
+      </div>
+    );
+  }
 
   return (
     <section className="form-section aroma-picker">
@@ -335,58 +390,75 @@ function AromaSelector({
         <span>Principal : un choix</span>
         <span>Secondaires : choix multiples</span>
       </div>
-      <div className="aroma-picker__families">
-        {filteredFamilies.map((family) => (
-          <fieldset className="aroma-picker__family" key={String(family.id)}>
-            <legend>{family.name}</legend>
+      {selectedAromas.length > 0 && (
+        <div className="aroma-picker__selected" aria-live="polite">
+          <strong>Arômes choisis</strong>
+          <div>
+            {selectedAromas.map((aroma) => (
+              <span key={String(aroma.id)}>
+                {aroma.name}
+                {String(aroma.id) === primaryAromaId ? " · principal" : " · secondaire"}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {normalizedQuery ? (
+        matchingAromas.length > 0 ? (
+          <div className="aroma-picker__search-results">
+            <p className="field__hint">
+              {matchingAromas.length} résultat{matchingAromas.length > 1 ? "s" : ""} · choisis
+              directement ci-dessous
+            </p>
             <div className="aroma-picker__options">
-              {family.aromas.map((aroma) => {
-                const id = String(aroma.id);
-                const isPrimary = primaryAromaId === id;
-                const isSecondary = secondaryAromaIds.includes(id);
-                return (
-                  <div className="aroma-picker__option" key={id}>
-                    <span>{aroma.name}</span>
-                    <label title={`Définir ${aroma.name} comme arôme principal`}>
-                      <input
-                        type="radio"
-                        name="primary-aroma"
-                        value={id}
-                        checked={isPrimary}
-                        onChange={() => {
-                          onPrimaryChange(id);
-                          if (isSecondary) {
-                            onSecondaryChange(secondaryAromaIds.filter((value) => value !== id));
-                          }
-                        }}
-                      />
-                      Principal
-                    </label>
-                    <label title={`Ajouter ${aroma.name} aux arômes secondaires`}>
-                      <input
-                        type="checkbox"
-                        value={id}
-                        checked={isSecondary}
-                        disabled={isPrimary}
-                        onChange={(event) =>
-                          onSecondaryChange(
-                            event.target.checked
-                              ? [...secondaryAromaIds, id]
-                              : secondaryAromaIds.filter((value) => value !== id),
-                          )
-                        }
-                      />
-                      Secondaire
-                    </label>
-                  </div>
-                );
-              })}
+              {matchingAromas
+                .slice(0, 40)
+                .map(({ aroma, familyName }) => renderAromaOption(aroma, familyName))}
             </div>
-          </fieldset>
-        ))}
-      </div>
-      {filteredFamilies.length === 0 && (
-        <p className="empty-inline">Aucun arôme ne correspond à « {query} ».</p>
+            {matchingAromas.length > 40 && (
+              <p className="field__hint">Affine ta recherche pour voir les autres résultats.</p>
+            )}
+          </div>
+        ) : (
+          <p className="empty-inline">Aucun arôme ne correspond à « {query} ».</p>
+        )
+      ) : (
+        <>
+          <div className="aroma-picker__family-tabs" aria-label="Familles d’arômes">
+            {families.map((family) => {
+              const id = String(family.id);
+              const isOpen = openFamilyId === id;
+              return (
+                <button
+                  className={`aroma-picker__family-tab${isOpen ? " is-active" : ""}`}
+                  type="button"
+                  key={id}
+                  aria-expanded={isOpen}
+                  onClick={() => setOpenFamilyId(isOpen ? null : id)}
+                >
+                  {family.name} <small>{family.aromas.length}</small>
+                </button>
+              );
+            })}
+          </div>
+          {openFamilyId ? (
+            (() => {
+              const family = families.find((item) => String(item.id) === openFamilyId);
+              return family ? (
+                <fieldset className="aroma-picker__family aroma-picker__family--open">
+                  <legend>{family.name}</legend>
+                  <div className="aroma-picker__options">
+                    {family.aromas.map((aroma) => renderAromaOption(aroma))}
+                  </div>
+                </fieldset>
+              ) : null;
+            })()
+          ) : (
+            <p className="field__hint aroma-picker__browse-hint">
+              Recherche un arôme ou ouvre une famille pour afficher ses choix.
+            </p>
+          )}
+        </>
       )}
       {primaryAromaId && (
         <button
