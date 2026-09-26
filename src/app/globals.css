@@ -1697,7 +1697,12 @@ svg {
 .rank-row h3,
 .list-row h3 {
   margin: 0;
+  overflow: hidden;
+  color: var(--ink);
   font-size: 1rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .category-card p,
@@ -1706,8 +1711,11 @@ svg {
 .rank-row p,
 .list-row p {
   margin: 3px 0 0;
+  overflow: hidden;
   color: #6b655f;
   font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .category-card__count {
@@ -2437,12 +2445,28 @@ svg {
 
 .rank-row__value,
 .list-row__meta {
+  max-width: 8.5rem;
+  overflow: hidden;
   flex: 0 0 auto;
   color: var(--red-700);
   font-family: var(--font-mono);
   font-size: 0.74rem;
   font-weight: 900;
+  text-overflow: ellipsis;
   text-align: right;
+  white-space: nowrap;
+}
+
+.rank-section.screen-panel .rank-row {
+  color: var(--ink);
+}
+
+.rank-section.screen-panel .rank-row p {
+  color: #6b655f;
+}
+
+.rank-section.screen-panel .rank-row__value {
+  color: var(--red-700);
 }
 
 .rank-section {

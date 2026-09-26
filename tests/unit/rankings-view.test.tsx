@@ -16,6 +16,7 @@ const trainer: TrainerRankingDto = {
   publicSlug: "alice",
   displayName: "Alice",
   telegramUsername: "alice_tg",
+  profilePhotoUrl: "https://cdn.example.test/alice.jpg",
   badge: {
     name: "Pionnière",
     icon: "◆",
@@ -52,6 +53,9 @@ describe("competitive rankings view", () => {
     expect(html).toContain("J’aime");
     expect(html).toContain("120");
     expect(html).toContain("Pionnière");
+    expect(html).toContain('src="https://cdn.example.test/alice.jpg"');
+    expect(html).toContain("@alice_tg");
+    expect(html).toContain("Alice");
     expect(html).toContain("badge-emblem");
     expect(html).not.toContain("/badges/level-5.png");
     expect(html).toContain("trainersPage=2");
@@ -73,5 +77,27 @@ describe("competitive rankings view", () => {
       /aria-label="Page précédente" href="\/classements\?period=week&amp;metric=views"/,
     );
     expect(html).toContain("trainersPage=3");
+  });
+
+  it("falls back to initials and keeps long identities inside the row", () => {
+    const html = renderRankings({
+      trainers: [
+        {
+          ...trainer,
+          rank: 2,
+          profilePhotoUrl: null,
+          telegramUsername: "@un_pseudo_telegram_tres_long",
+          displayName: "Utilisateur communautaire très long",
+        },
+      ],
+      currentTrainer: null,
+      trainerTotal: 1,
+      trainerTotalPages: 1,
+    });
+
+    expect(html).not.toContain('src="https://cdn.example.test/alice.jpg"');
+    expect(html).toContain("@un_pseudo_telegram_tres_long");
+    expect(html).toContain("Utilisateur communautaire très long");
+    expect(html).toContain(">UC</span>");
   });
 });

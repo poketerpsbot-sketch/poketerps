@@ -3,33 +3,15 @@ import Link from "next/link";
 import { BellRing, Gift, Trophy } from "lucide-react";
 
 import { serverApi, unwrapObject } from "@/components/data/server-api";
-import type { HomeDto, TrainerRankingDto } from "@/components/data/types";
+import type { HomeDto } from "@/components/data/types";
 import { EntryGrid } from "@/components/entries/entry-card";
 import { HomeScanner } from "@/components/home/home-scanner";
 import { PartnerCard } from "@/components/partners/partner-card";
+import { trainerIdentity } from "@/components/rankings/trainer-identity";
 import { EmptyState, ErrorState, SectionHeading } from "@/components/ui/states";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 export const metadata: Metadata = { title: "Accueil" };
-
-function trainerProfile(ranking: TrainerRankingDto) {
-  return (
-    ranking.user ??
-    ranking.profile ?? {
-      displayName: ranking.displayName ?? "Dresseur",
-      publicSlug: ranking.publicSlug ?? ranking.slug,
-      telegramUsername: ranking.telegramUsername ?? ranking.username,
-    }
-  );
-}
-
-function initials(value: string) {
-  return value
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join("")
-    .toUpperCase();
-}
 
 export default async function HomePage() {
   const result = await serverApi<unknown>("/api/home");
@@ -238,22 +220,25 @@ export default async function HomePage() {
           ) : trainers.length > 0 ? (
             <div className="rank-list">
               {trainers.slice(0, 3).map((item, index) => {
-                const profile = trainerProfile(item);
+                const { user, primary, secondary } = trainerIdentity(item);
                 return (
                   <Link
                     className="rank-row"
-                    href={`/profil/${encodeURIComponent(profile.publicSlug ?? String(profile.id ?? ""))}`}
+                    href={`/profil/${encodeURIComponent(user.publicSlug ?? String(user.id ?? ""))}`}
                     key={`${item.rank}-${index}`}
                   >
                     <span className="rank-row__rank">
                       <Trophy size={16} aria-hidden="true" /> {item.rank ?? index + 1}
                     </span>
-                    <span className="avatar" aria-hidden="true">
-                      {initials(profile.displayName)}
-                    </span>
+                    <UserAvatar
+                      className="ranking-avatar"
+                      displayName={user.displayName}
+                      src={user.profilePhotoUrl ?? item.profilePhotoUrl}
+                      eager={index < 3}
+                    />
                     <span className="rank-row__copy">
-                      <h3>{profile.displayName}</h3>
-                      <p>{profile.profileTitle ?? "Dresseur"}</p>
+                      <h3 title={primary}>{primary}</h3>
+                      <p title={secondary}>{secondary}</p>
                     </span>
                     <strong className="rank-row__value">
                       {item.captures ?? item.periodCaptures ?? 0} captures

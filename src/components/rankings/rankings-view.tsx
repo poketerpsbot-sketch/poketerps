@@ -3,6 +3,7 @@ import { Award, Eye, Flame, Heart, Medal, Star, Trophy, Zap } from "lucide-react
 
 import type { EntryRankingDto, EntrySummaryDto, TrainerRankingDto } from "@/components/data/types";
 import { EntryCard } from "@/components/entries/entry-card";
+import { trainerIdentity } from "@/components/rankings/trainer-identity";
 import { BadgeEmblem } from "@/components/ui/badge-emblem";
 import { EmptyState, ErrorState, SectionHeading, formatCount } from "@/components/ui/states";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -23,28 +24,14 @@ const metrics: Array<{ value: RankingMetric; label: string; icon: typeof Eye }> 
   { value: "recent", label: "Plus récentes", icon: Flame },
 ];
 
-function profile(item: TrainerRankingDto) {
-  return (
-    item.user ??
-    item.profile ?? {
-      displayName: item.displayName ?? "Dresseur",
-      publicSlug: item.publicSlug,
-      telegramUsername: item.telegramUsername,
-      profilePhotoUrl: item.profilePhotoUrl,
-      profileTitle: item.profileTitle,
-      level: item.level,
-      experiencePoints: item.experiencePoints,
-    }
-  );
-}
-
-function RankingAvatar({ item }: { item: TrainerRankingDto }) {
-  const user = profile(item);
+function RankingAvatar({ item, eager = false }: { item: TrainerRankingDto; eager?: boolean }) {
+  const { user } = trainerIdentity(item);
   return (
     <UserAvatar
       className="ranking-avatar"
       displayName={user.displayName}
       src={user.profilePhotoUrl ?? item.profilePhotoUrl}
+      eager={eager}
     />
   );
 }
@@ -67,7 +54,8 @@ function RankingBadge({ item, compact = false }: { item: TrainerRankingDto; comp
 }
 
 function trainerHref(item: TrainerRankingDto) {
-  const value = profile(item).publicSlug ?? profile(item).id;
+  const { user } = trainerIdentity(item);
+  const value = user.publicSlug ?? user.id;
   return value ? "/profil/" + encodeURIComponent(String(value)) : "/classements";
 }
 
@@ -92,11 +80,11 @@ function views(item: TrainerRankingDto) {
 }
 
 function level(item: TrainerRankingDto) {
-  return Number(profile(item).level ?? item.level ?? 1);
+  return Number(trainerIdentity(item).user.level ?? item.level ?? 1);
 }
 
 function experience(item: TrainerRankingDto) {
-  return Number(profile(item).experiencePoints ?? item.experiencePoints ?? 0);
+  return Number(trainerIdentity(item).user.experiencePoints ?? item.experiencePoints ?? 0);
 }
 
 function asRankedEntry(item: EntryRankingDto | EntrySummaryDto, index: number) {
@@ -203,7 +191,7 @@ function TrainerMetrics({ item, compact = false }: { item: TrainerRankingDto; co
 }
 
 function PersonalRankCard({ item, period }: { item: TrainerRankingDto; period: RankingPeriod }) {
-  const user = profile(item);
+  const { primary } = trainerIdentity(item);
   const periodLabel = periods.find((entry) => entry.value === period)?.label;
   return (
     <aside className="personal-rank-card" aria-labelledby="personal-rank-title">
@@ -211,7 +199,7 @@ function PersonalRankCard({ item, period }: { item: TrainerRankingDto; period: R
       <RankingAvatar item={item} />
       <div className="personal-rank-card__copy">
         <p className="eyebrow">Ta position · {periodLabel}</p>
-        <h3 id="personal-rank-title">{user.displayName}</h3>
+        <h3 id="personal-rank-title">{primary}</h3>
         <p>
           Niveau {level(item)} · {experience(item).toLocaleString("fr-CH")} XP ·{" "}
           {totalCaptures(item)} fiche{totalCaptures(item) > 1 ? "s" : ""} au total
@@ -314,7 +302,7 @@ export function RankingsView({
             {podium.length > 0 && (
               <div className="podium competition-podium">
                 {podium.map((item, index) => {
-                  const user = profile(item);
+                  const { user, primary, secondary } = trainerIdentity(item);
                   return (
                     <Link
                       className={"podium-card podium-card--" + ["first", "second", "third"][index]}
@@ -327,12 +315,10 @@ export function RankingsView({
                       >
                         {medal(index)}
                       </span>
-                      <RankingAvatar item={item} />
-                      <h3>{user.displayName}</h3>
-                      <p className="podium-card__identity">
-                        {user.telegramUsername
-                          ? "@" + user.telegramUsername
-                          : (user.profileTitle ?? "Dresseur")}
+                      <RankingAvatar item={item} eager />
+                      <h3 title={primary}>{primary}</h3>
+                      <p className="podium-card__identity" title={secondary}>
+                        {secondary}
                       </p>
                       <span className="podium-card__progress">
                         <Zap aria-hidden="true" /> Niv. {level(item)} ·{" "}
@@ -349,7 +335,7 @@ export function RankingsView({
             {rest.length > 0 && (
               <div className="rank-list competition-rank-list">
                 {rest.map((item, index) => {
-                  const user = profile(item);
+                  const { user, primary, secondary } = trainerIdentity(item);
                   return (
                     <Link
                       className="rank-row competition-rank-row"
@@ -360,15 +346,13 @@ export function RankingsView({
                       <RankingAvatar item={item} />
                       <span className="rank-row__copy">
                         <span className="competition-rank-row__heading">
-                          <h3>{user.displayName}</h3>
+                          <h3 title={primary}>{primary}</h3>
                           {item.badge?.name && <RankingBadge item={item} compact />}
                         </span>
                         <p>
-                          {user.telegramUsername
-                            ? "@" + user.telegramUsername
-                            : (user.profileTitle ?? "Dresseur")}{" "}
-                          · Niv. {level(item)} · {experience(item).toLocaleString("fr-CH")} XP ·{" "}
-                          {totalCaptures(item)} au total
+                          {secondary} · Niv. {level(item)} ·{" "}
+                          {experience(item).toLocaleString("fr-CH")} XP · {totalCaptures(item)} au
+                          total
                         </p>
                       </span>
                       <TrainerMetrics item={item} />
