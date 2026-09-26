@@ -98,8 +98,9 @@ export type EntrySummaryDto = {
 
 export type DynamicFieldValueDto = {
   id?: Identifier;
+  fieldDefinitionId?: Identifier;
   label: string;
-  value: string | number | string[] | null;
+  value: string | number | boolean | string[] | null;
   unit?: string | null;
 };
 

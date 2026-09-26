@@ -2271,6 +2271,15 @@ svg {
   overflow-wrap: anywhere;
 }
 
+.declared-details {
+  display: grid;
+  gap: 4px;
+}
+
+.declared-details span {
+  overflow-wrap: anywhere;
+}
+
 .contributor-card {
   display: flex;
   align-items: center;

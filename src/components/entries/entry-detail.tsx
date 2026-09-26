@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Eye, Heart, MessageCircle, Star, Trophy } from "lucide-react";
 import type { EntryDetailDto, ReviewDto } from "@/components/data/types";
 import { EntryActions } from "@/components/entries/entry-actions";
+import { prepareDynamicFieldDisplay } from "@/components/entries/entry-detail-fields";
 import { ViewTracker } from "@/components/entries/view-tracker";
 import { EmptyState, formatCount, formatDate, SectionHeading } from "@/components/ui/states";
 
@@ -41,9 +42,11 @@ function profileUsername(profile: NonNullable<EntryDetailDto["author"]>) {
 function dynamicFields(entry: EntryDetailDto) {
   if (entry.fieldValues) return entry.fieldValues;
 
-  return Object.entries(entry.fields ?? {}).map(([key, value], index) => ({
+  return Object.entries(entry.fields ?? {}).map(([, value], index) => ({
     id: undefined,
-    label: /^[0-9a-f-]{36}$/i.test(key) ? `Caractéristique ${index + 1}` : key,
+    // Sans définition jointe, la clé peut être un UUID ou un nom technique :
+    // elle ne doit jamais devenir un libellé visible pour le public.
+    label: `Caractéristique ${index + 1}`,
     value: Array.isArray(value)
       ? value.map(String)
       : typeof value === "object" && value !== null
@@ -98,6 +101,11 @@ export function EntryDetail({
 }) {
   const author = contributor(entry);
   const fields = dynamicFields(entry);
+  const { labeledFields, declaredValues } = prepareDynamicFieldDisplay(fields, [
+    entry.category?.name,
+    entry.categoryName,
+    entry.subcategory?.name,
+  ]);
   const micron = micronLabel(entry);
   const micronContexts = (entry.micronContexts ?? [])
     .map((context) => ({ ...context, label: micronSpecificationLabel(context) }))
@@ -211,7 +219,11 @@ export function EntryDetail({
             </section>
           )}
 
-          {(fields.length > 0 || micron || micronContexts.length > 0 || entry.subcategory) && (
+          {(labeledFields.length > 0 ||
+            declaredValues.length > 0 ||
+            micron ||
+            micronContexts.length > 0 ||
+            entry.subcategory) && (
             <section className="content-panel">
               <h2>Données analysées</h2>
               <dl className="data-list">
@@ -244,15 +256,25 @@ export function EntryDetail({
                     <dd>{entry.rarity}</dd>
                   </div>
                 )}
-                {fields.map((field, index) => (
+                {labeledFields.map((field, index) => (
                   <div key={field.id ? String(field.id) : `${field.label}-${index}`}>
                     <dt>{field.label}</dt>
                     <dd>
-                      {Array.isArray(field.value) ? field.value.join(", ") : (field.value ?? "—")}
+                      {field.value}
                       {field.unit ? ` ${field.unit}` : ""}
                     </dd>
                   </div>
                 ))}
+                {declaredValues.length > 0 && (
+                  <div>
+                    <dt>Détails déclarés</dt>
+                    <dd className="declared-details">
+                      {declaredValues.map((value) => (
+                        <span key={value}>{value}</span>
+                      ))}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </section>
           )}

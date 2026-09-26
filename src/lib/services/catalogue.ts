@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, ilike, isNull, or, sql, type SQL } from "dri
 import { getDb } from "@/lib/db";
 import {
   categories,
+  dynamicFieldDefinitions,
   aromaFamilies,
   aromas,
   entries,
@@ -221,10 +222,18 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
         .orderBy(desc(entryImages.isPrimary), asc(entryImages.sortOrder)),
       db
         .select({
+          id: entryFieldValues.id,
           fieldDefinitionId: entryFieldValues.fieldDefinitionId,
           value: entryFieldValues.value,
+          displayValue: entryFieldValues.displayValue,
+          label: dynamicFieldDefinitions.label,
+          unit: dynamicFieldDefinitions.unit,
         })
         .from(entryFieldValues)
+        .leftJoin(
+          dynamicFieldDefinitions,
+          eq(entryFieldValues.fieldDefinitionId, dynamicFieldDefinitions.id),
+        )
         .where(eq(entryFieldValues.entryId, row.id)),
       db
         .select({ id: tags.id, slug: tags.slug, name: tags.name })
@@ -278,6 +287,22 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
           : publicStorageUrl("entry-images", storagePath),
     })),
     fields: Object.fromEntries(fieldRows.map((field) => [field.fieldDefinitionId, field.value])),
+    fieldValues: fieldRows.map((field, index) => ({
+      id: field.id,
+      fieldDefinitionId: field.fieldDefinitionId,
+      label: field.label?.trim() || `Caractéristique ${index + 1}`,
+      value:
+        field.displayValue?.trim() ||
+        (Array.isArray(field.value)
+          ? field.value.map(String)
+          : field.value === null ||
+              typeof field.value === "string" ||
+              typeof field.value === "number" ||
+              typeof field.value === "boolean"
+            ? field.value
+            : JSON.stringify(field.value)),
+      unit: field.unit,
+    })),
     tags: tagRows,
     micron: micronRows[0] ?? null,
     micronContexts: micronContextRows,
