@@ -4,6 +4,7 @@ import { Eye, Heart, MessageCircle, Star, Trophy } from "lucide-react";
 import type { EntryDetailDto, ReviewDto } from "@/components/data/types";
 import { EntryActions } from "@/components/entries/entry-actions";
 import { prepareDynamicFieldDisplay } from "@/components/entries/entry-detail-fields";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import { ViewTracker } from "@/components/entries/view-tracker";
 import { EmptyState, formatCount, formatDate, SectionHeading } from "@/components/ui/states";
 
@@ -349,18 +350,19 @@ export function EntryDetail({
                 className="contributor-card"
                 href={`/profil/${encodeURIComponent(profileSlug(author))}`}
               >
-                <span className="avatar" aria-hidden="true">
-                  {initials(author.displayName)}
-                </span>
+                <UserAvatar
+                  className="contributor-card__avatar"
+                  displayName={author.displayName}
+                  src={author.profilePhotoUrl}
+                  eager
+                />
                 <span className="contributor-card__copy">
                   <strong>{author.displayName}</strong>
-                  <span>
-                    {profileUsername(author)
-                      ? `@${profileUsername(author)}`
-                      : (author.profileTitle ?? author.title ?? "Dresseur")}
-                  </span>
-                  <span>
-                    <Trophy size={13} aria-hidden="true" /> {author.captureCount ?? 0} captures
+                  {profileUsername(author) && <span>@{profileUsername(author)}</span>}
+                  <span>{author.profileTitle ?? author.title ?? "Dresseur"}</span>
+                  <span className="contributor-card__stats">
+                    <Trophy size={14} aria-hidden="true" /> {formatCount(author.captureCount)}{" "}
+                    captures
                   </span>
                 </span>
               </Link>

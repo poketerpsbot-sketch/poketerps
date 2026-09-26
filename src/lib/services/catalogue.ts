@@ -60,6 +60,14 @@ function publicEntrySelection() {
       username: users.telegramUsername,
       profilePhotoUrl: users.profilePhotoUrl,
       title: users.profileTitle,
+      captureCount: sql<number>`(
+        select count(*)::int
+        from entries contributor_entry
+        where contributor_entry.original_contributor_id = ${entries.originalContributorId}
+          and contributor_entry.status = 'PUBLISHED'
+          and contributor_entry.is_demo = false
+          and contributor_entry.deleted_at is null
+      )`,
     },
     primaryImagePath: sql<string | null>`(
       select image.object_path
