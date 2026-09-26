@@ -53,14 +53,14 @@ export function AdminEntryManagementActions({
     router.refresh();
   }
 
-  async function moderate(nextStatus: "APPROVED" | "CHANGES_REQUESTED" | "REJECTED") {
+  async function moderate(nextStatus: "PUBLISHED" | "CHANGES_REQUESTED" | "REJECTED") {
     const labels = {
-      APPROVED: "Approuver",
+      PUBLISHED: "Approuver et publier",
       CHANGES_REQUESTED: "Demander une modification",
       REJECTED: "Refuser",
     } as const;
     let reason = "";
-    if (nextStatus !== "APPROVED") {
+    if (nextStatus !== "PUBLISHED") {
       const answer = window.prompt(
         nextStatus === "CHANGES_REQUESTED"
           ? "Indique clairement les modifications demandées à l’auteur :"
@@ -72,7 +72,7 @@ export function AdminEntryManagementActions({
         setFeedback("Un message est obligatoire pour informer correctement l’auteur.");
         return;
       }
-    } else if (!window.confirm("Approuver cette fiche et la préparer pour publication ?")) {
+    } else if (!window.confirm("Approuver et publier cette fiche maintenant ?")) {
       return;
     }
     setPending(nextStatus);
@@ -137,9 +137,9 @@ export function AdminEntryManagementActions({
               className="button"
               type="button"
               disabled={Boolean(pending)}
-              onClick={() => void moderate("APPROVED")}
+              onClick={() => void moderate("PUBLISHED")}
             >
-              <CheckCircle2 size={15} aria-hidden="true" /> Approuver
+              <CheckCircle2 size={15} aria-hidden="true" /> Approuver et publier
             </button>
             <button
               className="button button--secondary"

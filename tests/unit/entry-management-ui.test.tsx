@@ -29,7 +29,15 @@ describe("entry management controls", () => {
     expect(publicCard).not.toContain("Supprimer");
   });
 
-  it("shows restore and publish actions only for matching statuses", () => {
+  it("publishes on approval and keeps a publish action for legacy approved entries", () => {
+    const pending = renderToStaticMarkup(
+      <AdminEntryManagementActions
+        entryId="00000000-0000-4000-8000-000000000000"
+        slug="pending"
+        name="Pending"
+        status="PENDING_REVIEW"
+      />,
+    );
     const archived = renderToStaticMarkup(
       <AdminEntryManagementActions
         entryId="11111111-1111-4111-8111-111111111111"
@@ -46,6 +54,7 @@ describe("entry management controls", () => {
         status="APPROVED"
       />,
     );
+    expect(pending).toContain("Approuver et publier");
     expect(archived).toContain("Restaurer");
     expect(approved).toContain("Publier");
   });

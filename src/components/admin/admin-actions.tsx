@@ -20,7 +20,8 @@ function moderationErrorMessage(status: number, fallback: string) {
 
 function moderationSuccessMessage(endpoint: string, status: string) {
   const entity = endpoint.includes("/reviews/") ? "Avis" : "Fiche";
-  if (status === "APPROVED" || status === "PUBLISHED") return `${entity} approuvé avec succès.`;
+  if (status === "PUBLISHED") return `${entity} publié avec succès.`;
+  if (status === "APPROVED") return `${entity} approuvé avec succès.`;
   if (status === "REJECTED") return `${entity} refusé avec succès.`;
   if (status === "CHANGES_REQUESTED") return "Demande de modification envoyée avec succès.";
   return "Action enregistrée.";

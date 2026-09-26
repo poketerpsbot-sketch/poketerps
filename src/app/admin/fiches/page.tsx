@@ -67,7 +67,7 @@ export default async function AdminEntriesPage({
                     label: "Demander des corrections",
                     tone: "secondary",
                   },
-                  { status: "APPROVED", label: "Approuver" },
+                  { status: "PUBLISHED", label: "Approuver et publier" },
                   { status: "REJECTED", label: "Rejeter", tone: "danger" },
                 ]}
               />
