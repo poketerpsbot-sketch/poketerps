@@ -21,7 +21,7 @@ import {
 import { notFound } from "@/lib/errors";
 import { hasPermission } from "@/lib/auth/rbac";
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { publicStorageUrl } from "@/lib/services/storage-url";
+import { publicStorageUrl, signedStorageUrls } from "@/lib/services/storage-url";
 import type { z } from "zod";
 import type { catalogueQuerySchema } from "@/lib/validation/entries";
 
@@ -204,6 +204,7 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
       db
         .select({
           id: entryImages.id,
+          storageBucket: entryImages.storageBucket,
           storagePath: entryImages.objectPath,
           altText: entryImages.altText,
           width: entryImages.width,
@@ -258,6 +259,10 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
         .where(eq(entryAromas.entryId, row.id))
         .orderBy(asc(entryAromas.importance), asc(aromaFamilies.sortOrder), asc(aromas.sortOrder)),
     ]);
+  const draftImagePaths = imageRows
+    .filter((image) => image.storageBucket === "entry-drafts")
+    .map((image) => image.storagePath);
+  const draftImageUrls = await signedStorageUrls("entry-drafts", draftImagePaths);
   const { primaryImagePath, createdById, originalContributorId, ...entry } = row;
   void primaryImagePath;
   void createdById;
@@ -265,9 +270,12 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
   return {
     ...entry,
     averageRating: Number(entry.averageRating),
-    images: imageRows.map(({ storagePath, ...image }) => ({
+    images: imageRows.map(({ storageBucket, storagePath, ...image }) => ({
       ...image,
-      url: publicStorageUrl("entry-images", storagePath),
+      url:
+        storageBucket === "entry-drafts"
+          ? (draftImageUrls.get(storagePath) ?? "")
+          : publicStorageUrl("entry-images", storagePath),
     })),
     fields: Object.fromEntries(fieldRows.map((field) => [field.fieldDefinitionId, field.value])),
     tags: tagRows,

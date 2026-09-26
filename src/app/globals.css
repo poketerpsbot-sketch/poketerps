@@ -2991,10 +2991,9 @@ svg {
 }
 
 .admin-sidebar {
-  display: flex;
-  padding: 10px;
-  overflow-x: auto;
-  gap: 7px;
+  display: block;
+  padding: 14px;
+  overflow: visible;
   border: 3px solid var(--border);
   border-radius: var(--radius);
   background: var(--ink);
@@ -3008,7 +3007,9 @@ svg {
 }
 
 .admin-sidebar__title {
-  display: none;
+  display: block;
+  padding: 4px 8px 14px;
+  border-bottom: 1px solid #484b4e;
 }
 
 .admin-sidebar__identity {
@@ -3032,23 +3033,39 @@ svg {
 }
 
 .admin-nav {
-  display: contents;
+  display: grid;
+  margin-top: 10px;
+  gap: 5px;
 }
 
 .admin-nav__group {
-  display: contents;
+  display: grid;
+  gap: 5px;
+}
+
+.admin-nav__group + .admin-nav__group {
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid #484b4e;
 }
 
 .admin-nav__label {
-  display: none;
+  display: block;
+  margin: 0 7px 3px;
+  color: #aeb1b4;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .admin-nav a {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   min-height: 43px;
   padding: 9px 12px;
   align-items: center;
-  flex: 0 0 auto;
   gap: 8px;
   border: 1px solid #55595c;
   border-radius: 9px;

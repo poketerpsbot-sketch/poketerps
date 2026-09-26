@@ -200,8 +200,8 @@ describe("Telegram command routing", () => {
   });
 });
 
-describe("Telegram confirmation routing", () => {
-  it("turns a moderation request callback into a separate confirmation step", async () => {
+describe("Telegram moderation routing", () => {
+  it("rejects legacy moderation callbacks without changing the entry", async () => {
     const entryId = "550e8400-e29b-41d4-a716-446655440000";
     const update: TelegramUpdate = {
       update_id: 2,
@@ -220,15 +220,11 @@ describe("Telegram confirmation routing", () => {
 
     expect(telegram.answerTelegramCallback).toHaveBeenCalledWith(
       "callback-1",
-      "Confirmation requise.",
+      "Action invalide ou expirée.",
+      true,
     );
-    const [, text, keyboard] = telegram.sendTelegramMessage.mock.calls[0] as [
-      number,
-      string,
-      { inline_keyboard: Array<Array<{ callback_data: string }>> },
-    ];
-    expect(text).toContain("Confirmer");
-    expect(keyboard.inline_keyboard[0]?.[0]?.callback_data).toBe(`ok:entry:approve:${entryId}`);
-    expect(keyboard.inline_keyboard[0]?.[1]?.callback_data).toBe("menu:admin");
+    expect(telegram.sendTelegramMessage).not.toHaveBeenCalled();
+    const { moderateEntry } = await import("@/lib/services/entries");
+    expect(moderateEntry).not.toHaveBeenCalled();
   });
 });

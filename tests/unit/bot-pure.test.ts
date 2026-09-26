@@ -6,8 +6,6 @@ import {
   buildHelpMessage,
   buildModeratorMenu,
   buildWelcomeMenu,
-  confirmationCallback,
-  isAdminActionAllowed,
   isStartCommandUpdate,
   parseBotCallback,
   parseBotCommand,
@@ -99,38 +97,12 @@ describe("bot command parsing", () => {
 });
 
 describe("bot callback parsing", () => {
-  it("requires the two-stage request/confirmation flow", () => {
-    expect(parseBotCallback(`do:entry:approve:${id}`)).toEqual({
-      kind: "request",
-      entity: "entry",
-      action: "approve",
-      id,
-    });
-    expect(parseBotCallback(confirmationCallback("entry", "approve", id))).toEqual({
-      kind: "confirm",
-      entity: "entry",
-      action: "approve",
-      id,
-    });
-  });
-
-  it("rejects malformed, oversized or non-UUID callbacks", () => {
-    expect(parseBotCallback("ok:entry:approve:not-an-id")).toBeNull();
+  it("only accepts navigation callbacks", () => {
+    expect(parseBotCallback("menu:entries")).toEqual({ kind: "menu", value: "entries" });
+    expect(parseBotCallback(`do:entry:approve:${id}`)).toBeNull();
+    expect(parseBotCallback(`ok:entry:reject:${id}`)).toBeNull();
     expect(parseBotCallback("x".repeat(65))).toBeNull();
-    expect(parseBotCallback(`do:entry:archive:${id}`)).toBeNull();
-    expect(parseBotCallback(`do:message:approve:${id}`)).toBeNull();
     expect(parseBotCallback("menu:entries:extra")).toBeNull();
-  });
-
-  it("only generates valid entity/action confirmations", () => {
-    expect(isAdminActionAllowed("review", "hide")).toBe(true);
-    expect(isAdminActionAllowed("entry", "hide")).toBe(false);
-    expect(() => confirmationCallback("entry", "hide", id)).toThrow(
-      "Invalid Telegram confirmation callback",
-    );
-    expect(() => confirmationCallback("review", "hide", "not-an-id")).toThrow(
-      "Invalid Telegram confirmation callback",
-    );
   });
 });
 

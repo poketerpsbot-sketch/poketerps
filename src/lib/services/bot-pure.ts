@@ -94,39 +94,11 @@ export function isStartCommandUpdate(
 }
 
 export type AdminEntity = "entry" | "review" | "message";
-export type AdminAction =
-  "approve" | "publish" | "changes" | "reject" | "hide" | "read" | "assign" | "resolve" | "archive";
 
-export type BotCallback =
-  | {
-      kind: "menu";
-      value: "latest" | "ranking" | "admin" | "entries" | "reviews" | "messages";
-    }
-  | { kind: "request" | "confirm"; entity: AdminEntity; action: AdminAction; id: string };
-
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const entityNames = new Set<AdminEntity>(["entry", "review", "message"]);
-const actionNames = new Set<AdminAction>([
-  "approve",
-  "publish",
-  "changes",
-  "reject",
-  "hide",
-  "read",
-  "assign",
-  "resolve",
-  "archive",
-]);
-
-const allowedActions: Record<AdminEntity, ReadonlySet<AdminAction>> = {
-  entry: new Set(["approve", "publish", "changes", "reject"]),
-  review: new Set(["approve", "publish", "changes", "reject", "hide"]),
-  message: new Set(["read", "assign", "resolve", "archive"]),
+export type BotCallback = {
+  kind: "menu";
+  value: "latest" | "ranking" | "admin" | "entries" | "reviews" | "messages";
 };
-
-export function isAdminActionAllowed(entity: AdminEntity, action: AdminAction): boolean {
-  return allowedActions[entity].has(action);
-}
 
 export function parseBotCallback(data: string): BotCallback | null {
   if (data.length > 64) return null;
@@ -138,27 +110,7 @@ export function parseBotCallback(data: string): BotCallback | null {
     }
     return null;
   }
-  if ((parts[0] === "do" || parts[0] === "ok") && parts.length === 4) {
-    const entity = parts[1] as AdminEntity;
-    const action = parts[2] as AdminAction;
-    const id = parts[3] ?? "";
-    if (
-      entityNames.has(entity) &&
-      actionNames.has(action) &&
-      isAdminActionAllowed(entity, action) &&
-      uuidPattern.test(id)
-    ) {
-      return { kind: parts[0] === "do" ? "request" : "confirm", entity, action, id };
-    }
-  }
   return null;
-}
-
-export function confirmationCallback(entity: AdminEntity, action: AdminAction, id: string): string {
-  if (!isAdminActionAllowed(entity, action) || !uuidPattern.test(id)) {
-    throw new Error("Invalid Telegram confirmation callback");
-  }
-  return `ok:${entity}:${action}:${id}`;
 }
 
 export type PureInlineKeyboardButton = {

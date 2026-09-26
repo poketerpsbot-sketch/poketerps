@@ -9,13 +9,22 @@ import { listPendingCorrections } from "@/lib/services/admin-queues";
 
 export const metadata: Metadata = { title: "Fiches à valider" };
 
-export default async function AdminEntriesPage() {
+export default async function AdminEntriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ entry?: string }>;
+}) {
   await requireAdminUser("entry:moderate");
+  const { entry: focusedEntryId } = await searchParams;
   const [result, corrections] = await Promise.all([
     serverApi<unknown>("/api/admin/entries?status=PENDING_REVIEW&limit=50&offset=0"),
     listPendingCorrections(50),
   ]);
-  const entries = unwrapList<EntrySummaryDto>(result.data, ["entries"]);
+  const entries = unwrapList<EntrySummaryDto>(result.data, ["entries"]).sort((left, right) => {
+    if (String(left.id) === focusedEntryId) return -1;
+    if (String(right.id) === focusedEntryId) return 1;
+    return 0;
+  });
   return (
     <>
       <AdminHeader
@@ -33,7 +42,11 @@ export default async function AdminEntriesPage() {
       ) : (
         <div className="admin-list">
           {entries.map((entry) => (
-            <article className="content-panel admin-list__item" key={String(entry.id)}>
+            <article
+              className="content-panel admin-list__item"
+              id={`entry-${String(entry.id)}`}
+              key={String(entry.id)}
+            >
               <div className="admin-list__copy">
                 <div className="button-row">
                   <StatusPill value={entry.status} />

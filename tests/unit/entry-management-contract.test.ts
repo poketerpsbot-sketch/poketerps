@@ -16,6 +16,15 @@ const partnersPage = readFileSync(
   new URL("../../src/app/partenaires/page.tsx", import.meta.url),
   "utf8",
 );
+const draftEditPage = readFileSync(
+  new URL("../../src/app/profil/fiches/[id]/modifier/page.tsx", import.meta.url),
+  "utf8",
+);
+const botSource = readFileSync(new URL("../../src/lib/services/bot.ts", import.meta.url), "utf8");
+const entryPage = readFileSync(
+  new URL("../../src/app/fiches/[slug]/page.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("entry management contracts", () => {
   it("preserves the original contributor and writes a revision for updates", () => {
@@ -45,6 +54,27 @@ describe("entry management contracts", () => {
     );
     expect(updateBlock).toContain('!["DRAFT", "CHANGES_REQUESTED"].includes(existing.status)');
     expect(updateBlock).toContain('hasPermission(actor.role, "entry:update:any")');
+  });
+
+  it("lets draft authors save repeatedly and submit only from the Mini App editor", () => {
+    expect(draftEditPage).toContain('["DRAFT", "CHANGES_REQUESTED"].includes(request.status)');
+    expect(draftEditPage).toContain("allowSubmit={canSubmit}");
+    expect(draftEditPage).toContain("moderationMessage={changesRequested ? request.reason : null}");
+  });
+
+  it("keeps moderation decisions out of Telegram callbacks", () => {
+    expect(botSource).not.toContain("callback_data: `do:entry:");
+    expect(botSource).not.toContain("moderateEntry(");
+    expect(botSource).not.toContain("moderateReview(");
+    expect(botSource).toContain('text: "Ouvrir Pokédex"');
+    expect(botSource).toContain("/admin/fiches?entry=");
+  });
+
+  it("generates per-entry social metadata from the published entry", () => {
+    expect(entryPage).toContain("openGraph");
+    expect(entryPage).toContain("entry?.primaryImageUrl");
+    expect(entryPage).toContain("entry?.shortDescription");
+    expect(entryPage).toContain("alternates: { canonical: url }");
   });
 
   it("adds only future partnership metadata and no payment system", () => {

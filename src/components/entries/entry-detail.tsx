@@ -302,6 +302,9 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
             <EntryActions
               entryId={String(entry.id)}
               slug={entry.slug}
+              entryName={entry.name}
+              shareDescription={entry.shortDescription}
+              canShare={entry.status === "PUBLISHED"}
               initialLiked={entry.isLiked}
               initialFavorited={entry.isFavorited}
               initialLikeCount={entry.likeCount ?? 0}

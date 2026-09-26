@@ -33,9 +33,9 @@ function rating(value?: number | string | null) {
     : "—";
 }
 
-export function EntryCard({ entry }: { entry: EntrySummaryDto }) {
+export function EntryCard({ entry, href }: { entry: EntrySummaryDto; href?: string }) {
   return (
-    <Link className="entry-card" href={`/fiches/${encodeURIComponent(entry.slug)}`}>
+    <Link className="entry-card" href={href ?? `/fiches/${encodeURIComponent(entry.slug)}`}>
       <div className="entry-card__visual">
         {entry.primaryImageUrl && (
           <Image
@@ -84,11 +84,17 @@ export function EntryCard({ entry }: { entry: EntrySummaryDto }) {
   );
 }
 
-export function EntryGrid({ entries }: { entries: EntrySummaryDto[] }) {
+export function EntryGrid({
+  entries,
+  hrefForEntry,
+}: {
+  entries: EntrySummaryDto[];
+  hrefForEntry?: (entry: EntrySummaryDto) => string;
+}) {
   return (
     <div className="entry-grid">
       {entries.map((entry) => (
-        <EntryCard entry={entry} key={String(entry.id)} />
+        <EntryCard entry={entry} href={hrefForEntry?.(entry)} key={String(entry.id)} />
       ))}
     </div>
   );

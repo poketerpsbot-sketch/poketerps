@@ -46,7 +46,14 @@ export default async function MyEntriesPage() {
               </div>
             </section>
           )}
-          <EntryGrid entries={entries} />
+          <EntryGrid
+            entries={entries}
+            hrefForEntry={(entry) =>
+              entry.status && entry.status !== "PUBLISHED"
+                ? `/profil/fiches/${encodeURIComponent(String(entry.id))}/modifier`
+                : `/fiches/${encodeURIComponent(entry.slug)}`
+            }
+          />
         </>
       ) : (
         <EmptyState

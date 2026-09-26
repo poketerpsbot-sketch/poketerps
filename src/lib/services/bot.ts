@@ -1,6 +1,6 @@
 import "server-only";
 
-import { assertPermission, isAdminRole } from "@/lib/auth/rbac";
+import { isAdminRole } from "@/lib/auth/rbac";
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getEnv } from "@/lib/env";
 import { AppError } from "@/lib/errors";
@@ -10,21 +10,16 @@ import { getAdminQueueCounts, type AdminQueueCounts } from "@/lib/services/admin
 import {
   buildHelpMessage,
   buildTeamMenu,
-  confirmationCallback,
-  isAdminActionAllowed,
   parseBotCallback,
   parseBotCommand,
   telegramRoleBadge,
-  type AdminAction,
   type AdminEntity,
 } from "@/lib/services/bot-pure";
 import { searchCatalogue } from "@/lib/services/catalogue";
-import { moderateEntry } from "@/lib/services/entries";
-import { updateAdminMessage, listAdminMessages } from "@/lib/services/messages";
+import { listAdminMessages } from "@/lib/services/messages";
 import { listPartners } from "@/lib/services/partners";
 import { getMyProfile } from "@/lib/services/profiles";
 import { getTrainerRankings } from "@/lib/services/rankings";
-import { moderateReview } from "@/lib/services/reviews";
 import {
   answerTelegramCallback,
   escapeTelegramHtml,
@@ -34,18 +29,6 @@ import {
   type InlineKeyboardMarkup,
 } from "@/lib/services/telegram-client";
 import type { TelegramUpdate } from "@/lib/validation/telegram";
-
-const adminActionLabels: Record<AdminAction, string> = {
-  approve: "Approuver",
-  publish: "Publier",
-  changes: "Demander des changements",
-  reject: "Rejeter",
-  hide: "Masquer",
-  read: "Marquer lu",
-  assign: "Prendre en charge",
-  resolve: "Résoudre",
-  archive: "Archiver",
-};
 
 function adminMenu(actor: CurrentUser, counts?: AdminQueueCounts): InlineKeyboardMarkup {
   return buildTeamMenu(getEnv().NEXT_PUBLIC_APP_URL, actor.role, counts);
@@ -71,24 +54,21 @@ function teamHeading(actor: CurrentUser, counts?: AdminQueueCounts): string {
   return `<b>${title}</b>\n${escapeTelegramHtml(actor.displayName)} · ${telegramRoleBadge(actor.role)}${queueSummary}\n\nChoisis une action correspondant à tes autorisations.`;
 }
 
-function entityActions(entity: AdminEntity, id: string): InlineKeyboardMarkup {
-  const actions: Record<AdminEntity, AdminAction[]> = {
-    entry: ["approve", "publish", "changes", "reject"],
-    review: ["approve"],
-    message: ["read", "assign", "resolve", "archive"],
+function moderationQueueKeyboard(entity: AdminEntity, id: string): InlineKeyboardMarkup {
+  const paths: Record<AdminEntity, string> = {
+    entry: `/admin/fiches?entry=${encodeURIComponent(id)}`,
+    review: `/admin/avis?review=${encodeURIComponent(id)}`,
+    message: `/admin/messages?message=${encodeURIComponent(id)}`,
   };
-  const inlineKeyboard: InlineKeyboardMarkup["inline_keyboard"] = actions[entity].map((action) => [
-    { text: adminActionLabels[action], callback_data: `do:${entity}:${action}:${id}` },
-  ]);
-  if (entity === "review") {
-    const reviewUrl = `${getEnv().NEXT_PUBLIC_APP_URL}/admin/avis?review=${encodeURIComponent(id)}`;
-    inlineKeyboard.push(
-      [{ text: "Demander une modification avec message", web_app: { url: reviewUrl } }],
-      [{ text: "Refuser avec un motif", web_app: { url: reviewUrl } }],
-    );
-  }
   return {
-    inline_keyboard: inlineKeyboard,
+    inline_keyboard: [
+      [
+        {
+          text: "Ouvrir Pokédex",
+          web_app: { url: `${getEnv().NEXT_PUBLIC_APP_URL}${paths[entity]}` },
+        },
+      ],
+    ],
   };
 }
 
@@ -216,7 +196,7 @@ async function sendAdminEntries(chatId: number, actor: CurrentUser): Promise<voi
     await sendTelegramMessage(
       chatId,
       `<b>Fiche à valider</b>\n${escapeTelegramHtml(entry.name)}\nPar ${escapeTelegramHtml(entry.author.displayName)}`,
-      entityActions("entry", entry.id),
+      moderationQueueKeyboard("entry", entry.id),
     );
   }
 }
@@ -231,7 +211,7 @@ async function sendAdminReviews(chatId: number, actor: CurrentUser): Promise<voi
     await sendTelegramMessage(
       chatId,
       `<b>Avis à valider</b>\n${escapeTelegramHtml(review.entryName)} · ${review.overallRating}/10\n\n${escapeTelegramHtml(review.content.slice(0, 700))}`,
-      entityActions("review", review.id),
+      moderationQueueKeyboard("review", review.id),
     );
   }
 }
@@ -249,85 +229,14 @@ async function sendAdminMessages(chatId: number, actor: CurrentUser): Promise<vo
     await sendTelegramMessage(
       chatId,
       `<b>${escapeTelegramHtml(message.subject)}</b>\n${escapeTelegramHtml(message.content.slice(0, 700))}`,
-      entityActions("message", message.id),
+      moderationQueueKeyboard("message", message.id),
     );
   }
 }
 
-function assertBotAdmin(actor: CurrentUser, entity?: AdminEntity): void {
+function assertBotAdmin(actor: CurrentUser): void {
   if (!isAdminRole(actor.role))
     throw new AppError("FORBIDDEN", "Commande réservée à l’équipe.", 403);
-  if (entity === "entry") assertPermission(actor.role, "entry:moderate");
-  if (entity === "review") assertPermission(actor.role, "review:moderate");
-  if (entity === "message") assertPermission(actor.role, "message:manage");
-}
-
-async function executeAdminAction(
-  entity: AdminEntity,
-  action: AdminAction,
-  id: string,
-  actor: CurrentUser,
-): Promise<void> {
-  assertBotAdmin(actor, entity);
-  if (!isAdminActionAllowed(entity, action))
-    throw new AppError("INVALID_CALLBACK", "Action invalide.", 400);
-  const reason = `Action confirmée depuis Telegram par ${actor.displayName}`;
-  if (entity === "entry") {
-    const statuses = {
-      approve: "APPROVED",
-      publish: "PUBLISHED",
-      changes: "CHANGES_REQUESTED",
-      reject: "REJECTED",
-    } as const;
-    const status = statuses[action as keyof typeof statuses];
-    if (!status) throw new AppError("INVALID_CALLBACK", "Action invalide.", 400);
-    await moderateEntry(
-      id,
-      { status, ...(["CHANGES_REQUESTED", "REJECTED"].includes(status) ? { reason } : {}) },
-      actor,
-      undefined,
-      "TELEGRAM_ADMIN",
-    );
-    return;
-  }
-  if (entity === "review") {
-    if (action === "changes" || action === "reject") {
-      throw new AppError(
-        "REVIEW_REASON_REQUIRED",
-        "Ouvre le panel des avis pour saisir le message obligatoire.",
-        400,
-      );
-    }
-    const statuses = {
-      approve: "APPROVED",
-      publish: "PUBLISHED",
-      changes: "CHANGES_REQUESTED",
-      reject: "REJECTED",
-      hide: "HIDDEN",
-    } as const;
-    const status = statuses[action as keyof typeof statuses];
-    if (!status) throw new AppError("INVALID_CALLBACK", "Action invalide.", 400);
-    await moderateReview(
-      id,
-      {
-        status,
-        ...(["CHANGES_REQUESTED", "REJECTED", "HIDDEN"].includes(status) ? { reason } : {}),
-      },
-      actor,
-      undefined,
-      "TELEGRAM_ADMIN",
-    );
-    return;
-  }
-  const updates = {
-    read: { status: "READ" },
-    assign: { status: "IN_PROGRESS", assignedAdminId: actor.id },
-    resolve: { status: "RESOLVED" },
-    archive: { status: "ARCHIVED" },
-  } as const;
-  const update = updates[action as keyof typeof updates];
-  if (!update) throw new AppError("INVALID_CALLBACK", "Action invalide.", 400);
-  await updateAdminMessage(id, update, actor, undefined, "TELEGRAM_ADMIN");
 }
 
 async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promise<void> {
@@ -351,49 +260,18 @@ async function handleCallback(update: TelegramUpdate, actor: CurrentUser): Promi
         await sendTelegramMessage(chatId, menu.heading, menu.keyboard);
       }
       if (parsed.value === "entries") {
-        assertBotAdmin(actor, "entry");
         await sendAdminEntries(chatId, actor);
       }
       if (parsed.value === "reviews") {
-        assertBotAdmin(actor, "review");
         await sendAdminReviews(chatId, actor);
       }
       if (parsed.value === "messages") {
-        assertBotAdmin(actor, "message");
         await sendAdminMessages(chatId, actor);
       }
     }
     await answerTelegramCallback(callback.id);
     return;
   }
-  assertBotAdmin(actor, parsed.entity);
-  if (parsed.kind === "request") {
-    await sendTelegramMessage(
-      chatId,
-      `Confirmer : <b>${escapeTelegramHtml(adminActionLabels[parsed.action])}</b> ?`,
-      {
-        inline_keyboard: [
-          [
-            {
-              text: "Confirmer",
-              callback_data: confirmationCallback(parsed.entity, parsed.action, parsed.id),
-            },
-            { text: "Annuler", callback_data: "menu:admin" },
-          ],
-        ],
-      },
-    );
-    await answerTelegramCallback(callback.id, "Confirmation requise.");
-    return;
-  }
-  await executeAdminAction(parsed.entity, parsed.action, parsed.id, actor);
-  await answerTelegramCallback(callback.id, "Action enregistrée.");
-  const refreshedMenu = await queueAwareAdminMenu(actor);
-  await sendTelegramMessage(
-    chatId,
-    `✅ ${escapeTelegramHtml(adminActionLabels[parsed.action])} : terminé.`,
-    refreshedMenu.keyboard,
-  );
 }
 
 export async function processTelegramUpdate(
@@ -457,9 +335,13 @@ export async function notifyModerationQueue(
   id: string,
   title: string,
 ): Promise<void> {
-  const labels = { entry: "Nouvelle fiche", review: "Nouvel avis", message: "Nouveau message" };
+  const labels = {
+    entry: "NOUVELLE FICHE À VALIDER",
+    review: "NOUVEL AVIS À VALIDER",
+    message: "NOUVEAU MESSAGE À TRAITER",
+  };
   await notifyTelegramAdmins(
-    `<b>${labels[entity]}</b>\n${escapeTelegramHtml(title)}`,
-    entityActions(entity, id),
+    `<b>${labels[entity]}</b>\nUne nouvelle activité a été envoyée sur Pokédex.\n${escapeTelegramHtml(title)}\n\nOuvre l’administration pour la consulter.`,
+    moderationQueueKeyboard(entity, id),
   );
 }

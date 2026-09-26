@@ -27,7 +27,8 @@ export default async function MemberEntryEditPage({ params }: { params: Promise<
     "families",
   ]);
   const initialEntry = JSON.parse(JSON.stringify(entry)) as EntryDetailDto;
-  const canResubmit = request.status === "CHANGES_REQUESTED";
+  const canSubmit = ["DRAFT", "CHANGES_REQUESTED"].includes(request.status);
+  const changesRequested = request.status === "CHANGES_REQUESTED";
 
   return (
     <div className="page-shell page-shell--narrow page-stack">
@@ -51,8 +52,8 @@ export default async function MemberEntryEditPage({ params }: { params: Promise<
           categories={categories}
           aromaFamilies={aromaFamilies}
           initialEntry={initialEntry}
-          allowSubmit={canResubmit}
-          moderationMessage={request.reason}
+          allowSubmit={canSubmit}
+          moderationMessage={changesRequested ? request.reason : null}
           returnHref="/profil/fiches"
         />
       )}

@@ -7,7 +7,7 @@ import { AppError } from "@/lib/errors";
 
 export const PRIVATE_STORAGE_SIGNED_URL_TTL_SECONDS = 5 * 60;
 
-type SignablePrivateBucket = "message-attachments" | "contest-results";
+type SignablePrivateBucket = "entry-drafts" | "message-attachments" | "contest-results";
 
 export function publicStorageUrl(bucket: string, path: string | null): string | null {
   if (!path) return null;
