@@ -1,10 +1,9 @@
 import Link from "next/link";
-import { Filter, Search } from "lucide-react";
+import { ChevronDown, Filter, Search } from "lucide-react";
 import type { CategoryDto, EntrySummaryDto } from "@/components/data/types";
 import { serverApi, unwrapList } from "@/components/data/server-api";
-import { CategoryGrid } from "@/components/entries/category-card";
 import { EntryGrid } from "@/components/entries/entry-card";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+import { EmptyState, ErrorState, formatCount } from "@/components/ui/states";
 
 export type CatalogueSearchParams = {
   query?: string | string[];
@@ -69,6 +68,34 @@ function pageHref(pathname: string, params: CatalogueSearchParams, page: number)
   return `${pathname}?${query.toString()}`;
 }
 
+function categoryValue(category: CategoryDto) {
+  return category.slug ?? String(category.id);
+}
+
+function quickCategoryHref(
+  pathname: string,
+  params: CatalogueSearchParams,
+  selectedCategory: string,
+) {
+  const query = new URLSearchParams();
+  for (const key of FILTER_KEYS) {
+    if (key === "category" || key === "subcategory") continue;
+    const value = first(params[key]);
+    if (value) query.set(key, value);
+  }
+  if (selectedCategory) query.set("category", selectedCategory);
+  if (pageNumber(params.page) > 1) query.set("page", "1");
+  const search = query.toString();
+  return search ? `${pathname}?${search}` : pathname;
+}
+
+function activeFilterCount(params: CatalogueSearchParams) {
+  return FILTER_KEYS.filter((key) => {
+    const value = first(params[key]);
+    return value && (key !== "sort" || value !== "recent") && key !== "query";
+  }).length;
+}
+
 export async function CatalogueView({
   searchParams,
   pathname = "/explorer",
@@ -112,6 +139,119 @@ export async function CatalogueView({
         ? currentPage + 1
         : currentPage;
 
+  const filterForm = (
+    <form className="filter-form" action={pathname} method="get">
+      {first(searchParams.query) && (
+        <input type="hidden" name="query" value={first(searchParams.query)} />
+      )}
+      <div className="field">
+        <label htmlFor="filter-category">Catégorie</label>
+        <select id="filter-category" name="category" defaultValue={first(searchParams.category)}>
+          <option value="">Toutes</option>
+          {categories.map((category) => (
+            <option value={category.slug ?? String(category.id)} key={String(category.id)}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="filter-subcategory">Sous-catégorie</label>
+        <select
+          id="filter-subcategory"
+          name="subcategory"
+          defaultValue={first(searchParams.subcategory)}
+          disabled={!selectedCategory?.subcategories?.length}
+        >
+          <option value="">Toutes</option>
+          {selectedCategory?.subcategories?.map((subcategory) => (
+            <option value={subcategory.slug ?? String(subcategory.id)} key={String(subcategory.id)}>
+              {subcategory.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label htmlFor="filter-author">Dresseur</label>
+        <input
+          id="filter-author"
+          name="author"
+          defaultValue={first(searchParams.author)}
+          placeholder="Nom ou @username"
+        />
+      </div>
+      <div className="field">
+        <label htmlFor="filter-tag">Tag</label>
+        <input
+          id="filter-tag"
+          name="tag"
+          defaultValue={first(searchParams.tag)}
+          placeholder="Ex. fruité"
+        />
+      </div>
+      <div className="field">
+        <label htmlFor="filter-rating">Note minimale</label>
+        <select id="filter-rating" name="minRating" defaultValue={first(searchParams.minRating)}>
+          <option value="">Toutes les notes</option>
+          <option value="6">6/10 et plus</option>
+          <option value="7">7/10 et plus</option>
+          <option value="8">8/10 et plus</option>
+          <option value="9">9/10 et plus</option>
+        </select>
+      </div>
+      <div className="field-group" role="group" aria-labelledby="micron-filter-label">
+        <span id="micron-filter-label" className="field-group__label">
+          Plage en microns
+        </span>
+        <div className="field-grid field-grid--compact">
+          <div className="field">
+            <label htmlFor="filter-micron-min">Minimum</label>
+            <input
+              id="filter-micron-min"
+              name="micronMin"
+              type="number"
+              min="1"
+              max="1000"
+              inputMode="numeric"
+              defaultValue={first(searchParams.micronMin)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="filter-micron-max">Maximum</label>
+            <input
+              id="filter-micron-max"
+              name="micronMax"
+              type="number"
+              min="1"
+              max="1000"
+              inputMode="numeric"
+              defaultValue={first(searchParams.micronMax)}
+            />
+          </div>
+        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="filter-sort">Trier par</label>
+        <select id="filter-sort" name="sort" defaultValue={first(searchParams.sort) || "recent"}>
+          <option value="recent">Plus récentes</option>
+          <option value="oldest">Plus anciennes</option>
+          <option value="rating">Mieux notées</option>
+          <option value="views">Plus vues</option>
+          <option value="likes">Plus aimées</option>
+          <option value="reviews">Plus d’avis</option>
+          <option value="alphabetical">Alphabétique</option>
+          <option value="number">Numéro</option>
+        </select>
+      </div>
+      <button className="button" type="submit">
+        Appliquer
+      </button>
+      <Link className="button button--secondary" href={pathname}>
+        Réinitialiser
+      </Link>
+    </form>
+  );
+
   return (
     <div className="page-shell page-stack">
       <header className="page-header">
@@ -143,152 +283,192 @@ export async function CatalogueView({
         </button>
       </form>
 
-      {showCategories &&
-        categories.length > 0 &&
-        !first(searchParams.query) &&
-        !first(searchParams.category) && (
-          <section className="section-stack" aria-labelledby="explorer-categories">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Taxonomie dynamique</p>
-                <h2 id="explorer-categories">Catégories</h2>
-              </div>
-            </div>
-            <CategoryGrid categories={categories} />
-          </section>
-        )}
+      {showCategories && categories.length > 0 && (
+        <nav className="explorer-category-bar" aria-label="Catégories rapides">
+          <span className="explorer-category-bar__label">Catégories</span>
+          <div className="explorer-category-chips">
+            <Link
+              className={`explorer-category-chip${!first(searchParams.category) ? " is-active" : ""}`}
+              href={quickCategoryHref(pathname, searchParams, "")}
+              aria-current={!first(searchParams.category) ? "page" : undefined}
+            >
+              Toutes
+            </Link>
+            {categories.map((category) => {
+              const value = categoryValue(category);
+              const isActive = first(searchParams.category) === value;
+              return (
+                <Link
+                  className={`explorer-category-chip${isActive ? " is-active" : ""}`}
+                  href={quickCategoryHref(pathname, searchParams, value)}
+                  aria-current={isActive ? "page" : undefined}
+                  key={String(category.id)}
+                >
+                  <span>{category.name}</span>
+                  {category.entryCount !== null && category.entryCount !== undefined && (
+                    <span className="explorer-category-chip__count">
+                      {formatCount(category.entryCount)}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      )}
 
       <div className="filter-layout">
-        <aside className="filter-panel">
-          <h2>
-            <Filter size={17} aria-hidden="true" /> Filtres
-          </h2>
-          <form className="filter-form" action={pathname} method="get">
-            {first(searchParams.query) && (
-              <input type="hidden" name="query" value={first(searchParams.query)} />
-            )}
-            <div className="field">
-              <label htmlFor="filter-category">Catégorie</label>
-              <select
-                id="filter-category"
-                name="category"
-                defaultValue={first(searchParams.category)}
-              >
-                <option value="">Toutes</option>
-                {categories.map((category) => (
-                  <option value={category.slug ?? String(category.id)} key={String(category.id)}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="filter-subcategory">Sous-catégorie</label>
-              <select
-                id="filter-subcategory"
-                name="subcategory"
-                defaultValue={first(searchParams.subcategory)}
-                disabled={!selectedCategory?.subcategories?.length}
-              >
-                <option value="">Toutes</option>
-                {selectedCategory?.subcategories?.map((subcategory) => (
-                  <option
-                    value={subcategory.slug ?? String(subcategory.id)}
-                    key={String(subcategory.id)}
-                  >
-                    {subcategory.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="filter-author">Dresseur</label>
-              <input
-                id="filter-author"
-                name="author"
-                defaultValue={first(searchParams.author)}
-                placeholder="Nom ou @username"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="filter-tag">Tag</label>
-              <input
-                id="filter-tag"
-                name="tag"
-                defaultValue={first(searchParams.tag)}
-                placeholder="Ex. fruité"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="filter-rating">Note minimale</label>
-              <select
-                id="filter-rating"
-                name="minRating"
-                defaultValue={first(searchParams.minRating)}
-              >
-                <option value="">Toutes les notes</option>
-                <option value="6">6/10 et plus</option>
-                <option value="7">7/10 et plus</option>
-                <option value="8">8/10 et plus</option>
-                <option value="9">9/10 et plus</option>
-              </select>
-            </div>
-            <div className="field-group" role="group" aria-labelledby="micron-filter-label">
-              <span id="micron-filter-label" className="field-group__label">
-                Plage en microns
+        {showCategories ? (
+          <details className="filter-panel">
+            <summary>
+              <span className="filter-panel__summary-title">
+                <Filter size={17} aria-hidden="true" />
+                <span>Filtres avancés</span>
+                {activeFilterCount(searchParams) > 0 && (
+                  <span className="filter-panel__count">{activeFilterCount(searchParams)}</span>
+                )}
               </span>
-              <div className="field-grid field-grid--compact">
+              <ChevronDown className="filter-panel__chevron" size={18} aria-hidden="true" />
+            </summary>
+            <div className="filter-panel__content">
+              <form className="filter-form" action={pathname} method="get">
+                {first(searchParams.query) && (
+                  <input type="hidden" name="query" value={first(searchParams.query)} />
+                )}
                 <div className="field">
-                  <label htmlFor="filter-micron-min">Minimum</label>
+                  <label htmlFor="filter-category">Catégorie</label>
+                  <select
+                    id="filter-category"
+                    name="category"
+                    defaultValue={first(searchParams.category)}
+                  >
+                    <option value="">Toutes</option>
+                    {categories.map((category) => (
+                      <option
+                        value={category.slug ?? String(category.id)}
+                        key={String(category.id)}
+                      >
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="filter-subcategory">Sous-catégorie</label>
+                  <select
+                    id="filter-subcategory"
+                    name="subcategory"
+                    defaultValue={first(searchParams.subcategory)}
+                    disabled={!selectedCategory?.subcategories?.length}
+                  >
+                    <option value="">Toutes</option>
+                    {selectedCategory?.subcategories?.map((subcategory) => (
+                      <option
+                        value={subcategory.slug ?? String(subcategory.id)}
+                        key={String(subcategory.id)}
+                      >
+                        {subcategory.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="filter-author">Dresseur</label>
                   <input
-                    id="filter-micron-min"
-                    name="micronMin"
-                    type="number"
-                    min="1"
-                    max="1000"
-                    inputMode="numeric"
-                    defaultValue={first(searchParams.micronMin)}
+                    id="filter-author"
+                    name="author"
+                    defaultValue={first(searchParams.author)}
+                    placeholder="Nom ou @username"
                   />
                 </div>
                 <div className="field">
-                  <label htmlFor="filter-micron-max">Maximum</label>
+                  <label htmlFor="filter-tag">Tag</label>
                   <input
-                    id="filter-micron-max"
-                    name="micronMax"
-                    type="number"
-                    min="1"
-                    max="1000"
-                    inputMode="numeric"
-                    defaultValue={first(searchParams.micronMax)}
+                    id="filter-tag"
+                    name="tag"
+                    defaultValue={first(searchParams.tag)}
+                    placeholder="Ex. fruité"
                   />
                 </div>
-              </div>
+                <div className="field">
+                  <label htmlFor="filter-rating">Note minimale</label>
+                  <select
+                    id="filter-rating"
+                    name="minRating"
+                    defaultValue={first(searchParams.minRating)}
+                  >
+                    <option value="">Toutes les notes</option>
+                    <option value="6">6/10 et plus</option>
+                    <option value="7">7/10 et plus</option>
+                    <option value="8">8/10 et plus</option>
+                    <option value="9">9/10 et plus</option>
+                  </select>
+                </div>
+                <div className="field-group" role="group" aria-labelledby="micron-filter-label">
+                  <span id="micron-filter-label" className="field-group__label">
+                    Plage en microns
+                  </span>
+                  <div className="field-grid field-grid--compact">
+                    <div className="field">
+                      <label htmlFor="filter-micron-min">Minimum</label>
+                      <input
+                        id="filter-micron-min"
+                        name="micronMin"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        inputMode="numeric"
+                        defaultValue={first(searchParams.micronMin)}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="filter-micron-max">Maximum</label>
+                      <input
+                        id="filter-micron-max"
+                        name="micronMax"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        inputMode="numeric"
+                        defaultValue={first(searchParams.micronMax)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor="filter-sort">Trier par</label>
+                  <select
+                    id="filter-sort"
+                    name="sort"
+                    defaultValue={first(searchParams.sort) || "recent"}
+                  >
+                    <option value="recent">Plus récentes</option>
+                    <option value="oldest">Plus anciennes</option>
+                    <option value="rating">Mieux notées</option>
+                    <option value="views">Plus vues</option>
+                    <option value="likes">Plus aimées</option>
+                    <option value="reviews">Plus d’avis</option>
+                    <option value="alphabetical">Alphabétique</option>
+                    <option value="number">Numéro</option>
+                  </select>
+                </div>
+                <button className="button" type="submit">
+                  Appliquer
+                </button>
+                <Link className="button button--secondary" href={pathname}>
+                  Réinitialiser
+                </Link>
+              </form>
             </div>
-            <div className="field">
-              <label htmlFor="filter-sort">Trier par</label>
-              <select
-                id="filter-sort"
-                name="sort"
-                defaultValue={first(searchParams.sort) || "recent"}
-              >
-                <option value="recent">Plus récentes</option>
-                <option value="oldest">Plus anciennes</option>
-                <option value="rating">Mieux notées</option>
-                <option value="views">Plus vues</option>
-                <option value="likes">Plus aimées</option>
-                <option value="reviews">Plus d’avis</option>
-                <option value="alphabetical">Alphabétique</option>
-                <option value="number">Numéro</option>
-              </select>
-            </div>
-            <button className="button" type="submit">
-              Appliquer
-            </button>
-            <Link className="button button--secondary" href={pathname}>
-              Réinitialiser
-            </Link>
-          </form>
-        </aside>
+          </details>
+        ) : (
+          <aside className="filter-panel">
+            <h2>
+              <Filter size={17} aria-hidden="true" /> Filtres
+            </h2>
+            {filterForm}
+          </aside>
+        )}
 
         <section className="section-stack" aria-labelledby="catalogue-results">
           <div className="section-heading">
