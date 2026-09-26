@@ -283,6 +283,7 @@ export const telegramBroadcastTypeEnum = pgEnum("telegram_broadcast_type", [
   "CONTEST_NEW",
   "CONTEST_RESULT",
   "CONTEST_WINNER",
+  "ENTRY_PUBLISHED",
 ]);
 export const telegramBroadcastStatusEnum = pgEnum("telegram_broadcast_status", [
   "QUEUED",
@@ -1271,9 +1272,8 @@ export const telegramBroadcasts = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     type: telegramBroadcastTypeEnum("type").notNull(),
-    contestId: uuid("contest_id")
-      .notNull()
-      .references(() => contests.id, { onDelete: "cascade" }),
+    contestId: uuid("contest_id").references(() => contests.id, { onDelete: "cascade" }),
+    entryId: uuid("entry_id").references(() => entries.id, { onDelete: "cascade" }),
     createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
     status: telegramBroadcastStatusEnum("status").notNull().default("QUEUED"),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
@@ -1288,6 +1288,14 @@ export const telegramBroadcasts = pgTable(
   (table) => [
     index("telegram_broadcasts_status_created_idx").on(table.status, table.createdAt),
     index("telegram_broadcasts_contest_created_idx").on(table.contestId, table.createdAt),
+    index("telegram_broadcasts_entry_created_idx").on(table.entryId, table.createdAt),
+    check(
+      "telegram_broadcasts_single_target_check",
+      sql`(${table.contestId} is not null and ${table.entryId} is null) or (${table.contestId} is null and ${table.entryId} is not null)`,
+    ),
+    uniqueIndex("telegram_broadcasts_entry_published_unique")
+      .on(table.entryId)
+      .where(sql`${table.entryId} is not null`),
   ],
 );
 

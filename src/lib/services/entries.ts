@@ -28,6 +28,7 @@ import {
   subcategoryMicronPresets,
   subcategories,
   tags,
+  telegramBroadcasts,
   telegramPublications,
   users,
 } from "@/lib/db/schema";
@@ -35,6 +36,7 @@ import { AppError, conflict, forbidden, notFound } from "@/lib/errors";
 import { auditValues, type AuditSource } from "@/lib/services/audit";
 import { createUserNotification, sendEntryStatusTelegram } from "@/lib/services/notifications";
 import { awardConfiguredExperience, ensureUserBadge } from "@/lib/services/experience";
+import { prepareEntryPublishedBroadcast } from "@/lib/services/telegram-entry-broadcasts";
 import {
   finalizeEntryImagePromotion,
   prepareEntryImagePromotion,
@@ -1042,6 +1044,7 @@ export async function moderateEntry(
   source: AuditSource = "WEB_ADMIN",
 ) {
   let promotion: EntryImagePromotion | undefined;
+  let entryBroadcastId: string | null = null;
   let result: { id: string; status: ModerateEntry["status"] };
   try {
     result = await getDb().transaction(async (tx) => {
@@ -1177,6 +1180,21 @@ export async function moderateEntry(
           previewPayload: { text: preview },
           createdById: actor.id,
         });
+        if (!entry.publishedAt && !entry.isDemo) {
+          const [broadcast] = await tx
+            .insert(telegramBroadcasts)
+            .values({
+              type: "ENTRY_PUBLISHED",
+              contestId: null,
+              entryId: id,
+              createdById: actor.id,
+              status: "QUEUED",
+              payload: { entryId: id },
+            })
+            .onConflictDoNothing()
+            .returning({ id: telegramBroadcasts.id });
+          entryBroadcastId = broadcast?.id ?? null;
+        }
         if (!entry.isDemo) {
           await awardConfiguredExperience(tx, {
             userId: entry.originalContributorId,
@@ -1248,6 +1266,19 @@ export async function moderateEntry(
   if (promotion) await finalizeEntryImagePromotion(promotion);
 
   let notificationWarning = false;
+  if (entryBroadcastId) {
+    try {
+      await prepareEntryPublishedBroadcast(entryBroadcastId, id);
+    } catch (error) {
+      notificationWarning = true;
+      entryBroadcastId = null;
+      logger.warn("telegram_entry_broadcast_prepare_failed", {
+        broadcastId: entryBroadcastId,
+        entryId: id,
+        error,
+      });
+    }
+  }
   if (["CHANGES_REQUESTED", "APPROVED", "REJECTED"].includes(result.status)) {
     const [recipient] = await getDb()
       .select({
@@ -1312,7 +1343,7 @@ export async function moderateEntry(
     status: result.status,
     notificationWarning,
   });
-  return { ...result, notificationWarning };
+  return { ...result, notificationWarning, telegramBroadcastId: entryBroadcastId };
 }
 
 export async function softDeleteEntry(

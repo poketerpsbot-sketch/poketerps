@@ -4356,6 +4356,28 @@ where slug in ('role-owner','role-admin','role-moderator','role-editor','trainer
   'captures-10','captures-50','captures-100','contest-winner','level-1','level-5','level-10',
   'level-15','partner');
 
+-- Evolution 010: notifications Telegram des fiches publiées.
+alter type public.telegram_broadcast_type add value if not exists 'ENTRY_PUBLISHED';
+
+alter table public.telegram_broadcasts
+  alter column contest_id drop not null;
+
+alter table public.telegram_broadcasts
+  add column if not exists entry_id uuid references public.entries(id) on delete cascade;
+
+alter table public.telegram_broadcasts
+  add constraint telegram_broadcasts_single_target_check check (
+    (contest_id is not null and entry_id is null)
+    or (contest_id is null and entry_id is not null)
+  );
+
+create index if not exists telegram_broadcasts_entry_created_idx
+  on public.telegram_broadcasts(entry_id,created_at desc);
+
+create unique index if not exists telegram_broadcasts_entry_published_unique
+  on public.telegram_broadcasts(entry_id)
+  where entry_id is not null;
+
 -- Evolution badges V3 : une famille visuelle commune et des paliers de contribution.
 -- Les slugs et les attributions existants restent valides ; cette évolution est additive.
 
@@ -4433,7 +4455,5 @@ where counts.total >= case b.slug
   else 2147483647
 end
 on conflict do nothing;
-
-
 
 commit;

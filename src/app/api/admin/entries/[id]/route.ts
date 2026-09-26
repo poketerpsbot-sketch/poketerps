@@ -1,10 +1,13 @@
 import type { NextRequest } from "next/server";
+import { after } from "next/server";
 
 import { requireAdminUser } from "@/lib/auth/admin";
 import { forbidden } from "@/lib/errors";
 import { apiJson, handleApi, parseJson } from "@/lib/http";
 import { guardBrowserMutation, rateLimits } from "@/lib/security/request-guard";
 import { moderateEntry, permanentlyDeleteEntry, softDeleteEntry } from "@/lib/services/entries";
+import { logger } from "@/lib/logger";
+import { processTelegramBroadcast } from "@/lib/services/telegram-entry-broadcasts";
 import { uuidSchema } from "@/lib/validation/common";
 import { moderateEntrySchema } from "@/lib/validation/entries";
 import { permanentDeleteEntrySchema } from "@/lib/validation/admin";
@@ -17,7 +20,25 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     await guardBrowserMutation(request, rateLimits.admin, actor.id);
     const { id } = await context.params;
     const input = await parseJson(request, moderateEntrySchema);
-    return apiJson(await moderateEntry(uuidSchema.parse(id), input, actor, requestId));
+    const result = await moderateEntry(uuidSchema.parse(id), input, actor, requestId);
+    if (result.telegramBroadcastId) {
+      const broadcastId = result.telegramBroadcastId;
+      after(async () => {
+        try {
+          await processTelegramBroadcast(broadcastId);
+        } catch (error) {
+          logger.error("telegram_entry_broadcast_process_failed", {
+            broadcastId,
+            error,
+          });
+        }
+      });
+    }
+    return apiJson({
+      id: result.id,
+      status: result.status,
+      notificationWarning: result.notificationWarning,
+    });
   });
 }
 

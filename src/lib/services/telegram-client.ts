@@ -26,6 +26,10 @@ type TelegramResponse<T> = {
   error_code?: number;
 };
 
+function redactTelegramSecrets(value?: string): string | undefined {
+  return value?.replace(/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/g, "[redacted]");
+}
+
 export type TelegramMessage = {
   message_id: number;
   chat: { id: number };
@@ -52,7 +56,12 @@ export async function telegramRequest<T>(
     if (!response.ok || !result?.ok || result.result === undefined) {
       throw new AppError("TELEGRAM_API_ERROR", "Telegram est momentanément indisponible.", 502, {
         expose: false,
-        details: { method, status: response.status, errorCode: result?.error_code },
+        details: {
+          method,
+          status: response.status,
+          errorCode: result?.error_code,
+          description: redactTelegramSecrets(result?.description),
+        },
       });
     }
     return result.result;
