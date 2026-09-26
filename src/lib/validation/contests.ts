@@ -85,13 +85,16 @@ export const contestLinkInputSchema = z.object({
 });
 
 const contestFieldsSchema = z.object({
-  slug: z
-    .string()
-    .trim()
-    .min(2)
-    .max(140)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-    .optional(),
+  slug: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z
+      .string()
+      .trim()
+      .min(2)
+      .max(140)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .optional(),
+  ),
   title: z.string().trim().min(2).max(180),
   summary: nullableText(320),
   description: nullableText(20_000),

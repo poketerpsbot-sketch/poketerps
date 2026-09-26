@@ -87,6 +87,16 @@ describe("contest validation", () => {
     ).toBe(false);
   });
 
+  it("allows the admin form to leave the slug blank for automatic generation", () => {
+    const result = createContestSchema.safeParse({
+      ...validContest,
+      slug: "",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.slug).toBeUndefined();
+  });
+
   it("keeps participation and moderation payloads narrow", () => {
     expect(contestParticipationInputSchema.safeParse({ statement: "Je participe" }).success).toBe(
       true,
@@ -180,6 +190,21 @@ describe("contest route contracts", () => {
     );
     expect(response.status).toBe(201);
     expect(mocks.requireAdminUser).toHaveBeenLastCalledWith("contest:manage");
+
+    mocks.createContest.mockResolvedValue({ id: "contest-2", ...validContest });
+    const generatedSlugResponse = await postAdminContest(
+      new NextRequest("https://pokedex.example.test/api/admin/contests", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://pokedex.example.test" },
+        body: JSON.stringify({ ...validContest, slug: "" }),
+      }),
+    );
+    expect(generatedSlugResponse.status).toBe(201);
+    expect(mocks.createContest).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: validContest.title, slug: undefined }),
+      expect.objectContaining({ role: "ADMIN" }),
+      expect.any(String),
+    );
   });
 
   it("allows an administrator to soft-delete a contest without a prior cancellation", async () => {
