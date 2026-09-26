@@ -221,6 +221,22 @@ export type TeamActivitySummaryDto = {
   recentAudit: TeamAuditItemDto[];
 };
 
+export type LivePresenceUserDto = {
+  id: string;
+  displayName: string;
+  telegramUsername: string | null;
+  profilePhotoUrl: string | null;
+  lastActivityAt: string;
+};
+
+export type OwnerLivePresenceDto = {
+  generatedAt: string;
+  miniAppWindowSeconds: number;
+  botWindowSeconds: number;
+  miniApp: LivePresenceUserDto[];
+  bot: LivePresenceUserDto[];
+};
+
 export type TeamAuditItemDto = {
   id: string;
   actorUserId: string | null;

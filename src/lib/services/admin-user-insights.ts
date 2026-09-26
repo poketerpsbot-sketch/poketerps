@@ -12,6 +12,7 @@ import { conflict, forbidden, notFound } from "@/lib/errors";
 import { assertCanManageUser, canManageUser } from "@/lib/services/admin-users";
 import { recordAudit } from "@/lib/services/audit";
 import { escapeTelegramHtml, sendTelegramMessage } from "@/lib/services/telegram-client";
+import type { OwnerLivePresenceDto } from "@/components/admin/user-activity-types";
 import type { updateUserTeamPermissionSchema } from "@/lib/validation/admin-management";
 import type { z } from "zod";
 
@@ -19,6 +20,62 @@ type CountValue = number | string;
 
 function count(value: CountValue | null | undefined) {
   return Number(value ?? 0);
+}
+
+export async function getOwnerLivePresence(actor: CurrentUser): Promise<OwnerLivePresenceDto> {
+  if (actor.role !== "OWNER")
+    throw forbidden("La présence en direct est réservée au propriétaire.");
+
+  const miniAppWindowSeconds = 5 * 60;
+  const botWindowSeconds = 10 * 60;
+  const rows = await getSqlClient()<
+    Array<{
+      id: string;
+      display_name: string;
+      telegram_username: string | null;
+      profile_photo_url: string | null;
+      platform: "MINI_APP" | "TELEGRAM_BOT";
+      last_activity_at: string;
+    }>
+  >`
+    select distinct on (s.user_id,s.platform)
+      u.id,u.display_name,u.telegram_username,u.profile_photo_url,
+      s.platform::text platform,s.last_activity_at
+    from user_sessions s
+    inner join users u on u.id=s.user_id
+    where s.platform in ('MINI_APP','TELEGRAM_BOT')
+      and u.account_kind='TELEGRAM'
+      and not u.is_system
+      and not u.is_banned
+      and u.role<>'BANNED'
+      and u.suspended_at is null
+      and s.last_activity_at >= now() - case
+        when s.platform='MINI_APP' then ${miniAppWindowSeconds}::int * interval '1 second'
+        else ${botWindowSeconds}::int * interval '1 second'
+      end
+      and (s.platform='TELEGRAM_BOT' or s.ended_at is null)
+    order by s.user_id,s.platform,s.last_activity_at desc
+  `;
+
+  const normalize = (platform: "MINI_APP" | "TELEGRAM_BOT") =>
+    rows
+      .filter((row) => row.platform === platform)
+      .sort((left, right) => right.last_activity_at.localeCompare(left.last_activity_at))
+      .map((row) => ({
+        id: row.id,
+        displayName: row.display_name,
+        telegramUsername: row.telegram_username,
+        profilePhotoUrl: row.profile_photo_url,
+        lastActivityAt: row.last_activity_at,
+      }));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    miniAppWindowSeconds,
+    botWindowSeconds,
+    miniApp: normalize("MINI_APP"),
+    bot: normalize("TELEGRAM_BOT"),
+  };
 }
 
 async function getUserRankings(userId: string) {

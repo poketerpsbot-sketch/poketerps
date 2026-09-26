@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   addAdminUserNote: vi.fn(),
   enforceRateLimit: vi.fn(),
   getAdminUserDetail: vi.fn(),
+  getOwnerLivePresence: vi.fn(),
   getTeamActivity: vi.fn(),
   guardBrowserMutation: vi.fn(),
   requireAdminUser: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@/lib/security/request-guard", () => ({
 vi.mock("@/lib/services/admin-user-insights", () => ({
   addAdminUserNote: mocks.addAdminUserNote,
   getAdminUserDetail: mocks.getAdminUserDetail,
+  getOwnerLivePresence: mocks.getOwnerLivePresence,
   getTeamActivity: mocks.getTeamActivity,
   sendAdminUserTelegramMessage: mocks.sendAdminUserTelegramMessage,
   updateUserTeamPermission: mocks.updateUserTeamPermission,
@@ -32,6 +34,7 @@ vi.mock("@/lib/services/admin-user-insights", () => ({
 vi.mock("@/lib/services/admin-users", () => ({ updateAdminUser: vi.fn() }));
 
 import { GET as getTeamActivity } from "@/app/api/admin/team-activity/route";
+import { GET as getLivePresence } from "@/app/api/admin/live-presence/route";
 import { POST as postNote } from "@/app/api/admin/users/[id]/notes/route";
 import { GET as getUserDetail } from "@/app/api/admin/users/[id]/route";
 import { POST as postTelegramMessage } from "@/app/api/admin/users/[id]/telegram-message/route";
@@ -76,6 +79,22 @@ describe("admin user and team activity routes", () => {
       expect.objectContaining({ days: 7, scope: "moderators" }),
       actor,
     );
+  });
+
+  it("keeps live presence behind the owner-scoped service", async () => {
+    mocks.getOwnerLivePresence.mockResolvedValue({
+      generatedAt: "2026-09-26T20:00:00.000Z",
+      miniAppWindowSeconds: 300,
+      botWindowSeconds: 600,
+      miniApp: [],
+      bot: [],
+    });
+    const response = await getLivePresence(
+      new NextRequest("https://pokedex.example.test/api/admin/live-presence"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.getOwnerLivePresence).toHaveBeenCalledWith(actor);
   });
 
   it("validates and archives internal notes and Telegram messages", async () => {

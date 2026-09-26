@@ -48,6 +48,7 @@ export function TelegramBridge() {
     window.addEventListener("keydown", touchSession);
     window.addEventListener("focus", touchSession);
     document.addEventListener("visibilitychange", touchVisibleSession);
+    const heartbeat = window.setInterval(touchVisibleSession, 60_000);
     void fetch("/api/auth/session", { signal: controller.signal })
       .then(async (response) => {
         if (response.ok) return;
@@ -91,6 +92,7 @@ export function TelegramBridge() {
       window.removeEventListener("keydown", touchSession);
       window.removeEventListener("focus", touchSession);
       document.removeEventListener("visibilitychange", touchVisibleSession);
+      window.clearInterval(heartbeat);
     };
   }, [router]);
 
