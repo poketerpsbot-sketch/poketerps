@@ -14,7 +14,8 @@ export default async function AdminEntriesPage({
 }: {
   searchParams: Promise<{ entry?: string }>;
 }) {
-  await requireAdminUser("entry:moderate");
+  const actor = await requireAdminUser("entry:moderate");
+  const canPublishDirectly = actor.role !== "MODERATOR";
   const { entry: focusedEntryId } = await searchParams;
   const [result, corrections] = await Promise.all([
     serverApi<unknown>("/api/admin/entries?status=PENDING_REVIEW&limit=50&offset=0"),
@@ -67,7 +68,10 @@ export default async function AdminEntriesPage({
                     label: "Demander des corrections",
                     tone: "secondary",
                   },
-                  { status: "PUBLISHED", label: "Approuver et publier" },
+                  {
+                    status: canPublishDirectly ? "PUBLISHED" : "APPROVED",
+                    label: canPublishDirectly ? "Approuver et publier" : "Approuver",
+                  },
                   { status: "REJECTED", label: "Rejeter", tone: "danger" },
                 ]}
               />
