@@ -93,6 +93,13 @@ export function isStartCommandUpdate(
   return parseBotCommand(message.text, botUsername)?.name === "start";
 }
 
+export function parseSharedEntryParameter(argument: string): string | null {
+  const match = argument
+    .trim()
+    .match(/^entry_([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i);
+  return match?.[1] ?? null;
+}
+
 export type AdminEntity = "entry" | "review" | "message";
 
 export type BotCallback = {

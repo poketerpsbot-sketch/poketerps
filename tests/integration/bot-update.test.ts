@@ -4,6 +4,7 @@ const telegram = vi.hoisted(() => ({
   answerTelegramCallback: vi.fn(),
   notifyTelegramAdmins: vi.fn(),
   sendTelegramMessage: vi.fn(),
+  sendTelegramPhoto: vi.fn(),
   sendWelcomeMessage: vi.fn(),
 }));
 
@@ -24,7 +25,10 @@ vi.mock("@/lib/services/admin-queues", () => ({
     totalActionable: 0,
   }),
 }));
-vi.mock("@/lib/services/catalogue", () => ({ searchCatalogue: vi.fn() }));
+vi.mock("@/lib/services/catalogue", () => ({
+  getEntryByIdOrSlug: vi.fn(),
+  searchCatalogue: vi.fn(),
+}));
 vi.mock("@/lib/services/entries", () => ({ moderateEntry: vi.fn() }));
 vi.mock("@/lib/services/messages", () => ({
   listAdminMessages: vi.fn(),
@@ -101,6 +105,29 @@ describe("Telegram command routing", () => {
       42,
       expect.objectContaining({ role: "OWNER" }),
     );
+  });
+
+  it("opens the shared entry directly in the bot", async () => {
+    const entryId = "550e8400-e29b-41d4-a716-446655440000";
+    const { getEntryByIdOrSlug } = await import("@/lib/services/catalogue");
+    vi.mocked(getEntryByIdOrSlug).mockResolvedValue({
+      id: entryId,
+      slug: "blue-zushi",
+      name: "Blue Zushi",
+      shortDescription: "Une description courte.",
+      images: [{ url: "https://cdn.example.test/blue-zushi.webp", isPrimary: true }],
+    } as never);
+
+    await processTelegramUpdate(commandUpdate(`/start entry_${entryId}`), admin);
+
+    expect(getEntryByIdOrSlug).toHaveBeenCalledWith(entryId);
+    expect(telegram.sendTelegramPhoto).toHaveBeenCalledWith(
+      42,
+      "https://cdn.example.test/blue-zushi.webp",
+      expect.stringContaining("Blue Zushi"),
+      expect.objectContaining({ inline_keyboard: expect.any(Array) }),
+    );
+    expect(telegram.sendWelcomeMessage).not.toHaveBeenCalled();
   });
 
   it("requires a trusted actor for commands other than /start", async () => {

@@ -87,7 +87,15 @@ function micronLabel(entry: EntryDetailDto) {
   return null;
 }
 
-export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews: ReviewDto[] }) {
+export function EntryDetail({
+  entry,
+  reviews,
+  telegramBotUsername,
+}: {
+  entry: EntryDetailDto;
+  reviews: ReviewDto[];
+  telegramBotUsername?: string | null;
+}) {
   const author = contributor(entry);
   const fields = dynamicFields(entry);
   const micron = micronLabel(entry);
@@ -304,6 +312,7 @@ export function EntryDetail({ entry, reviews }: { entry: EntryDetailDto; reviews
               slug={entry.slug}
               entryName={entry.name}
               shareDescription={entry.shortDescription}
+              telegramBotUsername={telegramBotUsername}
               canShare={entry.status === "PUBLISHED"}
               initialLiked={entry.isLiked}
               initialFavorited={entry.isFavorited}

@@ -7,6 +7,7 @@ import {
   buildModeratorMenu,
   buildWelcomeMenu,
   isStartCommandUpdate,
+  parseSharedEntryParameter,
   parseBotCallback,
   parseBotCommand,
   telegramCommandsForRole,
@@ -62,6 +63,12 @@ describe("bot command parsing", () => {
     expect(isStartCommandUpdate({ message: { text: "/start", chat: { type: "group" } } })).toBe(
       false,
     );
+  });
+
+  it("parses only valid shared entry deep-link parameters", () => {
+    expect(parseSharedEntryParameter(`entry_${id}`)).toBe(id);
+    expect(parseSharedEntryParameter("entry_not-an-entry-id")).toBeNull();
+    expect(parseSharedEntryParameter(`entry_${id}_extra`)).toBeNull();
   });
 
   it("documents every supported command exactly once", () => {

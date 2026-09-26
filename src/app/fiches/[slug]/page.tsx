@@ -65,5 +65,11 @@ export default async function EntryPage({ params }: Props) {
     );
   }
   const reviews = reviewsResult.error ? [] : unwrapList<ReviewDto>(reviewsResult.data, ["reviews"]);
-  return <EntryDetail entry={entry} reviews={reviews} />;
+  return (
+    <EntryDetail
+      entry={entry}
+      reviews={reviews}
+      telegramBotUsername={getEnv().TELEGRAM_BOT_USERNAME}
+    />
+  );
 }

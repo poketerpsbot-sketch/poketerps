@@ -9,6 +9,7 @@ type Props = {
   slug: string;
   entryName?: string;
   shareDescription?: string | null;
+  telegramBotUsername?: string | null;
   canShare?: boolean;
   initialLiked?: boolean;
   initialFavorited?: boolean;
@@ -37,6 +38,7 @@ export function EntryActions({
   slug,
   entryName = "Une fiche Pokédex",
   shareDescription,
+  telegramBotUsername,
   canShare = false,
   initialLiked = false,
   initialFavorited = false,
@@ -53,8 +55,16 @@ export function EntryActions({
     return typeof window === "undefined" ? path : new URL(path, window.location.origin).toString();
   }
 
+  function shareTargetUrl() {
+    const username = telegramBotUsername?.trim().replace(/^@/, "");
+    if (canShare && username && /^[A-Za-z0-9_]+$/.test(username)) {
+      return `https://t.me/${username}?start=entry_${encodeURIComponent(entryId)}`;
+    }
+    return shareUrl();
+  }
+
   async function shareEntry() {
-    const url = shareUrl();
+    const url = shareTargetUrl();
     const text = shareDescription?.trim() || `Découvre « ${entryName} » sur Pokédex.`;
     setFeedback("");
     try {
@@ -76,8 +86,10 @@ export function EntryActions({
   }
 
   function telegramShareHref() {
-    const url = shareUrl();
-    const text = shareDescription?.trim() || `Découvre « ${entryName} » sur Pokédex.`;
+    const url = shareTargetUrl();
+    const text = telegramBotUsername
+      ? `Découvre « ${entryName} » dans le bot PokéTerps.`
+      : shareDescription?.trim() || `Découvre « ${entryName} » sur Pokédex.`;
     return `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
   }
 

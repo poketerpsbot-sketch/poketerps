@@ -12,10 +12,11 @@ import {
   buildTeamMenu,
   parseBotCallback,
   parseBotCommand,
+  parseSharedEntryParameter,
   telegramRoleBadge,
   type AdminEntity,
 } from "@/lib/services/bot-pure";
-import { searchCatalogue } from "@/lib/services/catalogue";
+import { getEntryByIdOrSlug, searchCatalogue } from "@/lib/services/catalogue";
 import { listAdminMessages } from "@/lib/services/messages";
 import { listPartners } from "@/lib/services/partners";
 import { getMyProfile } from "@/lib/services/profiles";
@@ -25,6 +26,7 @@ import {
   escapeTelegramHtml,
   notifyTelegramAdmins,
   sendTelegramMessage,
+  sendTelegramPhoto,
   sendWelcomeMessage,
   type InlineKeyboardMarkup,
 } from "@/lib/services/telegram-client";
@@ -78,6 +80,46 @@ function appKeyboard(): InlineKeyboardMarkup {
       [{ text: "Ouvrir le Pokédex", web_app: { url: getEnv().NEXT_PUBLIC_APP_URL } }],
     ],
   };
+}
+
+function sharedEntryKeyboard(slug: string): InlineKeyboardMarkup {
+  const appUrl = getEnv().NEXT_PUBLIC_APP_URL;
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "Ouvrir la fiche dans PokéTerps",
+          web_app: { url: `${appUrl}/fiches/${encodeURIComponent(slug)}` },
+        },
+      ],
+      [{ text: "Ouvrir le Pokédex", web_app: { url: appUrl } }],
+    ],
+  };
+}
+
+async function sendSharedEntry(chatId: number, entryId: string): Promise<void> {
+  try {
+    const entry = await getEntryByIdOrSlug(entryId);
+    const image = entry.images?.find((item) => item.isPrimary) ?? entry.images?.[0];
+    const description = entry.shortDescription?.trim();
+    const caption = `<b>${escapeTelegramHtml(entry.name)}</b>${description ? `\n\n${escapeTelegramHtml(description)}` : ""}\n\nVoici la fiche partagée depuis PokéTerps.`;
+    const keyboard = sharedEntryKeyboard(entry.slug);
+    if (image?.url) {
+      await sendTelegramPhoto(chatId, image.url, caption, keyboard);
+    } else {
+      await sendTelegramMessage(chatId, caption, keyboard);
+    }
+  } catch (error) {
+    if (error instanceof AppError && error.code === "NOT_FOUND") {
+      await sendTelegramMessage(
+        chatId,
+        "Cette fiche n’est plus disponible. Ouvre le Pokédex pour découvrir les fiches publiées.",
+        appKeyboard(),
+      );
+      return;
+    }
+    throw error;
+  }
 }
 
 async function sendLatest(chatId: number): Promise<void> {
@@ -299,6 +341,11 @@ export async function processTelegramUpdate(
     return;
   }
   if (command.name === "start") {
+    const sharedEntryId = parseSharedEntryParameter(command.argument);
+    if (sharedEntryId) {
+      await sendSharedEntry(message.chat.id, sharedEntryId);
+      return;
+    }
     const displayName =
       actor?.displayName ??
       [message.from.first_name, message.from.last_name].filter(Boolean).join(" ").slice(0, 120);
