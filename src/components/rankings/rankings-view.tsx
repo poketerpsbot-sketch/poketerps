@@ -3,6 +3,7 @@ import { Award, Eye, Flame, Heart, Medal, Star, Trophy, Zap } from "lucide-react
 
 import type { EntryRankingDto, EntrySummaryDto, TrainerRankingDto } from "@/components/data/types";
 import { EntryCard } from "@/components/entries/entry-card";
+import { BadgeEmblem } from "@/components/ui/badge-emblem";
 import { EmptyState, ErrorState, SectionHeading, formatCount } from "@/components/ui/states";
 import { UserAvatar } from "@/components/ui/user-avatar";
 
@@ -59,12 +60,7 @@ function RankingBadge({ item, compact = false }: { item: TrainerRankingDto; comp
       }
       title={item.badge.name}
     >
-      {item.badge.imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- asset local ou URL administrable.
-        <img src={item.badge.imageUrl} alt="" />
-      ) : (
-        <span aria-hidden="true">{item.badge.icon ?? "◆"}</span>
-      )}
+      <BadgeEmblem badge={item.badge} size="inline" />
       <span>{item.badge.name}</span>
     </span>
   );

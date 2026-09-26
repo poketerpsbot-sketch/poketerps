@@ -32,6 +32,7 @@ const productEvolutionMigration = read(
   "./migrations/20260816090000_admin_activity_xp_badges_aromas_home.sql",
 );
 const badgeVisualMigration = read("./migrations/20260816193112_badge_visual_collection_v2.sql");
+const badgeSystemV3Migration = read("./migrations/20260926220000_badge_system_v3.sql");
 const drizzle = read("../src/lib/db/schema.ts");
 
 assert(
@@ -133,6 +134,24 @@ assert(
   (badgeVisualMigration.match(/^begin;$/gm) ?? []).length === 1 &&
     (badgeVisualMigration.match(/^commit;$/gm) ?? []).length === 1,
   "badge visual migration must contain one transaction",
+);
+const badgeSystemV3Header =
+  "-- Evolution badges V3 : une famille visuelle commune et des paliers de contribution.";
+const badgeSystemV3Body = (source) => {
+  const start = source.indexOf(badgeSystemV3Header);
+  const end = source.lastIndexOf("\ncommit;");
+  assert(start >= 0 && end > start, "badge system V3 body is missing");
+  return source.slice(start, end).trimEnd();
+};
+assert(
+  schema.includes(badgeSystemV3Header) &&
+    badgeSystemV3Body(schema) === badgeSystemV3Body(badgeSystemV3Migration),
+  "schema.sql badge system V3 snapshot is out of sync with its migration",
+);
+assert(
+  (badgeSystemV3Migration.match(/^begin;$/gm) ?? []).length === 1 &&
+    (badgeSystemV3Migration.match(/^commit;$/gm) ?? []).length === 1,
+  "badge system V3 migration must contain one transaction",
 );
 assert((schema.match(/^begin;$/gm) ?? []).length === 1, "schema must contain exactly one BEGIN");
 assert((schema.match(/^commit;$/gm) ?? []).length === 1, "schema must contain exactly one COMMIT");

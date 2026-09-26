@@ -1208,7 +1208,7 @@ export async function moderateEntry(
               sourceId: entry.originalContributorId,
             });
           }
-          for (const milestone of [10, 50, 100] as const) {
+          for (const milestone of [5, 10, 25, 50, 100, 250] as const) {
             if (publishedTotal >= milestone) {
               await ensureUserBadge(tx, {
                 userId: entry.originalContributorId,

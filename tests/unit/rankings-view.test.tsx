@@ -52,7 +52,8 @@ describe("competitive rankings view", () => {
     expect(html).toContain("J’aime");
     expect(html).toContain("120");
     expect(html).toContain("Pionnière");
-    expect(html).toContain("/badges/level-5.png");
+    expect(html).toContain("badge-emblem");
+    expect(html).not.toContain("/badges/level-5.png");
     expect(html).toContain("trainersPage=2");
     expect(html).toContain('aria-label="Page suivante"');
   });

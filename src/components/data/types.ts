@@ -184,6 +184,7 @@ export type BadgeDto = {
   description?: string | null;
   slug?: string | null;
   kind?: string | null;
+  criteria?: Record<string, unknown> | null;
   awardedAt?: string | null;
   activeUntil?: string | null;
 };

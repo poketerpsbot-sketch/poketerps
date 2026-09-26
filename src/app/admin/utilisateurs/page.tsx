@@ -5,6 +5,7 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import { UserAdminActions } from "@/components/admin/user-admin-actions";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
+import { BadgeEmblem } from "@/components/ui/badge-emblem";
 import { UserAvatar } from "@/components/ui/user-avatar";
 
 export const metadata: Metadata = { title: "Utilisateurs · Administration" };
@@ -24,7 +25,14 @@ type AdminUser = {
   experiencePoints?: number | null;
   captureCount?: number | null;
   reviewCount?: number | null;
-  badge?: { name?: string | null; icon?: string | null } | null;
+  badge?: {
+    name?: string | null;
+    icon?: string | null;
+    slug?: string | null;
+    category?: string | null;
+    rarity?: string | null;
+    criteria?: Record<string, unknown> | null;
+  } | null;
   createdAt?: string | null;
   lastSeenAt?: string | null;
   canManage?: boolean;
@@ -166,7 +174,18 @@ export default async function AdminUsersPage({
                   {user.level != null && <span>Niveau {user.level}</span>}
                   {user.badge?.name && (
                     <span className="status-pill">
-                      <span aria-hidden="true">{user.badge.icon || "🏅"}</span> {user.badge.name}
+                      <BadgeEmblem
+                        badge={{
+                          name: user.badge.name,
+                          icon: user.badge.icon,
+                          slug: user.badge.slug,
+                          category: user.badge.category,
+                          rarity: user.badge.rarity,
+                          criteria: user.badge.criteria,
+                        }}
+                        size="inline"
+                      />{" "}
+                      {user.badge.name}
                     </span>
                   )}
                   <span>Inscrit le {formatDate(user.createdAt)}</span>

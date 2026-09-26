@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Award, Eye, EyeOff, Plus } from "lucide-react";
 import { submitJson } from "@/components/forms/form-api";
+import { BadgeEmblem } from "@/components/ui/badge-emblem";
 
 export type AdminBadge = {
   id: string | number;
@@ -251,14 +252,7 @@ export function BadgeAdmin({
           return (
             <article className="content-panel admin-badge-card" key={String(badge.id)}>
               <header>
-                {badge.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- URL administrable et asset local.
-                  <img className="admin-badge-card__image" src={badge.imageUrl} alt="" />
-                ) : (
-                  <span className="admin-badge-card__icon" aria-hidden="true">
-                    {badge.icon || "◆"}
-                  </span>
-                )}
+                <BadgeEmblem badge={badge} size="card" />
                 <div>
                   <p className="eyebrow">{badge.kind?.toLocaleLowerCase("fr-FR") || "badge"}</p>
                   <h2>{badge.name}</h2>

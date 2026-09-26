@@ -28,6 +28,7 @@ import type {
 } from "@/components/data/types";
 import { EntryGrid } from "@/components/entries/entry-card";
 import { XpProgressCard } from "@/components/profiles/xp-progress-card";
+import { BadgeEmblem } from "@/components/ui/badge-emblem";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, SectionHeading, StatusPill, formatDate } from "@/components/ui/states";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -183,13 +184,11 @@ export function ProfileHero({ profile }: { profile: PublicProfileDto }) {
         {profile.badges && profile.badges.length > 0 && (
           <div className="badge-row" aria-label="Badges du Dresseur">
             {profile.badges.slice(0, 4).map((badge, index) => (
-              <span className="tag" key={String(badge.id ?? `${badge.name}-${index}`)}>
-                {badge.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- asset local ou URL administrée.
-                  <img className="profile-badge-mini" src={badge.imageUrl} alt="" />
-                ) : (
-                  (badge.icon ?? "◆")
-                )}{" "}
+              <span
+                className="tag profile-badge-tag"
+                key={String(badge.id ?? `${badge.name}-${index}`)}
+              >
+                <BadgeEmblem badge={badge} size="inline" />
                 {badge.name}
               </span>
             ))}
@@ -354,14 +353,7 @@ function BadgeGallery({ badges }: { badges: BadgeDto[] }) {
     <div className="profile-badge-grid">
       {badges.map((badge, index) => (
         <article className="profile-badge-card" key={String(badge.id ?? `${badge.name}-${index}`)}>
-          {badge.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- asset local ou URL administrée.
-            <img className="profile-badge-card__image" src={badge.imageUrl} alt="" />
-          ) : (
-            <span className="profile-badge-card__icon" aria-hidden="true">
-              {badge.icon ?? "◆"}
-            </span>
-          )}
+          <BadgeEmblem badge={badge} size="card" />
           <div>
             <h3>{badge.name}</h3>
             <p>{badge.description ?? "Récompense communautaire"}</p>

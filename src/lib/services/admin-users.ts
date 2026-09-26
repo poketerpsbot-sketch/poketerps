@@ -23,6 +23,9 @@ type AdminUserListMetric = {
   badge_slug: string | null;
   badge_name: string | null;
   badge_icon: string | null;
+  badge_category: string | null;
+  badge_rarity: string | null;
+  badge_criteria: Record<string, unknown> | null;
 };
 
 const roleWeight: Record<UserRole, number> = {
@@ -121,7 +124,9 @@ export async function listAdminUsers(query: AdminUsersQuery, actor: CurrentUser)
           coalesce(captures.capture_count,0)::int capture_count,
           coalesce(review_stats.review_count,0)::int review_count,
           featured_badge.id badge_id,featured_badge.slug badge_slug,
-          featured_badge.name badge_name,featured_badge.icon badge_icon
+          featured_badge.name badge_name,featured_badge.icon badge_icon,
+          featured_badge.category badge_category,featured_badge.rarity badge_rarity,
+          featured_badge.criteria badge_criteria
         from users u
         left join lateral (
           select count(*)::int capture_count from entries e
@@ -134,7 +139,7 @@ export async function listAdminUsers(query: AdminUsersQuery, actor: CurrentUser)
             and r.status in ('APPROVED','PUBLISHED','HIDDEN')
         ) review_stats on true
         left join lateral (
-          select b.id,b.slug,b.name,b.icon
+          select b.id,b.slug,b.name,b.icon,b.category,b.rarity,b.criteria
           from user_badges ub join badges b on b.id=ub.badge_id
           where ub.user_id=u.id and ub.is_active=true and b.is_active=true
             and (ub.active_from is null or ub.active_from<=now())
@@ -159,6 +164,9 @@ export async function listAdminUsers(query: AdminUsersQuery, actor: CurrentUser)
               slug: metric.badge_slug,
               name: metric.badge_name,
               icon: metric.badge_icon,
+              category: metric.badge_category,
+              rarity: metric.badge_rarity,
+              criteria: metric.badge_criteria,
             }
           : null,
         canManage: canManageUser(actor, {

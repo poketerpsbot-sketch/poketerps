@@ -246,6 +246,7 @@ export async function getPublicProfile(slug: string) {
             category: badges.category,
             rarity: badges.rarity,
             xpReward: badges.xpReward,
+            criteria: badges.criteria,
             awardedAt: userBadges.awardedAt,
             activeUntil: userBadges.activeUntil,
           })
@@ -604,6 +605,7 @@ export async function getMyProfile(actor: CurrentUser) {
             rarity: badges.rarity,
             xpReward: badges.xpReward,
             kind: badges.kind,
+            criteria: badges.criteria,
             awardedAt: userBadges.awardedAt,
             activeUntil: userBadges.activeUntil,
           })
