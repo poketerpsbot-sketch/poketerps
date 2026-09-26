@@ -3,9 +3,19 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useWatch, type SubmitHandler } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
-import { Camera, CircleHelp, Save, Send, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Camera,
+  Check,
+  CircleHelp,
+  Eye,
+  Save,
+  Send,
+  ShieldCheck,
+} from "lucide-react";
 import type {
   AromaFamilyDto,
   CategoryDto,
@@ -29,19 +39,21 @@ const schema = z.object({
   shortDescription: z
     .string()
     .trim()
-    .min(12, "Ajoute une courte description d’au moins 12 caractères.")
+    .refine((value) => !value || value.length >= 12, {
+      message: "Ajoute au moins 12 caractères ou laisse ce champ vide.",
+    })
     .max(280, "280 caractères maximum."),
   fullDescription: z
     .string()
     .trim()
-    .min(40, "Le rapport doit contenir au moins 40 caractères.")
+    .refine((value) => !value || value.length >= 40, {
+      message: "Ajoute au moins 40 caractères ou laisse ce champ vide.",
+    })
     .max(10_000, "Le rapport est trop long."),
   categoryId: z.string().min(1, "Choisis une catégorie."),
   subcategoryId: z.string().optional(),
   rarity: z.enum(["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"]).optional(),
-  confirmEditorial: z.boolean().refine(Boolean, {
-    message: "Confirme le caractère éditorial de la contribution.",
-  }),
+  confirmEditorial: z.boolean(),
 });
 
 type CaptureValues = z.infer<typeof schema>;
@@ -213,7 +225,7 @@ function DynamicFieldControl({
       <label htmlFor={id}>
         {definition.label}
         {definition.unit ? ` (${definition.unit})` : ""}
-        {definition.isRequired && <span> *</span>}
+        <span>{definition.isRequired ? " *" : " · facultatif"}</span>
       </label>
       {control}
       {definition.helpText && (
@@ -221,6 +233,48 @@ function DynamicFieldControl({
           {definition.helpText}
         </p>
       )}
+    </div>
+  );
+}
+
+function EntryImageField({
+  initialEntry,
+  image,
+  onChange,
+}: {
+  initialEntry?: EntryDetailDto;
+  image?: File;
+  onChange: (file: File | undefined) => void;
+}) {
+  return (
+    <div className="field">
+      <label htmlFor="capture-image">
+        <Camera size={17} aria-hidden="true" /> Photo principale · facultatif
+      </label>
+      {initialEntry?.images && initialEntry.images.length > 0 && (
+        <div className="entry-edit-images" aria-label="Images actuellement enregistrées">
+          {initialEntry.images.map((entryImage, index) => (
+            // eslint-disable-next-line @next/next/no-img-element -- signed/public storage URLs are dynamic.
+            <img
+              src={entryImage.url}
+              alt={
+                entryImage.altText ?? entryImage.alt ?? `Image ${index + 1} de ${initialEntry.name}`
+              }
+              key={String(entryImage.id ?? entryImage.url)}
+            />
+          ))}
+        </div>
+      )}
+      <input
+        id="capture-image"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/avif"
+        onChange={(event) => onChange(event.target.files?.[0])}
+      />
+      {image && <p className="field__hint">Photo prête à être enregistrée : {image.name}</p>}
+      <p className="field__hint">
+        JPEG, PNG, WebP ou AVIF · 8 Mo maximum. Tu peux commencer sans photo et l’ajouter plus tard.
+      </p>
     </div>
   );
 }
@@ -378,6 +432,10 @@ export function CaptureForm({
 }) {
   const router = useRouter();
   const editing = Boolean(initialEntry?.id);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [draftId, setDraftId] = useState<string | number | undefined>(initialEntry?.id);
+  const [uploadedImageKey, setUploadedImageKey] = useState<string>();
+  const [saving, setSaving] = useState(false);
   const initialMicrons = initialMicronControls(categories, initialEntry);
   const [image, setImage] = useState<File>();
   const [dynamicValues, setDynamicValues] = useState<Record<string, DynamicValue>>(() =>
@@ -406,10 +464,11 @@ export function CaptureForm({
   } | null>(null);
   const {
     register,
-    handleSubmit,
     control,
     setValue,
-    formState: { errors, isSubmitting },
+    getValues,
+    trigger,
+    formState: { errors },
   } = useForm<CaptureValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -461,7 +520,7 @@ export function CaptureForm({
     return fields;
   }
 
-  function micronContextPayloads() {
+  function micronContextPayloads(validateRequired: boolean) {
     const payloads: MicronContextPayload[] = [];
     for (const profile of micronProfiles) {
       const selection = micronSelections[profile.context] ?? "none";
@@ -471,6 +530,7 @@ export function CaptureForm({
         const minimumValue = Number(custom?.minimum);
         if (profile.context === "PRESSING_BAG") {
           if (!Number.isInteger(minimumValue) || minimumValue < 1 || minimumValue > 1_000) {
+            if (!validateRequired) continue;
             return {
               error: `Indique une valeur valide pour Â« ${profile.label} Â».`,
               payloads: [],
@@ -494,6 +554,7 @@ export function CaptureForm({
           maximumValue > 1_000 ||
           minimumValue > maximumValue
         ) {
+          if (!validateRequired) continue;
           return {
             error: `Indique une plage valide pour « ${profile.label} ».`,
             payloads: [],
@@ -523,7 +584,11 @@ export function CaptureForm({
         sourceType: "DECLARED" as const,
       });
     }
-    if (subcategory?.micronRequirement === "REQUIRED" && payloads.length < micronProfiles.length) {
+    if (
+      validateRequired &&
+      subcategory?.micronRequirement === "REQUIRED" &&
+      payloads.length < micronProfiles.length
+    ) {
       return {
         error: "Renseigne les microns obligatoires pour cette sous-catÃ©gorie.",
         payloads: [],
@@ -532,55 +597,61 @@ export function CaptureForm({
     return { error: null, payloads };
   }
 
-  const onSubmit: SubmitHandler<CaptureValues> = async (values, event) => {
-    const nativeEvent = event?.nativeEvent;
-    const submitter =
-      nativeEvent instanceof SubmitEvent
-        ? (nativeEvent.submitter as HTMLButtonElement | null)
-        : null;
-    const shouldSubmit = submitter?.value === "submit";
+  async function persistDraft(shouldSubmit: boolean, exitAfterSave = false): Promise<boolean> {
+    const values = getValues();
     setFeedback(null);
-    const missingField = dynamicFields.find(
-      (definition) =>
-        definition.isRequired && isEmptyDynamicValue(dynamicValues[String(definition.id)]),
-    );
-    if (missingField) {
+    if (shouldSubmit && !values.confirmEditorial) {
       setFeedback({
         type: "error",
-        message: `Le champ « ${missingField.label} » est obligatoire.`,
+        message: "Confirme le caractère éditorial de la contribution avant l’envoi.",
       });
-      return;
+      return false;
     }
-    if (
+    if (shouldSubmit) {
+      const missingField = dynamicFields.find(
+        (definition) =>
+          definition.isRequired && isEmptyDynamicValue(dynamicValues[String(definition.id)]),
+      );
+      if (missingField) {
+        setFeedback({
+          type: "error",
+          message: `Le champ « ${missingField.label} » est obligatoire pour la soumission.`,
+        });
+        setStep(3);
+        return false;
+      }
+    }
+    const otherAromaIncomplete =
       otherAromaId &&
       (primaryAromaId === String(otherAromaId) ||
         secondaryAromaIds.includes(String(otherAromaId))) &&
-      customAromaLabel.trim().length < 2
-    ) {
+      customAromaLabel.trim().length < 2;
+    if (shouldSubmit && otherAromaIncomplete) {
       setFeedback({
         type: "error",
         message: "Précise le nom de l’arôme libre sélectionné.",
       });
-      return;
+      setStep(3);
+      return false;
     }
     const imageError = validateImage(image);
     if (imageError) {
       setFeedback({ type: "error", message: imageError });
-      return;
+      return false;
     }
 
-    const micronResult = micronContextPayloads();
+    const micronResult = micronContextPayloads(shouldSubmit);
     if (micronResult.error) {
       setFeedback({ type: "error", message: micronResult.error });
-      return;
+      return false;
     }
     const collectionMicron = micronResult.payloads.find(
       (item) => item.context === "COLLECTION_SEPARATION",
     );
     const body = {
       name: values.name,
-      shortDescription: values.shortDescription,
-      fullDescription: values.fullDescription,
+      shortDescription: values.shortDescription.trim() || null,
+      fullDescription: values.fullDescription.trim() || null,
       categoryId: values.categoryId,
       subcategoryId: values.subcategoryId || null,
       rarity: values.rarity,
@@ -597,39 +668,43 @@ export function CaptureForm({
           }
         : null,
       micronContexts: micronResult.payloads,
-      tagIds: editing
-        ? (initialEntry?.tags ?? []).flatMap((tag) =>
-            tag.id === null || tag.id === undefined ? [] : [String(tag.id)],
-          )
-        : ([] as string[]),
-      primaryAromaId: primaryAromaId || null,
-      secondaryAromaIds,
-      customAromaLabel: customAromaLabel.trim() || null,
+      tagIds:
+        draftId || editing
+          ? (initialEntry?.tags ?? []).flatMap((tag) =>
+              tag.id === null || tag.id === undefined ? [] : [String(tag.id)],
+            )
+          : ([] as string[]),
+      primaryAromaId: otherAromaIncomplete ? null : primaryAromaId || null,
+      secondaryAromaIds: otherAromaIncomplete ? [] : secondaryAromaIds,
+      customAromaLabel: otherAromaIncomplete ? null : customAromaLabel.trim() || null,
     };
-    let result = editing
+    let result = draftId
       ? await submitJson<CreatedEntry>(
-          `/api/entries/${encodeURIComponent(String(initialEntry?.id))}`,
+          `/api/entries/${encodeURIComponent(String(draftId))}`,
           "PATCH",
           body,
         )
       : await submitJson<CreatedEntry>("/api/entries", "POST", body);
     if (!result.ok) {
       setFeedback({ type: "error", message: result.message });
-      return;
+      return false;
     }
 
-    const entryId = result.data?.id ?? initialEntry?.id;
-    if (!entryId) {
+    const savedEntryId = result.data?.id ?? draftId;
+    if (!savedEntryId) {
       setFeedback({
         type: "error",
         message: "Le brouillon a été créé sans identifiant exploitable.",
       });
-      return;
+      return false;
     }
-    if (image) {
+    setDraftId(savedEntryId);
+    const imageKey = image ? `${image.name}:${image.size}:${image.lastModified}` : undefined;
+    if (image && imageKey !== uploadedImageKey) {
       try {
-        const uploaded = await uploadImage(image, "entry-images", String(entryId));
+        const uploaded = await uploadImage(image, "entry-images", String(savedEntryId));
         if (!uploaded?.path) throw new Error("Réponse de stockage incomplète.");
+        setUploadedImageKey(imageKey);
       } catch (error) {
         setFeedback({
           type: "error",
@@ -637,13 +712,13 @@ export function CaptureForm({
             error instanceof Error ? error.message : "image refusée"
           }`,
         });
-        return;
+        return false;
       }
     }
 
     if (shouldSubmit && allowSubmit) {
       result = await submitJson(
-        `/api/entries/${encodeURIComponent(String(entryId))}/submit`,
+        `/api/entries/${encodeURIComponent(String(savedEntryId))}/submit`,
         "POST",
         {},
       );
@@ -652,7 +727,7 @@ export function CaptureForm({
           type: "error",
           message: `Brouillon enregistré, mais l’envoi en validation a échoué : ${result.message}`,
         });
-        return;
+        return false;
       }
       setFeedback({
         type: "success",
@@ -661,313 +736,420 @@ export function CaptureForm({
     } else {
       setFeedback({
         type: "success",
-        message: editing ? "Fiche mise à jour." : "Brouillon enregistré dans ton atelier.",
+        message: draftId
+          ? "Brouillon enregistré dans ton atelier."
+          : "Brouillon créé dans ton atelier.",
       });
     }
-    router.push(returnHref);
-    router.refresh();
-  };
+    if (exitAfterSave) {
+      router.push(returnHref);
+      router.refresh();
+    }
+    return true;
+  }
+
+  async function advanceTo(nextStep: 2 | 3 | 4) {
+    const valid = await trigger(
+      nextStep === 2 ? ["name", "categoryId", "subcategoryId"] : undefined,
+    );
+    if (!valid) return;
+    if (nextStep === 2 && subcategories.length > 0 && !getValues("subcategoryId")) {
+      setFeedback({ type: "error", message: "Choisis une sous-catégorie pour continuer." });
+      return;
+    }
+    setSaving(true);
+    try {
+      if (await persistDraft(false)) setStep(nextStep);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitFinal() {
+    const valid = await trigger();
+    if (!valid) return;
+    setSaving(true);
+    try {
+      await persistDraft(true, true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAndExit() {
+    const valid = await trigger();
+    if (!valid) return;
+    setSaving(true);
+    try {
+      await persistDraft(false, true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const previewValues = getValues();
+  const stepLabels = ["L’essentiel", "Détails", "Spécifique", "Aperçu"];
 
   return (
-    <form className="form-panel form-stack" onSubmit={handleSubmit(onSubmit)} noValidate>
+    <form
+      className="form-panel form-stack capture-wizard"
+      onSubmit={(event) => event.preventDefault()}
+      noValidate
+    >
+      <div className="capture-wizard__progress" aria-label="Progression de la création">
+        <div className="capture-wizard__progress-copy">
+          <strong>Étape {step}/4</strong>
+          <span>{stepLabels[step - 1]}</span>
+          {draftId && <span className="status-pill status-pill--draft">Brouillon enregistré</span>}
+        </div>
+        <div className="capture-wizard__steps" role="list">
+          {stepLabels.map((label, index) => (
+            <span
+              className={`capture-wizard__step${index + 1 === step ? " is-active" : ""}${index + 1 < step ? " is-complete" : ""}`}
+              key={label}
+              role="listitem"
+            >
+              {index + 1 < step ? <Check size={14} aria-hidden="true" /> : index + 1}
+              <span>{label}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
       {moderationMessage && (
         <div className="form-feedback form-feedback--error" role="status">
           <strong>Modification demandée par l’équipe</strong>
           <p>{moderationMessage}</p>
         </div>
       )}
-      <section className="form-section">
-        <h2>Identification de la découverte</h2>
-        <p>
-          Décris uniquement ce que tu peux documenter. Les affirmations commerciales sont
-          interdites.
-        </p>
-        <div className="form-grid">
-          <div className="field field--wide">
-            <label htmlFor="capture-name">
-              Nom de la fiche <span>*</span>
-            </label>
-            <input
-              id="capture-name"
-              {...register("name")}
-              aria-invalid={Boolean(errors.name)}
-              aria-describedby={errors.name ? "capture-name-error" : undefined}
-            />
-            {errors.name && (
-              <p className="field__error" id="capture-name-error">
-                {errors.name.message}
-              </p>
-            )}
+
+      {step === 1 && (
+        <section className="form-section capture-wizard__section">
+          <div>
+            <p className="eyebrow">Pour commencer</p>
+            <h2>L’essentiel de ta découverte</h2>
+            <p>
+              Quelques informations suffisent pour créer le brouillon. Tu pourras l’enrichir après.
+            </p>
           </div>
-          <div className="field">
-            <label htmlFor="capture-category">
-              Catégorie <span>*</span>
-            </label>
-            <select
-              id="capture-category"
-              {...register("categoryId", {
-                onChange: () => {
-                  setValue("subcategoryId", "");
-                  setMicronSelections({});
-                  setCustomMicrons({});
-                },
-              })}
-              aria-invalid={Boolean(errors.categoryId)}
-              aria-describedby={errors.categoryId ? "capture-category-error" : undefined}
-            >
-              <option value="">Choisir</option>
-              {categories.map((item) => (
-                <option value={String(item.id)} key={String(item.id)}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            {errors.categoryId && (
-              <p className="field__error" id="capture-category-error">
-                {errors.categoryId.message}
-              </p>
-            )}
-          </div>
-          <div className="field">
-            <label htmlFor="capture-subcategory">Sous-catégorie</label>
-            <select
-              id="capture-subcategory"
-              {...register("subcategoryId", {
-                onChange: () => {
-                  setMicronSelections({});
-                  setCustomMicrons({});
-                },
-              })}
-              disabled={subcategories.length === 0}
-            >
-              <option value="">Aucune</option>
-              {subcategories.map((item) => (
-                <option value={String(item.id)} key={String(item.id)}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            {subcategory?.slug &&
-              (subcategory.frenchExplanation || taxonomyExplanations[subcategory.slug]) && (
-                <p className="field__hint taxonomy-explanation">
-                  <CircleHelp aria-hidden="true" />{" "}
-                  {subcategory.frenchExplanation || taxonomyExplanations[subcategory.slug]}
+          <div className="form-grid">
+            <div className="field field--wide">
+              <label htmlFor="capture-name">
+                Nom de la fiche <span>*</span>
+              </label>
+              <input
+                id="capture-name"
+                {...register("name")}
+                aria-invalid={Boolean(errors.name)}
+                aria-describedby={errors.name ? "capture-name-error" : undefined}
+              />
+              {errors.name && (
+                <p className="field__error" id="capture-name-error">
+                  {errors.name.message}
                 </p>
               )}
+            </div>
+            <div className="field">
+              <label htmlFor="capture-category">
+                Catégorie <span>*</span>
+              </label>
+              <select
+                id="capture-category"
+                {...register("categoryId", {
+                  onChange: () => {
+                    setValue("subcategoryId", "");
+                    setDynamicValues({});
+                    setMicronSelections({});
+                    setCustomMicrons({});
+                  },
+                })}
+                aria-invalid={Boolean(errors.categoryId)}
+                aria-describedby={errors.categoryId ? "capture-category-error" : undefined}
+              >
+                <option value="">Choisir</option>
+                {categories.map((item) => (
+                  <option value={String(item.id)} key={String(item.id)}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              {errors.categoryId && (
+                <p className="field__error" id="capture-category-error">
+                  {errors.categoryId.message}
+                </p>
+              )}
+            </div>
+            <div className="field">
+              <label htmlFor="capture-subcategory">
+                Sous-catégorie{subcategories.length > 0 && <span> *</span>}
+              </label>
+              <select
+                id="capture-subcategory"
+                {...register("subcategoryId", {
+                  onChange: () => {
+                    setMicronSelections({});
+                    setCustomMicrons({});
+                  },
+                })}
+                disabled={subcategories.length === 0}
+              >
+                <option value="">
+                  {subcategories.length > 0 ? "Choisir" : "Aucune disponible"}
+                </option>
+                {subcategories.map((item) => (
+                  <option value={String(item.id)} key={String(item.id)}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              {subcategory?.slug &&
+                (subcategory.frenchExplanation || taxonomyExplanations[subcategory.slug]) && (
+                  <p className="field__hint taxonomy-explanation">
+                    <CircleHelp aria-hidden="true" />{" "}
+                    {subcategory.frenchExplanation || taxonomyExplanations[subcategory.slug]}
+                  </p>
+                )}
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="capture-rarity">Rareté éditoriale</label>
-            <select id="capture-rarity" {...register("rarity")}>
-              <option value="COMMON">Commune</option>
-              <option value="UNCOMMON">Peu commune</option>
-              <option value="RARE">Rare</option>
-              <option value="EPIC">Épique</option>
-              <option value="LEGENDARY">Légendaire</option>
-            </select>
-          </div>
-          <div className="field field--wide">
-            <label htmlFor="capture-short">
-              Résumé <span>*</span>
-            </label>
-            <textarea
-              id="capture-short"
-              rows={3}
-              {...register("shortDescription")}
-              aria-invalid={Boolean(errors.shortDescription)}
-              aria-describedby={errors.shortDescription ? "capture-short-error" : undefined}
-            />
-            {errors.shortDescription && (
-              <p className="field__error" id="capture-short-error">
-                {errors.shortDescription.message}
-              </p>
-            )}
-          </div>
-        </div>
-      </section>
+          <EntryImageField initialEntry={initialEntry} image={image} onChange={setImage} />
+        </section>
+      )}
 
-      <AromaSelector
-        families={aromaFamilies}
-        primaryAromaId={primaryAromaId}
-        secondaryAromaIds={secondaryAromaIds}
-        customLabel={customAromaLabel}
-        onPrimaryChange={setPrimaryAromaId}
-        onSecondaryChange={setSecondaryAromaIds}
-        onCustomLabelChange={setCustomAromaLabel}
-      />
-
-      {dynamicFields.length > 0 && (
-        <section className="form-section">
-          <h2>Caractéristiques de la catégorie</h2>
-          <p>Ces champs sont administrés par l’équipe et s’adaptent à la taxonomie.</p>
+      {step === 2 && (
+        <section className="form-section capture-wizard__section">
+          <div>
+            <p className="eyebrow">Sans obligation</p>
+            <h2>Ajouter quelques détails</h2>
+            <p>Tu peux remplir ce qui est déjà connu et passer le reste.</p>
+          </div>
           <div className="form-grid">
-            {dynamicFields.map((definition) => (
-              <DynamicFieldControl
-                definition={definition}
-                value={dynamicValues[String(definition.id)]}
-                onChange={(value) =>
-                  setDynamicValues((current) => ({
-                    ...current,
-                    [String(definition.id)]: value,
-                  }))
-                }
-                key={String(definition.id)}
+            <div className="field field--wide">
+              <label htmlFor="capture-short">Résumé · facultatif</label>
+              <textarea
+                id="capture-short"
+                rows={4}
+                {...register("shortDescription")}
+                aria-invalid={Boolean(errors.shortDescription)}
+                aria-describedby={errors.shortDescription ? "capture-short-error" : undefined}
+                placeholder="Une phrase pour situer rapidement la découverte…"
               />
-            ))}
+              {errors.shortDescription && (
+                <p className="field__error" id="capture-short-error">
+                  {errors.shortDescription.message}
+                </p>
+              )}
+            </div>
+            <div className="field field--wide">
+              <label htmlFor="capture-full">Description complète · facultatif</label>
+              <textarea
+                id="capture-full"
+                rows={7}
+                {...register("fullDescription")}
+                aria-invalid={Boolean(errors.fullDescription)}
+                aria-describedby={errors.fullDescription ? "capture-full-error" : undefined}
+                placeholder="Ce que tu as observé, dans tes propres mots…"
+              />
+              {errors.fullDescription && (
+                <p className="field__error" id="capture-full-error">
+                  {errors.fullDescription.message}
+                </p>
+              )}
+            </div>
+            <div className="field">
+              <label htmlFor="capture-rarity">Rareté éditoriale · facultatif</label>
+              <select id="capture-rarity" {...register("rarity")}>
+                <option value="COMMON">Commune</option>
+                <option value="UNCOMMON">Peu commune</option>
+                <option value="RARE">Rare</option>
+                <option value="EPIC">Épique</option>
+                <option value="LEGENDARY">Légendaire</option>
+              </select>
+            </div>
           </div>
         </section>
       )}
 
-      {micronProfiles.length > 0 && (
-        <section className="form-section contextual-microns">
-          <h2>Microns déclarés</h2>
-          <p>
-            Les microns de collecte et ceux du sac de pressage sont enregistrés séparément. Une
-            valeur inconnue ne bloque jamais la fiche.
-          </p>
-          <div className="form-grid">
-            {micronProfiles.map((profile) => {
-              const id = `capture-micron-${profile.context.toLocaleLowerCase()}`;
-              const selected = micronSelections[profile.context] ?? "none";
-              const custom = customMicrons[profile.context] ?? { minimum: "", maximum: "" };
-              return (
-                <div className="field field--wide contextual-micron" key={profile.context}>
-                  <label htmlFor={id}>{profile.label}</label>
-                  <select
-                    id={id}
-                    value={selected}
-                    onChange={(event) =>
-                      setMicronSelections((current) => ({
+      {step === 3 && (
+        <div className="capture-wizard__advanced">
+          <section className="capture-wizard__intro">
+            <p className="eyebrow">À ton rythme</p>
+            <h2>Enrichir la fiche</h2>
+            <p>
+              Ces informations rendent la fiche plus utile, mais tu peux les passer et revenir plus
+              tard.
+            </p>
+          </section>
+          <AromaSelector
+            families={aromaFamilies}
+            primaryAromaId={primaryAromaId}
+            secondaryAromaIds={secondaryAromaIds}
+            customLabel={customAromaLabel}
+            onPrimaryChange={setPrimaryAromaId}
+            onSecondaryChange={setSecondaryAromaIds}
+            onCustomLabelChange={setCustomAromaLabel}
+          />
+          {dynamicFields.length > 0 && (
+            <section className="form-section">
+              <h2>Informations spécifiques</h2>
+              <p>
+                Les champs sont adaptés à {subcategory?.name ?? category?.name ?? "cette catégorie"}
+                . Les champs marqués d’une étoile sont vérifiés à la soumission.
+              </p>
+              <div className="form-grid">
+                {dynamicFields.map((definition) => (
+                  <DynamicFieldControl
+                    definition={definition}
+                    value={dynamicValues[String(definition.id)]}
+                    onChange={(value) =>
+                      setDynamicValues((current) => ({
                         ...current,
-                        [profile.context]: event.target.value,
+                        [String(definition.id)]: value,
                       }))
                     }
-                  >
-                    {profile.presets.map((preset) => (
-                      <option key={preset.value} value={preset.value}>
-                        {preset.label}
-                      </option>
-                    ))}
-                    {profile.allowCustomRange && (
-                      <option value="custom">
-                        {profile.context === "PRESSING_BAG"
-                          ? "Valeur personnalisée"
-                          : "Plage personnalisée"}
-                      </option>
-                    )}
-                  </select>
-                  <p className="field__hint">
-                    <CircleHelp aria-hidden="true" /> {profile.helpText}
-                  </p>
-                  {selected === "custom" && (
-                    <div className="form-grid form-grid--compact">
-                      <div className="field">
-                        <label htmlFor={`${id}-minimum`}>
-                          {profile.context === "PRESSING_BAG" ? "Valeur (µm)" : "Minimum (µm)"}
-                        </label>
-                        <input
-                          id={`${id}-minimum`}
-                          type="number"
-                          min="1"
-                          max="1000"
-                          inputMode="numeric"
-                          value={custom.minimum}
-                          onChange={(event) =>
-                            setCustomMicrons((current) => ({
-                              ...current,
-                              [profile.context]: { ...custom, minimum: event.target.value },
-                            }))
-                          }
-                        />
-                      </div>
-                      {profile.context !== "PRESSING_BAG" && (
-                        <div className="field">
-                          <label htmlFor={`${id}-maximum`}>Maximum (µm)</label>
-                          <input
-                            id={`${id}-maximum`}
-                            type="number"
-                            min="1"
-                            max="1000"
-                            inputMode="numeric"
-                            value={custom.maximum}
-                            onChange={(event) =>
-                              setCustomMicrons((current) => ({
-                                ...current,
-                                [profile.context]: { ...custom, maximum: event.target.value },
-                              }))
-                            }
-                          />
+                    key={String(definition.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+          {micronProfiles.length > 0 && (
+            <section className="form-section contextual-microns">
+              <h2>Microns déclarés · facultatif</h2>
+              <p>
+                Ajoute-les uniquement si tu les connais. Les valeurs pertinentes sont proposées pour
+                cette sous-catégorie.
+              </p>
+              <div className="form-grid">
+                {micronProfiles.map((profile) => {
+                  const id = `capture-micron-${profile.context.toLocaleLowerCase()}`;
+                  const selected = micronSelections[profile.context] ?? "none";
+                  const custom = customMicrons[profile.context] ?? { minimum: "", maximum: "" };
+                  return (
+                    <div className="field field--wide contextual-micron" key={profile.context}>
+                      <label htmlFor={id}>{profile.label}</label>
+                      <select
+                        id={id}
+                        value={selected}
+                        onChange={(event) =>
+                          setMicronSelections((current) => ({
+                            ...current,
+                            [profile.context]: event.target.value,
+                          }))
+                        }
+                      >
+                        {profile.presets.map((preset) => (
+                          <option key={preset.value} value={preset.value}>
+                            {preset.label}
+                          </option>
+                        ))}
+                        {profile.allowCustomRange && (
+                          <option value="custom">
+                            {profile.context === "PRESSING_BAG"
+                              ? "Valeur personnalisée"
+                              : "Plage personnalisée"}
+                          </option>
+                        )}
+                      </select>
+                      <p className="field__hint">
+                        <CircleHelp aria-hidden="true" /> {profile.helpText}
+                      </p>
+                      {selected === "custom" && (
+                        <div className="form-grid form-grid--compact">
+                          <div className="field">
+                            <label htmlFor={`${id}-minimum`}>
+                              {profile.context === "PRESSING_BAG" ? "Valeur (µm)" : "Minimum (µm)"}
+                            </label>
+                            <input
+                              id={`${id}-minimum`}
+                              type="number"
+                              min="1"
+                              max="1000"
+                              inputMode="numeric"
+                              value={custom.minimum}
+                              onChange={(event) =>
+                                setCustomMicrons((current) => ({
+                                  ...current,
+                                  [profile.context]: { ...custom, minimum: event.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                          {profile.context !== "PRESSING_BAG" && (
+                            <div className="field">
+                              <label htmlFor={`${id}-maximum`}>Maximum (µm)</label>
+                              <input
+                                id={`${id}-maximum`}
+                                type="number"
+                                min="1"
+                                max="1000"
+                                inputMode="numeric"
+                                value={custom.maximum}
+                                onChange={(event) =>
+                                  setCustomMicrons((current) => ({
+                                    ...current,
+                                    [profile.context]: { ...custom, maximum: event.target.value },
+                                  }))
+                                }
+                              />
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </div>
       )}
 
-      <section className="form-section">
-        <h2>Rapport et média</h2>
-        <div className="field">
-          <label htmlFor="capture-full">
-            Description complète <span>*</span>
-          </label>
-          <textarea
-            id="capture-full"
-            rows={10}
-            {...register("fullDescription")}
-            aria-invalid={Boolean(errors.fullDescription)}
-            aria-describedby={errors.fullDescription ? "capture-full-error" : undefined}
-          />
-          {errors.fullDescription && (
-            <p className="field__error" id="capture-full-error">
-              {errors.fullDescription.message}
-            </p>
-          )}
-        </div>
-        <div className="field">
-          <label htmlFor="capture-image">
-            <Camera size={17} aria-hidden="true" /> Photo principale
-          </label>
-          {initialEntry?.images && initialEntry.images.length > 0 && (
-            <div className="entry-edit-images" aria-label="Images actuellement enregistrées">
-              {initialEntry.images.map((entryImage, index) => (
-                // eslint-disable-next-line @next/next/no-img-element -- signed/public storage URLs are dynamic.
-                <img
-                  src={entryImage.url}
-                  alt={
-                    entryImage.altText ??
-                    entryImage.alt ??
-                    `Image ${index + 1} de ${initialEntry.name}`
-                  }
-                  key={String(entryImage.id ?? entryImage.url)}
-                />
-              ))}
+      {step === 4 && (
+        <section className="form-section capture-wizard__preview">
+          <div>
+            <p className="eyebrow">Dernière vérification</p>
+            <h2>Aperçu de ta fiche</h2>
+            <p>Vérifie l’essentiel. Tu peux modifier n’importe quelle étape avant de soumettre.</p>
+          </div>
+          <dl className="data-list">
+            <div>
+              <dt>Nom</dt>
+              <dd>{previewValues.name || "—"}</dd>
             </div>
-          )}
-          <input
-            id="capture-image"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/avif"
-            onChange={(event) => setImage(event.target.files?.[0])}
-          />
+            <div>
+              <dt>Catégorie</dt>
+              <dd>{category?.name || "—"}</dd>
+            </div>
+            <div>
+              <dt>Sous-catégorie</dt>
+              <dd>{subcategory?.name || "Aucune"}</dd>
+            </div>
+            <div>
+              <dt>Photo</dt>
+              <dd>{image || initialEntry?.images?.length ? "Ajoutée" : "À ajouter plus tard"}</dd>
+            </div>
+            <div>
+              <dt>Détails</dt>
+              <dd>
+                {[previewValues.shortDescription, previewValues.fullDescription].some(Boolean)
+                  ? "Complétés"
+                  : "À enrichir plus tard"}
+              </dd>
+            </div>
+          </dl>
+          <label className="checkbox-field">
+            <input type="checkbox" {...register("confirmEditorial")} />
+            <span>
+              Je confirme que cette contribution est informative et éditoriale, sans vente, prix,
+              commande ni mise en relation commerciale.
+            </span>
+          </label>
           <p className="field__hint">
-            JPEG, PNG, WebP ou AVIF · 8 Mo maximum. Une nouvelle image est ajoutée sans effacer
-            automatiquement les médias existants.
+            <ShieldCheck size={14} aria-hidden="true" /> La publication n’est jamais automatique :
+            un membre autorisé vérifie la capture.
           </p>
-        </div>
-        <label className="checkbox-field">
-          <input type="checkbox" {...register("confirmEditorial")} />
-          <span>
-            Je confirme que cette contribution est informative et éditoriale, sans vente, prix,
-            commande ni mise en relation commerciale.
-          </span>
-        </label>
-        {errors.confirmEditorial && (
-          <p className="field__error">{errors.confirmEditorial.message}</p>
-        )}
-      </section>
+        </section>
+      )}
 
       {feedback && (
         <div
@@ -977,38 +1159,67 @@ export function CaptureForm({
           {feedback.message}
         </div>
       )}
-      <div className="button-row">
-        <button
-          className="button button--secondary"
-          type="submit"
-          name="intent"
-          value="draft"
-          disabled={isSubmitting}
-        >
-          <Save size={17} aria-hidden="true" />{" "}
-          {isSubmitting
-            ? "Enregistrement…"
-            : editing
-              ? "Enregistrer les modifications"
-              : "Enregistrer le brouillon"}
-        </button>
-        {allowSubmit && (
+      <div className="capture-wizard__actions">
+        {step > 1 && (
           <button
-            className="button"
-            type="submit"
-            name="intent"
-            value="submit"
-            disabled={isSubmitting}
+            className="button button--secondary"
+            type="button"
+            onClick={() => setStep((step - 1) as 1 | 2 | 3)}
+            disabled={saving}
           >
-            <Send size={17} aria-hidden="true" />
-            {editing ? "Renvoyer pour validation" : "Envoyer en validation"}
+            <ArrowLeft size={17} aria-hidden="true" /> Retour
           </button>
         )}
+        {step < 4 && (
+          <button
+            className="button"
+            type="button"
+            onClick={() => void advanceTo((step + 1) as 2 | 3 | 4)}
+            disabled={saving}
+          >
+            {saving ? "Enregistrement…" : step === 1 ? "Continuer" : "Passer cette étape"}{" "}
+            <ArrowRight size={17} aria-hidden="true" />
+          </button>
+        )}
+        {step === 4 && (
+          <>
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => void saveAndExit()}
+              disabled={saving}
+            >
+              <Save size={17} aria-hidden="true" /> Enregistrer et quitter
+            </button>
+            {allowSubmit ? (
+              <button
+                className="button"
+                type="button"
+                onClick={() => void submitFinal()}
+                disabled={saving}
+              >
+                <Send size={17} aria-hidden="true" />{" "}
+                {saving ? "Envoi…" : editing ? "Renvoyer pour validation" : "Soumettre"}
+              </button>
+            ) : null}
+          </>
+        )}
       </div>
-      <p className="field__hint">
-        <ShieldCheck size={14} aria-hidden="true" /> La publication n’est jamais automatique : un
-        membre autorisé vérifie la capture.
-      </p>
+      <button
+        className="capture-wizard__save-link"
+        type="button"
+        onClick={() => void saveAndExit()}
+        disabled={saving}
+      >
+        <Save size={15} aria-hidden="true" />{" "}
+        {saving ? "Sauvegarde…" : "Enregistrer le brouillon et quitter"}
+      </button>
+      {step === 4 && (
+        <p className="capture-wizard__preview-note">
+          <Eye size={15} aria-hidden="true" /> Les informations complémentaires peuvent encore être
+          ajoutées après la création.
+        </p>
+      )}
     </form>
   );
 }

@@ -2044,6 +2044,125 @@ svg {
   font-size: 0.86rem;
 }
 
+.capture-wizard__progress {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 2px solid #d5ccbf;
+  border-radius: 12px;
+  background: #fffaf3;
+}
+
+.capture-wizard__progress-copy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #5e5751;
+  font-size: 0.78rem;
+}
+
+.capture-wizard__progress-copy strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.capture-wizard__steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.capture-wizard__step {
+  display: flex;
+  min-width: 0;
+  padding: 7px 4px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 8px;
+  color: #8b837a;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.capture-wizard__step span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capture-wizard__step.is-active {
+  background: var(--red-700);
+  color: white;
+}
+
+.capture-wizard__step.is-complete {
+  background: #e7f3e8;
+  color: #286045;
+}
+
+.capture-wizard__section,
+.capture-wizard__preview {
+  min-height: 260px;
+}
+
+.capture-wizard__advanced {
+  display: grid;
+  gap: 16px;
+}
+
+.capture-wizard__intro {
+  padding: 4px 0;
+}
+
+.capture-wizard__intro h2,
+.capture-wizard__intro p:last-child {
+  margin-bottom: 0;
+}
+
+.capture-wizard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.capture-wizard__save-link {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 0;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: #6e6861;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.capture-wizard__save-link:hover {
+  color: var(--red-700);
+}
+
+.capture-wizard__save-link:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.capture-wizard__preview-note {
+  display: flex;
+  margin: 0;
+  align-items: center;
+  gap: 6px;
+  color: #6e6861;
+  font-size: 0.78rem;
+}
+
 .form-feedback {
   padding: 12px 14px;
   border: 2px solid #215c47;
