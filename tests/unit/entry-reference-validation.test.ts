@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { assertExplicitMicronConsistency, validateDynamicFieldValue } from "@/lib/services/entries";
+import {
+  assertExplicitMicronConsistency,
+  micronInsertValues,
+  validateDynamicFieldValue,
+} from "@/lib/services/entries";
 
 describe("entry reference validation", () => {
   it("rejects values outside active SELECT options", () => {
@@ -50,5 +54,22 @@ describe("entry reference validation", () => {
         ],
       ),
     ).toThrowError(expect.objectContaining({ code: "INCONSISTENT_MICRON_VALUES" }));
+  });
+
+  it("stores no empty micron array for a single declared value", () => {
+    expect(
+      micronInsertValues("entry-id", {
+        mode: "SINGLE",
+        singleValue: 120,
+        multipleValues: [],
+        displayLabel: "120 µm",
+        sourceType: "DECLARED",
+      }),
+    ).toMatchObject({
+      entryId: "entry-id",
+      mode: "SINGLE",
+      singleValue: 120,
+      multipleValues: null,
+    });
   });
 });

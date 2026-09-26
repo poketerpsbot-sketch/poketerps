@@ -113,7 +113,7 @@ export function validateDynamicFieldValue(
   if (field.fieldType === "DATE" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw invalid();
 }
 
-function micronInsertValues(
+export function micronInsertValues(
   entryId: string,
   input: NonNullable<CreateEntry["micron"]>,
 ): typeof micronSpecifications.$inferInsert {
@@ -123,7 +123,7 @@ function micronInsertValues(
     singleValue: input.singleValue ?? null,
     minimumValue: input.minimumValue ?? null,
     maximumValue: input.maximumValue ?? null,
-    multipleValues: input.multipleValues,
+    multipleValues: input.multipleValues.length ? input.multipleValues : null,
     displayLabel: input.displayLabel ?? null,
     sourceType: input.sourceType,
     notes: input.notes ?? null,
