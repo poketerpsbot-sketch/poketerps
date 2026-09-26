@@ -1198,6 +1198,7 @@ export const contestGuesses = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     participationId: uuid("participation_id").notNull(),
+    attemptNumber: smallint("attempt_number").notNull().default(1),
     numericValue: numeric("numeric_value", { precision: 18, scale: 6 }).notNull(),
     unit: text("unit").notNull(),
     submissionCount: integer("submission_count").notNull().default(1),
@@ -1205,12 +1206,17 @@ export const contestGuesses = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    unique("contest_guesses_contest_user_key").on(table.contestId, table.userId),
+    unique("contest_guesses_contest_user_attempt_key").on(
+      table.contestId,
+      table.userId,
+      table.attemptNumber,
+    ),
     foreignKey({
       columns: [table.participationId, table.contestId],
       foreignColumns: [contestParticipations.id, contestParticipations.contestId],
     }).onDelete("cascade"),
     check("contest_guesses_numeric_positive", sql`${table.numericValue}>0`),
+    check("contest_guesses_attempt_number_valid", sql`${table.attemptNumber} between 1 and 2`),
     check("contest_guesses_submission_count_positive", sql`${table.submissionCount}>0`),
     index("contest_guesses_contest_value_idx").on(
       table.contestId,

@@ -8,6 +8,7 @@ import { getDb, getSqlClient } from "@/lib/db";
 import {
   auditLogs,
   badges,
+  contestGuesses,
   contestLinks,
   contestParticipations,
   contestWinnerHistory,
@@ -254,7 +255,7 @@ export async function getAdminContest(id: string) {
         (select max(numeric_value)::float8 from contest_guesses where contest_id=${id}::uuid) maximum_guess
     `,
     getSqlClient()<Array<Record<string, unknown>>>`
-      select g.id,g.user_id,g.numeric_value::float8 numeric_value,g.unit,g.submitted_at,g.updated_at,
+      select g.id,g.user_id,g.attempt_number,g.numeric_value::float8 numeric_value,g.unit,g.submitted_at,g.updated_at,
         abs(g.numeric_value-c.secret_weight)::float8 difference,
         u.display_name,u.telegram_username,u.profile_photo_url,p.id participation_id,
         dense_rank() over(order by abs(g.numeric_value-c.secret_weight),g.submitted_at)::int calculated_rank
@@ -588,15 +589,26 @@ export async function listAdminContestParticipations(
       select p.*,u.display_name,u.public_slug,u.telegram_username,u.profile_photo_url,u.role,u.is_banned,
         e.slug entry_slug,e.name entry_name,e.status entry_status,
         w.id winner_id,w.rank winner_rank,w.label winner_label,
-        g.numeric_value::float8 guess_value,g.unit guess_unit,g.submitted_at guess_submitted_at,
-        g.updated_at guess_updated_at,g.submission_count,
-        case when c.secret_weight is not null then abs(g.numeric_value-c.secret_weight)::float8 end guess_difference
+        g.guess_attempts,g.guess_difference
       from contest_participations p
       join contests c on c.id=p.contest_id
       join users u on u.id=p.user_id
       left join entries e on e.id=p.entry_id
       left join contest_winners w on w.participation_id=p.id and w.contest_id=p.contest_id
-      left join contest_guesses g on g.participation_id=p.id and g.contest_id=p.contest_id
+      left join lateral (
+        select
+          jsonb_agg(jsonb_build_object(
+            'attemptNumber',cg.attempt_number,
+            'numericValue',cg.numeric_value::float8,
+            'unit',cg.unit,
+            'submittedAt',cg.submitted_at
+          ) order by cg.attempt_number) guess_attempts,
+          case when c.secret_weight is not null
+            then min(abs(cg.numeric_value-c.secret_weight))::float8
+          end guess_difference
+        from contest_guesses cg
+        where cg.contest_id=c.id and cg.participation_id=p.id
+      ) g on true
       where p.contest_id=$1::uuid
         and ($2::contest_participation_status is null or p.status=$2::contest_participation_status)
         and ($3::text is null or u.display_name ilike '%' || $3 || '%'
@@ -943,6 +955,12 @@ export async function publishContestResult(
       .limit(1)
       .for("update");
     if (!existing) throw notFound("Concours");
+    if (existing.resultPublishedAt) {
+      throw conflict(
+        "Le résultat de ce concours est déjà publié.",
+        "CONTEST_RESULT_ALREADY_PUBLISHED",
+      );
+    }
     if (new Date(existing.endsAt) > new Date()) {
       throw conflict(
         "Le résultat ne peut être publié qu’après la fin du concours.",
@@ -959,6 +977,101 @@ export async function publishContestResult(
         "Ajoute un résultat, un poids réel ou une photo avant de publier.",
         "CONTEST_RESULT_EMPTY",
       );
+    }
+    if (existing.contestType === "WEIGHT_GUESS" && existing.secretWeight !== null) {
+      const [existingWinner] = await tx
+        .select({ id: contestWinners.id })
+        .from(contestWinners)
+        .where(and(eq(contestWinners.contestId, contestId), eq(contestWinners.rank, 1)))
+        .limit(1)
+        .for("update");
+      if (!existingWinner) {
+        const [candidate] = await tx
+          .select({
+            participationId: contestParticipations.id,
+            userId: contestParticipations.userId,
+            difference: sql<number>`min(abs(${contestGuesses.numericValue} - ${existing.secretWeight}))`,
+            firstGuessAt: sql<Date>`min(${contestGuesses.submittedAt})`,
+          })
+          .from(contestParticipations)
+          .innerJoin(
+            contestGuesses,
+            and(
+              eq(contestGuesses.contestId, contestParticipations.contestId),
+              eq(contestGuesses.participationId, contestParticipations.id),
+            ),
+          )
+          .where(
+            and(
+              eq(contestParticipations.contestId, contestId),
+              eq(contestParticipations.status, "APPROVED"),
+            ),
+          )
+          .groupBy(
+            contestParticipations.id,
+            contestParticipations.userId,
+            contestParticipations.submittedAt,
+          )
+          .orderBy(
+            sql`min(abs(${contestGuesses.numericValue} - ${existing.secretWeight})) asc`,
+            sql`min(${contestGuesses.submittedAt}) asc`,
+            contestParticipations.submittedAt,
+            contestParticipations.id,
+          )
+          .limit(1);
+        if (candidate) {
+          const [winner] = await tx
+            .insert(contestWinners)
+            .values({
+              contestId,
+              participationId: candidate.participationId,
+              rank: 1,
+              label: "Estimation la plus proche",
+              prize: existing.reward,
+              selectedById: actor.id,
+            })
+            .returning();
+          if (!winner) throw new Error("Automatic contest winner insert failed");
+          await tx.insert(contestWinnerHistory).values({
+            contestId,
+            action: "SELECTED",
+            winnerUserId: candidate.userId,
+            selectedById: actor.id,
+            selectedByRole: actor.role,
+            reason: "Gagnant calculé automatiquement : estimation la plus proche du poids réel.",
+            metadata: {
+              winnerId: winner.id,
+              participationId: candidate.participationId,
+              difference: Number(candidate.difference),
+              firstGuessAt: candidate.firstGuessAt,
+            },
+          });
+          await tx.insert(userNotifications).values({
+            userId: candidate.userId,
+            type: "CONTEST_WINNER",
+            title: "🏆 Tu as gagné !",
+            message: `Félicitations, tu as gagné le concours « ${existing.title} » grâce à l’estimation la plus proche.`,
+            relatedContestId: contestId,
+            actionUrl: `/concours/${existing.slug}`,
+            metadata: { winnerId: winner.id, automatic: true },
+          });
+          await awardConfiguredExperience(tx, {
+            userId: candidate.userId,
+            ruleKey: "CONTEST_WIN",
+            idempotencyKey: `CONTEST_WIN:${contestId}:${candidate.userId}`,
+            reason: `Victoire au concours « ${existing.title} »`,
+            sourceType: "CONTEST",
+            sourceId: contestId,
+            metadata: { winnerId: winner.id, rank: 1, automatic: true },
+          });
+          await ensureUserBadge(tx, {
+            userId: candidate.userId,
+            slug: "contest-winner",
+            sourceType: "CONTEST",
+            sourceId: contestId,
+          });
+        }
+      }
     }
     const now = new Date();
     const [updated] = await tx

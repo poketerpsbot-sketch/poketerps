@@ -447,14 +447,10 @@ export function AdminContestForm({
                     />
                   </div>
                 )}
-                <label className="checkbox-field">
-                  <input
-                    type="checkbox"
-                    checked={value.allowGuessEditing ?? false}
-                    onChange={(event) => field("allowGuessEditing", event.target.checked)}
-                  />
-                  <span>Autoriser la modification d’une estimation</span>
-                </label>
+                <p className="notice">
+                  Les participants enregistrent deux estimations, puis elles sont définitivement
+                  verrouillées.
+                </p>
                 <div className="field field--wide">
                   <label htmlFor={`${baseId}-result-image`}>Photo secrète du résultat</label>
                   <input

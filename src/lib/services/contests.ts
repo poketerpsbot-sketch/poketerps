@@ -9,6 +9,7 @@ import {
   effectiveContestDates,
   getContestEffectiveStatus,
 } from "@/lib/contests/effective-status";
+import { WEIGHT_GUESS_MAX_ATTEMPTS, type WeightGuessAttempt } from "@/lib/contests/weight-guess";
 import { getDb, getSqlClient } from "@/lib/db";
 import {
   auditLogs,
@@ -141,12 +142,14 @@ export type ParticipantContestContent = {
   terms: string | null;
   additionalInformation: string | null;
   links: ContestLinkDto[];
+  guesses: WeightGuessAttempt[];
   guess: {
     numericValue: number;
     unit: string;
     submittedAt: Date | string;
     updatedAt: Date | string;
   } | null;
+  maxGuesses: number;
   allowGuessEditing: boolean;
 };
 
@@ -474,7 +477,13 @@ export async function listContestHallOfFame(query: HallOfFameQuery) {
           join contest_participations cp
             on cp.id=w.participation_id and cp.contest_id=w.contest_id
           join users u on u.id=cp.user_id
-          left join contest_guesses g on g.contest_id=w.contest_id and g.user_id=cp.user_id
+          left join lateral (
+            select g.id,g.numeric_value,g.unit
+            from contest_guesses g
+            where g.contest_id=w.contest_id and g.user_id=cp.user_id
+            order by abs(g.numeric_value-page.secret_weight),g.submitted_at,g.attempt_number
+            limit 1
+          ) g on true
           where w.contest_id=page.id and cp.status='APPROVED'
             and u.account_kind='TELEGRAM' and not u.is_system
             and u.profile_visibility='PUBLIC' and not u.is_banned and u.role<>'BANNED'
@@ -577,25 +586,44 @@ async function getParticipantContent(contestId: string, userId?: string | null) 
       terms: string | null;
       additional_information: string | null;
       allow_guess_editing: boolean;
-      guess_value: number | null;
-      guess_unit: string | null;
-      guess_submitted_at: Date | string | null;
-      guess_updated_at: Date | string | null;
+      guess_attempts: Array<{
+        attemptNumber: number;
+        numericValue: number | string;
+        unit: string;
+        submittedAt: Date | string;
+        updatedAt: Date | string;
+      }> | null;
     }>
   >`
     select coalesce(c.participant_instructions,nullif(c.instructions,'')) instructions,
       coalesce(c.long_description,nullif(c.description,'')) long_description,
       c.participation_steps,coalesce(c.full_rules,c.rules) full_rules,c.terms,c.additional_information,
-      c.allow_guess_editing,g.numeric_value::float8 guess_value,g.unit guess_unit,
-      g.submitted_at guess_submitted_at,g.updated_at guess_updated_at
+      c.allow_guess_editing,
+      coalesce((select jsonb_agg(jsonb_build_object(
+        'attemptNumber',g.attempt_number,
+        'numericValue',g.numeric_value::float8,
+        'unit',g.unit,
+        'submittedAt',g.submitted_at,
+        'updatedAt',g.updated_at
+      ) order by g.attempt_number)
+        from contest_guesses g
+        where g.contest_id=c.id and g.user_id=p.user_id),'[]'::jsonb) guess_attempts
     from contests c join contest_participations p on p.contest_id=c.id
       and p.user_id=${userId}::uuid and p.status in ('PENDING_REVIEW','APPROVED')
-    left join contest_guesses g on g.contest_id=c.id and g.user_id=p.user_id
     where c.id=${contestId}::uuid
     limit 1
   `;
   if (!row) return null;
   const links = await listContestLinks(contestId, true);
+  const guesses = (Array.isArray(row.guess_attempts) ? row.guess_attempts : []).map(
+    (guess): WeightGuessAttempt => ({
+      attemptNumber: Number(guess.attemptNumber),
+      numericValue: Number(guess.numericValue),
+      unit: guess.unit,
+      submittedAt: guess.submittedAt,
+      updatedAt: guess.updatedAt,
+    }),
+  );
   return {
     instructions: row.instructions,
     longDescription: row.long_description,
@@ -604,18 +632,9 @@ async function getParticipantContent(contestId: string, userId?: string | null) 
     terms: row.terms,
     additionalInformation: row.additional_information,
     links: links.filter((link) => link.visibility === "PARTICIPANTS_ONLY"),
-    guess:
-      row.guess_value === null ||
-      !row.guess_unit ||
-      !row.guess_submitted_at ||
-      !row.guess_updated_at
-        ? null
-        : {
-            numericValue: Number(row.guess_value),
-            unit: row.guess_unit,
-            submittedAt: row.guess_submitted_at,
-            updatedAt: row.guess_updated_at,
-          },
+    guesses,
+    guess: guesses[0] ?? null,
+    maxGuesses: WEIGHT_GUESS_MAX_ATTEMPTS,
     allowGuessEditing: row.allow_guess_editing,
   } satisfies ParticipantContestContent;
 }
@@ -973,50 +992,68 @@ export async function submitContestGuess(
     if (!participation) {
       throw conflict("Participe d’abord au concours.", "CONTEST_PARTICIPATION_REQUIRED");
     }
-    const [existing] = await tx
+    const existing = await tx
       .select()
       .from(contestGuesses)
       .where(and(eq(contestGuesses.contestId, contest.id), eq(contestGuesses.userId, actor.id)))
-      .limit(1)
       .for("update");
-    if (existing && !contest.allowGuessEditing) {
+    const values = input.numericValues ?? (input.numericValue ? [input.numericValue] : []);
+    if (
+      values.length === 0 ||
+      values.length > WEIGHT_GUESS_MAX_ATTEMPTS ||
+      (contest.contestType === "WEIGHT_GUESS" && values.length !== WEIGHT_GUESS_MAX_ATTEMPTS)
+    ) {
+      throw conflict("Enregistre exactement deux estimations valides.", "CONTEST_GUESS_INVALID");
+    }
+    if (
+      existing.length > 0 &&
+      (contest.contestType === "WEIGHT_GUESS" || !contest.allowGuessEditing)
+    ) {
       throw conflict("Ton estimation est déjà enregistrée.", "CONTEST_GUESS_LOCKED");
     }
     const now = new Date();
-    const [guess] = existing
-      ? await tx
-          .update(contestGuesses)
-          .set({
-            numericValue: String(input.numericValue),
-            submissionCount: existing.submissionCount + 1,
-            updatedAt: now,
-          })
-          .where(eq(contestGuesses.id, existing.id))
-          .returning()
-      : await tx
-          .insert(contestGuesses)
-          .values({
-            contestId: contest.id,
-            userId: actor.id,
-            participationId: participation.id,
-            numericValue: String(input.numericValue),
-            unit: contest.weightUnit ?? "g",
-            submittedAt: now,
-            updatedAt: now,
-          })
-          .returning();
-    if (!guess) throw new Error("Contest guess insert failed");
+    const guesses: (typeof contestGuesses.$inferSelect)[] = [];
+    for (const [index, numericValue] of values.entries()) {
+      const attemptNumber = index + 1;
+      const previous = existing.find((guess) => guess.attemptNumber === attemptNumber);
+      const [guess] = previous
+        ? await tx
+            .update(contestGuesses)
+            .set({
+              numericValue: String(numericValue),
+              submissionCount: previous.submissionCount + 1,
+              updatedAt: now,
+            })
+            .where(eq(contestGuesses.id, previous.id))
+            .returning()
+        : await tx
+            .insert(contestGuesses)
+            .values({
+              contestId: contest.id,
+              userId: actor.id,
+              participationId: participation.id,
+              attemptNumber,
+              numericValue: String(numericValue),
+              unit: contest.weightUnit ?? "g",
+              submittedAt: now,
+              updatedAt: now,
+            })
+            .returning();
+      if (!guess) throw new Error("Contest guess insert failed");
+      guesses.push(guess);
+    }
+    const [guess] = guesses;
     await tx.insert(auditLogs).values(
       auditValues({
         actorUserId: actor.id,
         actorTelegramIdSnapshot: actor.telegramId,
-        action: existing ? "CONTEST_GUESS_UPDATED" : "CONTEST_GUESS_SUBMITTED",
+        action: existing.length > 0 ? "CONTEST_GUESS_UPDATED" : "CONTEST_GUESS_SUBMITTED",
         entityType: "CONTEST_GUESS",
         entityId: guess.id,
         source: "API",
         requestId,
         before: existing,
-        after: guess,
+        after: guesses,
         metadata: { contestId: contest.id },
       }),
     );
@@ -1026,6 +1063,13 @@ export async function submitContestGuess(
       unit: guess.unit,
       submittedAt: guess.submittedAt,
       updatedAt: guess.updatedAt,
+      guesses: guesses.map((item) => ({
+        attemptNumber: item.attemptNumber,
+        numericValue: Number(item.numericValue),
+        unit: item.unit,
+        submittedAt: item.submittedAt,
+        updatedAt: item.updatedAt,
+      })),
     };
   });
 }

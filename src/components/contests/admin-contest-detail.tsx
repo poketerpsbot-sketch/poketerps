@@ -126,8 +126,11 @@ export function AdminContestDetail({
   }
 
   async function publishResult() {
-    if (!window.confirm("Publier le résultat ? Les participants pourront immédiatement le voir."))
-      return;
+    const message =
+      contest.contestType === "WEIGHT_GUESS"
+        ? "Révéler le poids et calculer automatiquement le gagnant ?"
+        : "Publier le résultat ? Les participants pourront immédiatement le voir.";
+    if (!window.confirm(message)) return;
     setPending("result");
     setFeedback("");
     const result = await submitJson<AdminContest>(
@@ -327,7 +330,10 @@ export function AdminContestDetail({
                   disabled={pending === "result"}
                   onClick={() => void publishResult()}
                 >
-                  <Trophy aria-hidden="true" /> Publier le résultat
+                  <Trophy aria-hidden="true" />
+                  {contest.contestType === "WEIGHT_GUESS"
+                    ? "Révéler le résultat et le gagnant"
+                    : "Publier le résultat"}
                 </button>
               )}
               <button
@@ -462,6 +468,17 @@ export function AdminContestDetail({
                     </p>
                   )}
                   {row.statement && <blockquote>{row.statement}</blockquote>}
+                  {Array.isArray(row.guess_attempts) && row.guess_attempts.length > 0 && (
+                    <p>
+                      <strong>Estimations :</strong>{" "}
+                      {row.guess_attempts
+                        .map((guess) => `${guess.numericValue ?? "—"} ${guess.unit ?? ""}`.trim())
+                        .join(" · ")}
+                      {row.guess_difference !== null && row.guess_difference !== undefined && (
+                        <> · écart retenu : {row.guess_difference}</>
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 {row.status !== "WITHDRAWN" && (

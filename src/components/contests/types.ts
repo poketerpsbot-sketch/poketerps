@@ -111,7 +111,15 @@ export type ParticipantContestContent = {
   terms: string | null;
   additionalInformation: string | null;
   links: ContestLink[];
+  guesses: Array<{
+    attemptNumber: number;
+    numericValue: number;
+    unit: string;
+    submittedAt: string;
+    updatedAt: string;
+  }>;
   guess: { numericValue: number; unit: string; submittedAt: string; updatedAt: string } | null;
+  maxGuesses: number;
   allowGuessEditing: boolean;
 };
 
@@ -285,6 +293,15 @@ export type AdminContestParticipation = {
   winner_id?: string | null;
   winner_rank?: number | string | null;
   winner_label?: string | null;
+  guess_attempts?: Array<{
+    attemptNumber?: number;
+    numericValue?: number | string;
+    unit?: string;
+    submittedAt?: string;
+  }>;
+  guess_value?: number | string | null;
+  guess_unit?: string | null;
+  guess_difference?: number | string | null;
 };
 
 export type ContestFormValue = {

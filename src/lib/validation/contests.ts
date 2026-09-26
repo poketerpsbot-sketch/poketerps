@@ -71,9 +71,23 @@ export const contestParticipationInputSchema = z.object({
   statement: nullableText(2_000),
 });
 
-export const contestGuessInputSchema = z.object({
-  numericValue: z.number().finite().positive().max(1_000_000_000_000),
-});
+export const contestGuessInputSchema = z
+  .object({
+    numericValue: z.number().finite().positive().max(1_000_000_000_000).optional(),
+    numericValues: z
+      .array(z.number().finite().positive().max(1_000_000_000_000))
+      .length(2)
+      .optional(),
+  })
+  .superRefine((value, context) => {
+    if (!value.numericValue && !value.numericValues) {
+      context.addIssue({
+        code: "custom",
+        path: ["numericValues"],
+        message: "Deux estimations sont requises.",
+      });
+    }
+  });
 
 export const contestLinkInputSchema = z.object({
   id: z.uuid().optional(),

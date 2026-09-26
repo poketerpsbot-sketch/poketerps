@@ -39,9 +39,12 @@ export function ContestParticipationPanel({
   const [feedback, setFeedback] = useState("");
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [joined, setJoined] = useState(false);
-  const [guess, setGuess] = useState(
-    initialContest.participantContent?.guess?.numericValue?.toString() ?? "",
-  );
+  const [guesses, setGuesses] = useState<string[]>(() => {
+    const existing =
+      initialContest.participantContent?.guesses ??
+      (initialContest.participantContent?.guess ? [initialContest.participantContent.guess] : []);
+    return [0, 1].map((index) => existing[index]?.numericValue?.toString() ?? "");
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -149,12 +152,17 @@ export function ContestParticipationPanel({
 
   async function submitGuess(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const numericValues = guesses.map((value) => Number(value));
+    if (numericValues.some((value) => !Number.isFinite(value) || value <= 0)) {
+      setFeedback("Enregistre tes deux estimations avant de confirmer.");
+      return;
+    }
     setPending(true);
     setFeedback("");
     const result = await submitJson(
       `/api/contests/${encodeURIComponent(contest.slug)}/guess`,
       "POST",
-      { numericValue: Number(guess) },
+      { numericValues },
     );
     setPending(false);
     if (!result.ok) {
@@ -205,7 +213,9 @@ export function ContestParticipationPanel({
           ].filter((link) => Boolean(link)) as NonNullable<
             ContestDetailData["participantContent"]
           >["links"],
+          guesses: [],
           guess: null,
+          maxGuesses: 2,
           allowGuessEditing: false,
         }
       : null);
@@ -317,33 +327,50 @@ export function ContestParticipationPanel({
         participantContent &&
         contest.contestType === "WEIGHT_GUESS" && (
           <form className="contest-participation__form" onSubmit={submitGuess}>
-            <div className="field">
-              <label htmlFor="contest-guess">Ton estimation du poids</label>
-              <div className="contest-guess-field">
-                <input
-                  id="contest-guess"
-                  type="number"
-                  min="0"
-                  step="any"
-                  required
-                  value={guess}
-                  disabled={
-                    Boolean(participantContent.guess) && !participantContent.allowGuessEditing
-                  }
-                  onChange={(event) => setGuess(event.target.value)}
-                />
-                <span>{participantContent.guess?.unit ?? "unité du concours"}</span>
+            <p>
+              Donne tes {participantContent.maxGuesses} estimations. Elles seront verrouillées après
+              enregistrement.
+            </p>
+            {guesses.map((value, index) => (
+              <div className="field" key={`contest-guess-${index + 1}`}>
+                <label htmlFor={`contest-guess-${index + 1}`}>Estimation n°{index + 1}</label>
+                <div className="contest-guess-field">
+                  <input
+                    id={`contest-guess-${index + 1}`}
+                    type="number"
+                    min="0"
+                    step="any"
+                    required
+                    value={value}
+                    disabled={
+                      participantContent.guesses.length > 0 &&
+                      (contest.contestType === "WEIGHT_GUESS" ||
+                        !participantContent.allowGuessEditing)
+                    }
+                    onChange={(event) =>
+                      setGuesses((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index ? event.target.value : item,
+                        ),
+                      )
+                    }
+                  />
+                  <span>{participantContent.guesses[0]?.unit ?? "unité du concours"}</span>
+                </div>
               </div>
-            </div>
+            ))}
             <button
               className="button button--dark"
               type="submit"
               disabled={
                 pending ||
-                (Boolean(participantContent.guess) && !participantContent.allowGuessEditing)
+                (participantContent.guesses.length > 0 &&
+                  (contest.contestType === "WEIGHT_GUESS" || !participantContent.allowGuessEditing))
               }
             >
-              {participantContent.guess ? "Mettre à jour mon estimation" : "Valider mon estimation"}
+              {participantContent.guesses.length > 0
+                ? "Estimations verrouillées"
+                : "Enregistrer mes estimations"}
             </button>
           </form>
         )}

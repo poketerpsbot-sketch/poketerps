@@ -17,6 +17,15 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const twoAttemptMigration = readFileSync(
+  fileURLToPath(
+    new URL(
+      "../../supabase/migrations/20260926211120_weight_guess_two_attempts.sql",
+      import.meta.url,
+    ),
+  ),
+  "utf8",
+);
 
 describe("contest experience contract", () => {
   it("derives one effective registration status from server dates", () => {
@@ -49,6 +58,8 @@ describe("contest experience contract", () => {
       createContestSchema.safeParse({ ...base, secretWeight: 73.5, weightUnit: "g" }).success,
     ).toBe(true);
     expect(contestGuessInputSchema.safeParse({ numericValue: 72.9 }).success).toBe(true);
+    expect(contestGuessInputSchema.safeParse({ numericValues: [72.9, 74.1] }).success).toBe(true);
+    expect(contestGuessInputSchema.safeParse({ numericValues: [72.9] }).success).toBe(false);
     expect(contestGuessInputSchema.safeParse({ numericValue: -1 }).success).toBe(false);
   });
 
@@ -69,5 +80,7 @@ describe("contest experience contract", () => {
     expect(migration).toContain(
       "revoke execute on function public.enforce_contest_participation_quota()",
     );
+    expect(twoAttemptMigration).toContain("attempt_number smallint not null default 1");
+    expect(twoAttemptMigration).toContain("unique (contest_id, user_id, attempt_number)");
   });
 });
