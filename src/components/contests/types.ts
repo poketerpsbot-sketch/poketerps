@@ -28,6 +28,11 @@ export type ContestParticipant = {
   profilePhotoUrl: string | null;
 };
 
+export type ContestPublicParticipant = ContestParticipant & {
+  submittedAt: string;
+  responses: string[];
+};
+
 export type ContestParticipation = {
   id: string;
   contestId: string;
@@ -147,6 +152,7 @@ export type ContestDetailData = ContestCardData & {
   registrationStartsAt: string | null;
   registrationEndsAt: string | null;
   winners: ContestWinner[];
+  participants?: ContestPublicParticipant[];
   viewerParticipation: ContestParticipation | null;
   /** Legacy optional fields kept only for old serialized contests during migration. */
   description: string;

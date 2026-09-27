@@ -6,6 +6,7 @@ import {
   contestParticipationError,
   getContestEffectiveStatus,
 } from "@/lib/contests/effective-status";
+import { formatPublicContestGuess } from "@/lib/services/contests";
 import { contestGuessInputSchema, createContestSchema } from "@/lib/validation/contests";
 
 const migration = readFileSync(
@@ -61,6 +62,13 @@ describe("contest experience contract", () => {
     expect(contestGuessInputSchema.safeParse({ numericValues: [72.9, 74.1] }).success).toBe(true);
     expect(contestGuessInputSchema.safeParse({ numericValues: [72.9] }).success).toBe(false);
     expect(contestGuessInputSchema.safeParse({ numericValue: -1 }).success).toBe(false);
+  });
+
+  it("masks the integer part of public guesses and keeps French decimals", () => {
+    expect(formatPublicContestGuess("123.67", "g", false)).toBe("***,67 g");
+    expect(formatPublicContestGuess("98.21", "mg", false)).toBe("***,21 mg");
+    expect(formatPublicContestGuess("123", "kg", false)).toBe("*** kg");
+    expect(formatPublicContestGuess("123.67", "g", true)).toBe("123,67 g");
   });
 
   it("keeps private results and durable Telegram delivery data behind RLS", () => {

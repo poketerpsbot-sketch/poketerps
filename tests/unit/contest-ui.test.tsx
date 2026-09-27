@@ -5,6 +5,7 @@ import { AdminContestManager } from "@/components/contests/admin-contest-manager
 import { ContestCard } from "@/components/contests/contest-card";
 import { ContestLeaderboard } from "@/components/contests/contest-leaderboard";
 import { ContestParticipationPanel } from "@/components/contests/contest-participation";
+import { ContestParticipants } from "@/components/contests/contest-participants";
 import type { AdminContest, ContestCardData, ContestDetailData } from "@/components/contests/types";
 import { adminContestValue } from "@/components/contests/contest-utils";
 
@@ -184,6 +185,29 @@ describe("contest public UI", () => {
     expect(markup).toContain('href="/fiches/ma-fiche"');
     expect(markup).toContain("42");
     expect(markup).toContain("Gagnant");
+  });
+
+  it("renders public weight participants with masked responses", () => {
+    const markup = renderToStaticMarkup(
+      <ContestParticipants
+        participants={[
+          {
+            id: "user-1",
+            publicSlug: "nico",
+            displayName: "Nico",
+            username: "nico_tg",
+            profilePhotoUrl: null,
+            submittedAt: "2026-08-05T10:00:00.000Z",
+            responses: ["***,67 g", "***,12 g"],
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("@nico_tg");
+    expect(markup).toContain("***,67 g");
+    expect(markup).toContain("***,12 g");
+    expect(markup).not.toContain("123,67 g");
   });
 });
 

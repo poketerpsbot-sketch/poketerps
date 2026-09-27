@@ -7690,12 +7690,14 @@ body.is-age-gate-open .app-shell {
 }
 
 .contest-participation .section-heading,
+.contest-participants .section-heading,
 .contest-winners .section-heading,
 .contest-leaderboard .section-heading {
   align-items: flex-start;
 }
 
 .contest-participation .section-heading > svg,
+.contest-participants .section-heading > svg,
 .contest-winners .section-heading > svg,
 .contest-leaderboard .section-heading > svg {
   width: 38px;
@@ -7706,6 +7708,110 @@ body.is-age-gate-open .app-shell {
   border-radius: 999px;
   background: var(--paper);
   color: var(--red-700);
+}
+
+.contest-participants__list {
+  display: grid;
+  margin: 15px 0 0;
+  padding: 0;
+  gap: 8px;
+  list-style: none;
+}
+
+.contest-participants__list li {
+  display: grid;
+  min-width: 0;
+  padding: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 9px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--white);
+}
+
+.contest-participants__number {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--paper-muted);
+  color: var(--red-700);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.contest-participants__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.contest-participants__avatar {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+}
+
+.contest-participants__identity > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.contest-participants__identity strong,
+.contest-participants__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contest-participants__identity small {
+  color: #6d6863;
+  font-size: 0.72rem;
+}
+
+.contest-participants__responses {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  color: var(--red-700);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-align: right;
+}
+
+.contest-participants__responses span {
+  white-space: nowrap;
+}
+
+.contest-participants__responses small {
+  margin-right: 5px;
+  color: #6d6863;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.contest-participants__list time {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #6d6863;
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
+.contest-participants__list time svg {
+  width: 13px;
+  height: 13px;
+}
+
+.contest-participants__empty {
+  margin: 15px 0 0;
+  color: #6d6863;
 }
 
 .contest-participation__status,
@@ -8500,6 +8606,22 @@ body.is-age-gate-open .app-shell {
   .admin-contest-wizard__actions .button {
     width: 100%;
   }
+
+  .contest-participants__list li {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .contest-participants__responses {
+    grid-column: 2 / -1;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .contest-participants__list time {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   .contests-header__icons {
     justify-content: center;
   }

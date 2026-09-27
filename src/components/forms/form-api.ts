@@ -5,6 +5,37 @@ export type MutationResult<T = unknown> = {
   message: string;
 };
 
+type ValidationDetails = {
+  fieldErrors?: Record<string, string[] | undefined>;
+  formErrors?: string[];
+};
+
+const validationFieldLabels: Record<string, string> = {
+  title: "Titre",
+  startsAt: "Ouverture",
+  endsAt: "Fin",
+  registrationStartsAt: "Ouverture des inscriptions",
+  registrationEndsAt: "Fin des inscriptions",
+  secretWeight: "Poids secret",
+  weightUnit: "Unité du poids",
+  customWeightUnit: "Unité personnalisée",
+  contestType: "Type de concours",
+  maxParticipants: "Nombre de places",
+};
+
+function validationMessage(details: unknown, fallback: string) {
+  if (!details || typeof details !== "object") return fallback;
+  const value = details as ValidationDetails;
+  const messages = Object.entries(value.fieldErrors ?? {}).flatMap(([field, errors]) =>
+    (errors ?? []).filter(Boolean).map((message) => {
+      const label = validationFieldLabels[field] ?? field;
+      return `${label} : ${message}`;
+    }),
+  );
+  messages.push(...(value.formErrors ?? []).filter(Boolean));
+  return messages.length > 0 ? messages.join(" ") : fallback;
+}
+
 export async function submitJson<T = unknown>(
   url: string,
   method: string,
@@ -19,17 +50,20 @@ export async function submitJson<T = unknown>(
     const payload = (await response.json().catch(() => null)) as {
       data?: T;
       message?: string;
-      error?: string | { message?: string };
+      error?: string | { message?: string; details?: unknown };
     } | null;
     const error = typeof payload?.error === "string" ? payload.error : payload?.error?.message;
     return {
       ok: response.ok,
       status: response.status,
       data: payload?.data ?? null,
-      message:
-        error ??
-        payload?.message ??
-        (response.ok ? "Enregistrement terminé." : "La requête a été refusée."),
+      message: error
+        ? validationMessage(
+            payload?.error && typeof payload.error === "object" ? payload.error.details : null,
+            error,
+          )
+        : (payload?.message ??
+          (response.ok ? "Enregistrement terminé." : "La requête a été refusée.")),
     };
   } catch {
     return {

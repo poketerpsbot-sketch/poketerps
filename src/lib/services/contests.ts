@@ -103,6 +103,11 @@ type PublicParticipant = {
   profilePhotoUrl: string | null;
 };
 
+type PublicGuessRow = {
+  value: string;
+  unit: string;
+};
+
 export type ContestCard = ReturnType<typeof contestCardDto>;
 export type ContestDetail = ContestCard & {
   publicIntro: string | null;
@@ -123,7 +128,13 @@ export type ContestDetail = ContestCard & {
   registrationStartsAt: Date | string | null;
   registrationEndsAt: Date | string | null;
   winners: ContestWinnerDto[];
+  participants: ContestPublicParticipantDto[];
   viewerParticipation: ContestParticipationDto | null;
+};
+
+export type ContestPublicParticipantDto = PublicParticipant & {
+  submittedAt: Date | string;
+  responses: string[];
 };
 
 export type ContestLinkDto = {
@@ -575,6 +586,57 @@ async function listContestLinks(contestId: string, includeParticipantsOnly: bool
     .orderBy(contestLinks.displayOrder, contestLinks.id);
 }
 
+function displayWeightUnit(weightUnit: string | null, customWeightUnit: string | null) {
+  return weightUnit === "CUSTOM" ? customWeightUnit?.trim() || "unité" : weightUnit || "g";
+}
+
+export function formatPublicContestGuess(value: string, unit: string, reveal: boolean) {
+  const normalized = value.trim().replace(",", ".");
+  const [integerPart, decimalPart] = normalized.split(".");
+  const decimals = decimalPart ? `,${decimalPart}` : "";
+  return `${reveal ? integerPart : "***"}${decimals} ${unit}`;
+}
+
+async function listPublicContestParticipants(contestId: string, reveal: boolean) {
+  const rows = await getSqlClient()<
+    Array<{
+      id: string;
+      public_slug: string;
+      display_name: string;
+      telegram_username: string | null;
+      profile_photo_url: string | null;
+      submitted_at: Date | string;
+      guesses: PublicGuessRow[] | null;
+    }>
+  >`
+    select p.id,u.public_slug,u.display_name,u.telegram_username,u.profile_photo_url,p.submitted_at,
+      coalesce((select jsonb_agg(jsonb_build_object(
+        'value',g.numeric_value::text,
+        'unit',case when g.unit='CUSTOM' then coalesce(c.custom_weight_unit,'unité') else g.unit end
+      ) order by g.attempt_number) from contest_guesses g
+        where g.contest_id=p.contest_id and g.participation_id=p.id),'[]'::jsonb) guesses
+    from contest_participations p
+    join contests c on c.id=p.contest_id
+    join users u on u.id=p.user_id
+    where p.contest_id=${contestId}::uuid
+      and p.status in ('PENDING_REVIEW','APPROVED')
+      and u.account_kind='TELEGRAM' and not u.is_system
+      and u.profile_visibility='PUBLIC' and not u.is_banned and u.role<>'BANNED'
+    order by p.submitted_at asc,p.id asc
+  `;
+  return rows.map((row): ContestPublicParticipantDto => ({
+    id: row.id,
+    publicSlug: row.public_slug,
+    displayName: row.display_name,
+    username: row.telegram_username,
+    profilePhotoUrl: row.profile_photo_url,
+    submittedAt: row.submitted_at,
+    responses: (Array.isArray(row.guesses) ? row.guesses : []).map((guess) =>
+      formatPublicContestGuess(guess.value, guess.unit, reveal),
+    ),
+  }));
+}
+
 async function getParticipantContent(contestId: string, userId?: string | null) {
   if (!userId) return null;
   const [row] = await getSqlClient()<
@@ -586,6 +648,8 @@ async function getParticipantContent(contestId: string, userId?: string | null) 
       terms: string | null;
       additional_information: string | null;
       allow_guess_editing: boolean;
+      weight_unit: string | null;
+      custom_weight_unit: string | null;
       guess_attempts: Array<{
         attemptNumber: number;
         numericValue: number | string;
@@ -598,7 +662,7 @@ async function getParticipantContent(contestId: string, userId?: string | null) 
     select coalesce(c.participant_instructions,nullif(c.instructions,'')) instructions,
       coalesce(c.long_description,nullif(c.description,'')) long_description,
       c.participation_steps,coalesce(c.full_rules,c.rules) full_rules,c.terms,c.additional_information,
-      c.allow_guess_editing,
+      c.allow_guess_editing,c.weight_unit,c.custom_weight_unit,
       coalesce((select jsonb_agg(jsonb_build_object(
         'attemptNumber',g.attempt_number,
         'numericValue',g.numeric_value::float8,
@@ -619,7 +683,10 @@ async function getParticipantContent(contestId: string, userId?: string | null) 
     (guess): WeightGuessAttempt => ({
       attemptNumber: Number(guess.attemptNumber),
       numericValue: Number(guess.numericValue),
-      unit: guess.unit,
+      unit:
+        guess.unit === "CUSTOM"
+          ? displayWeightUnit(row.weight_unit, row.custom_weight_unit)
+          : guess.unit,
       submittedAt: guess.submittedAt,
       updatedAt: guess.updatedAt,
     }),
@@ -691,6 +758,10 @@ export async function getPublicContest(slug: string, viewerUserId?: string | nul
       getParticipantContent(row.id, viewerUserId),
       getPublishedContestResult(row.id),
     ]);
+  const participants =
+    row.contest_type === "WEIGHT_GUESS"
+      ? await listPublicContestParticipants(row.id, Boolean(result))
+      : [];
   const winners = result ? await listContestWinners(row.id) : [];
   return {
     ...contestCardDto(row),
@@ -706,6 +777,7 @@ export async function getPublicContest(slug: string, viewerUserId?: string | nul
     registrationStartsAt: row.registration_starts_at,
     registrationEndsAt: row.registration_ends_at,
     winners,
+    participants,
     viewerParticipation,
   } satisfies ContestDetail;
 }
@@ -967,6 +1039,7 @@ export async function submitContestGuess(
         endsAt: contests.endsAt,
         registrationEndsAt: contests.registrationEndsAt,
         weightUnit: contests.weightUnit,
+        customWeightUnit: contests.customWeightUnit,
         allowGuessEditing: contests.allowGuessEditing,
       })
       .from(contests)
@@ -1034,7 +1107,7 @@ export async function submitContestGuess(
               participationId: participation.id,
               attemptNumber,
               numericValue: String(numericValue),
-              unit: contest.weightUnit ?? "g",
+              unit: displayWeightUnit(contest.weightUnit, contest.customWeightUnit),
               submittedAt: now,
               updatedAt: now,
             })

@@ -111,12 +111,24 @@ export function AdminContestForm({
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const intent = submitter?.value === "publish" ? "publish" : "draft";
     const startsAt = startNow ? new Date().toISOString() : value.startsAt;
+    const startDate = new Date(startsAt);
+    const endDate = new Date(value.endsAt);
     if (!value.title.trim()) return setError("Ajoute un titre au concours.");
-    if (new Date(value.endsAt) <= new Date(startsAt)) {
+    if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf())) {
+      return setError("Vérifie les dates d’ouverture et de fin du concours.");
+    }
+    if (endDate <= startDate) {
       return setError("La fin du concours doit être après son ouverture.");
     }
     if (value.contestType === "WEIGHT_GUESS" && (!value.secretWeight || !value.weightUnit)) {
       return setError("Ajoute le poids secret et son unité.");
+    }
+    if (
+      value.contestType === "WEIGHT_GUESS" &&
+      value.weightUnit === "CUSTOM" &&
+      !value.customWeightUnit?.trim()
+    ) {
+      return setError("Précise le nom de l’unité personnalisée.");
     }
     const mainImageError = validateImage(mainImage ?? undefined);
     const resultImageError = validateImage(resultImage ?? undefined);
@@ -506,6 +518,22 @@ export function AdminContestForm({
               <dt>Places</dt>
               <dd>{unlimited ? "Illimitées" : value.maxParticipants}</dd>
             </div>
+            {value.contestType === "WEIGHT_GUESS" && (
+              <>
+                <div>
+                  <dt>Poids secret</dt>
+                  <dd>{value.secretWeight ?? "À compléter"}</dd>
+                </div>
+                <div>
+                  <dt>Unité</dt>
+                  <dd>
+                    {value.weightUnit === "CUSTOM"
+                      ? value.customWeightUnit || "À compléter"
+                      : value.weightUnit || "À compléter"}
+                  </dd>
+                </div>
+              </>
+            )}
           </dl>
         </section>
       )}

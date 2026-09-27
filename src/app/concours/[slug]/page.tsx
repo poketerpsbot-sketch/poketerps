@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { ContestLeaderboard, ContestWinners } from "@/components/contests/contest-leaderboard";
+import { ContestParticipants } from "@/components/contests/contest-participants";
 import { ContestParticipationPanel } from "@/components/contests/contest-participation";
 import type { ContestDetailData, ContestLeaderboardItem } from "@/components/contests/types";
 import {
@@ -195,6 +196,12 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
         initialEntries={profile?.publishedEntries ?? []}
         initiallyAuthenticated={!profileResult.error}
       />
+      {contest.contestType === "WEIGHT_GUESS" && (
+        <ContestParticipants
+          participants={contest.participants}
+          resultPublished={Boolean(contest.result)}
+        />
+      )}
       <ContestWinners winners={contest.winners} />
       <ContestLeaderboard items={leaderboard} />
     </div>
