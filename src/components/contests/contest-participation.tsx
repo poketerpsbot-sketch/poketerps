@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, ExternalLink, LogIn, Send, ShieldCheck, Undo2, X } from "lucide-react";
 
@@ -39,6 +39,9 @@ export function ContestParticipationPanel({
   const [feedback, setFeedback] = useState("");
   const [confirmationOpen, setConfirmationOpen] = useState(false);
   const [joined, setJoined] = useState(false);
+  // Keep an optimistic participation safe from a stale session refresh that
+  // started before the POST /participation request completed.
+  const localParticipationRef = useRef(false);
   const [guesses, setGuesses] = useState<string[]>(() => {
     const existing =
       initialContest.participantContent?.guesses ??
@@ -59,7 +62,15 @@ export function ContestParticipationPanel({
         ]);
         if (contestResponse.ok) {
           const payload = (await contestResponse.json()) as { data?: ContestDetailData };
-          if (payload.data) setContest(payload.data);
+          if (payload.data) {
+            const nextContest = payload.data;
+            setContest((current) => {
+              if (localParticipationRef.current && !nextContest.viewerParticipation) {
+                return current;
+              }
+              return nextContest;
+            });
+          }
         }
         setAuthenticated(profileResponse.ok);
         if (profileResponse.ok) {
@@ -88,12 +99,26 @@ export function ContestParticipationPanel({
   }, [initialContest.slug]);
 
   async function reloadContest() {
-    const response = await fetch(`/api/contests/${encodeURIComponent(contest.slug)}`, {
-      cache: "no-store",
-    });
-    if (!response.ok) return;
-    const payload = (await response.json()) as { data?: ContestDetailData };
-    if (payload.data) setContest(payload.data);
+    try {
+      const response = await fetch(`/api/contests/${encodeURIComponent(contest.slug)}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) return false;
+      const payload = (await response.json()) as { data?: ContestDetailData };
+      if (!payload.data) return false;
+      const nextContest = payload.data;
+      setContest((current) => {
+        if (localParticipationRef.current && !nextContest.viewerParticipation) {
+          return current;
+        }
+        return nextContest;
+      });
+      return true;
+    } catch {
+      // The mutation already succeeded. A transient refresh failure must not
+      // turn a successful first participation into the global error screen.
+      return false;
+    }
   }
 
   function requestParticipation(event: React.FormEvent<HTMLFormElement>) {
@@ -126,6 +151,7 @@ export function ContestParticipationPanel({
       setFeedback(result.message);
       return;
     }
+    localParticipationRef.current = true;
     if (result.data) setContest((current) => ({ ...current, viewerParticipation: result.data }));
     setJoined(true);
     setFeedback("✅ Parfait, tu participes maintenant à ce concours !");
@@ -146,6 +172,7 @@ export function ContestParticipationPanel({
       setFeedback(result.message);
       return;
     }
+    localParticipationRef.current = false;
     if (result.data) setContest((current) => ({ ...current, viewerParticipation: result.data }));
     setFeedback("Ta participation a été retirée.");
   }
