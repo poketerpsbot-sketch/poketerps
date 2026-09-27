@@ -107,6 +107,22 @@ export function AdminContestForm({
   const field = <K extends keyof ContestFormValue>(key: K, next: ContestFormValue[K]) =>
     setValue((current) => ({ ...current, [key]: next }));
 
+  const rewardText =
+    typeof value.reward.title === "string"
+      ? value.reward.title
+      : typeof value.reward.name === "string"
+        ? value.reward.name
+        : typeof value.reward.label === "string"
+          ? value.reward.label
+          : "";
+
+  function setRewardText(text: string) {
+    const nextReward = { ...value.reward };
+    if (text.trim()) nextReward.title = text;
+    else delete nextReward.title;
+    field("reward", nextReward);
+  }
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -380,6 +396,17 @@ export function AdminContestForm({
                   )
                 }
               />
+            </div>
+            <div className="field field--wide">
+              <label htmlFor={`${baseId}-reward`}>Récompense (facultatif)</label>
+              <textarea
+                id={`${baseId}-reward`}
+                maxLength={320}
+                placeholder="Ex. Badge exclusif, lot surprise…"
+                value={rewardText}
+                onChange={(event) => setRewardText(event.target.value)}
+              />
+              <small>Ce texte sera affiché sur la page du concours.</small>
             </div>
             {mode === "ADVANCED" && (
               <>
