@@ -355,6 +355,7 @@ export function AdminContestDetail({
           <h2>Modifier le concours</h2>
           <AdminContestForm
             initialValue={adminContestValue(contest)}
+            relatedId={contest.id}
             submitLabel="Enregistrer les changements"
             pending={pending === "contest"}
             onSubmit={updateContest}

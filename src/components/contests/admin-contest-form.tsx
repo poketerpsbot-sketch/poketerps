@@ -83,11 +83,13 @@ function defaultValue(): ContestFormValue {
 
 export function AdminContestForm({
   initialValue,
+  relatedId,
   submitLabel = "Créer le concours",
   pending = false,
   onSubmit,
 }: {
   initialValue?: ContestFormValue;
+  relatedId?: string;
   submitLabel?: string;
   pending?: boolean;
   onSubmit: (value: ContestFormValue) => Promise<void> | void;
@@ -137,10 +139,10 @@ export function AdminContestForm({
     try {
       const [mainUpload, resultUpload] = await Promise.all([
         mainImage
-          ? uploadImage(mainImage, "contest-images", initialValue ? undefined : undefined)
+          ? uploadImage(mainImage, "contest-images", relatedId)
           : null,
         resultImage
-          ? uploadImage(resultImage, "contest-results", initialValue ? undefined : undefined)
+          ? uploadImage(resultImage, "contest-results", relatedId)
           : null,
       ]);
       await onSubmit({
