@@ -17,13 +17,11 @@ import {
 
 import { formatActivityAction } from "@/components/admin/admin-activity-utils";
 import { AdminHeader } from "@/components/admin/admin-header";
-import { OwnerLivePresence } from "@/components/admin/owner-live-presence";
 import type { TeamActivitySummaryDto } from "@/components/admin/user-activity-types";
 import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, ErrorState, StatusPill, formatDate } from "@/components/ui/states";
 import { getOptionalCurrentUser } from "@/lib/auth/current-user";
-import { getOwnerLivePresence } from "@/lib/services/admin-user-insights";
 
 export const metadata: Metadata = { title: "Équipe & activité · Administration" };
 
@@ -46,12 +44,9 @@ export default async function AdminTeamActivityPage({
   const scope = params.scope && scopes.has(params.scope) ? params.scope : "all";
   const includeOwner = params.includeOwner === "true";
   const currentUser = await getOptionalCurrentUser();
-  const [result, livePresence] = await Promise.all([
-    serverApi<unknown>(
-      `/api/admin/team-activity?days=${days}&scope=${encodeURIComponent(scope)}&includeOwner=${includeOwner}&limit=100&offset=0`,
-    ),
-    currentUser?.role === "OWNER" ? getOwnerLivePresence(currentUser) : Promise.resolve(null),
-  ]);
+  const result = await serverApi<unknown>(
+    `/api/admin/team-activity?days=${days}&scope=${encodeURIComponent(scope)}&includeOwner=${includeOwner}&limit=100&offset=0`,
+  );
   const activity = unwrapObject<TeamActivitySummaryDto>(result.data);
 
   if (result.error || !activity) {
@@ -254,10 +249,6 @@ export default async function AdminTeamActivityPage({
             />
           )}
         </section>
-      )}
-
-      {currentUser?.role === "OWNER" && livePresence && (
-        <OwnerLivePresence initial={livePresence} />
       )}
     </>
   );

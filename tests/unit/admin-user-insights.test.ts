@@ -6,7 +6,7 @@ vi.mock("@/lib/db", () => ({ getSqlClient: () => mocks.sql }));
 vi.mock("@/lib/env", () => ({ getEnv: () => ({ APP_TIMEZONE: "Europe/Zurich" }) }));
 
 import type { CurrentUser } from "@/lib/auth/current-user";
-import { getAdminUserDetail } from "@/lib/services/admin-user-insights";
+import { getAdminUserDetail, getOwnerLivePresence } from "@/lib/services/admin-user-insights";
 
 const targetId = "11111111-1111-4111-8111-111111111111";
 const baseActor: Omit<CurrentUser, "role"> = {
@@ -94,6 +94,14 @@ beforeEach(() => {
 });
 
 describe("admin user dossier insights", () => {
+  it("keeps live presence owner-only before querying sessions", async () => {
+    await expect(getOwnerLivePresence({ ...baseActor, role: "ADMIN" })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      status: 403,
+    });
+    expect(mocks.sql).not.toHaveBeenCalled();
+  });
+
   it("exposes Telegram ID only to OWNER and returns the complete PokéTerps analytics", async () => {
     const ownerDetail = await getAdminUserDetail(targetId, { ...baseActor, role: "OWNER" });
     const adminDetail = await getAdminUserDetail(targetId, { ...baseActor, role: "ADMIN" });

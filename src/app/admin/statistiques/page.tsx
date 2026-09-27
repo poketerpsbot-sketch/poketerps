@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { OwnerLivePresence } from "@/components/admin/owner-live-presence";
 import { AdminHeader } from "@/components/admin/admin-header";
+import type { OwnerLivePresenceDto } from "@/components/admin/user-activity-types";
 import type { EntrySummaryDto, PublicProfileDto } from "@/components/data/types";
 import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatCount } from "@/components/ui/states";
+import { getOptionalCurrentUser } from "@/lib/auth/current-user";
+import { getOwnerLivePresence } from "@/lib/services/admin-user-insights";
 
 export const metadata: Metadata = { title: "Statistiques · Administration" };
 
@@ -33,7 +37,13 @@ type AdminStats = {
 };
 
 export default async function AdminStatsPage() {
-  const result = await serverApi<unknown>("/api/admin/stats");
+  const currentUser = await getOptionalCurrentUser();
+  const [result, livePresence] = await Promise.all([
+    serverApi<unknown>("/api/admin/stats"),
+    currentUser?.role === "OWNER"
+      ? getOwnerLivePresence(currentUser).catch(() => null as OwnerLivePresenceDto | null)
+      : Promise.resolve(null),
+  ]);
   const stats = unwrapObject<AdminStats>(result.data, ["stats"]);
   const metrics = stats
     ? [
@@ -71,58 +81,65 @@ export default async function AdminStatsPage() {
           message={result.error ?? "Les statistiques n’ont pas été renvoyées."}
           retryHref="/admin/statistiques"
         />
-      ) : metrics.length === 0 ? (
-        <EmptyState
-          title="Aucune mesure disponible"
-          description="Les indicateurs apparaîtront après les premières activités."
-        />
       ) : (
         <>
-          <section className="admin-stat-grid" aria-label="Indicateurs administratifs">
-            {metrics.map(([label, value]) => (
-              <article className="admin-stat" key={label}>
-                <span>{label}</span>
-                <strong>{formatCount(value)}</strong>
-              </article>
-            ))}
-          </section>
-          {(stats.topTrainers?.length || stats.popularEntries?.length) && (
-            <div className="admin-dashboard-grid">
-              {stats.topTrainers?.length ? (
-                <section className="content-panel admin-ranking-list">
-                  <h2>Meilleurs dresseurs</h2>
-                  <ol>
-                    {stats.topTrainers.map((trainer) => (
-                      <li key={String(trainer.id ?? trainer.publicSlug)}>
-                        <Link
-                          href={`/profil/${encodeURIComponent(trainer.publicSlug ?? trainer.slug ?? "")}`}
-                        >
-                          {trainer.displayName}
-                        </Link>
-                        <strong>
-                          {formatCount(trainer.captures ?? trainer.captureCount)} captures
-                        </strong>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              ) : null}
-              {stats.popularEntries?.length ? (
-                <section className="content-panel admin-ranking-list">
-                  <h2>Fiches populaires</h2>
-                  <ol>
-                    {stats.popularEntries.map((entry) => (
-                      <li key={String(entry.id)}>
-                        <Link href={`/fiches/${entry.slug}`}>{entry.name}</Link>
-                        <strong>
-                          {formatCount(Number(entry.metricValue ?? entry.viewCount ?? 0))} vues
-                        </strong>
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              ) : null}
-            </div>
+          {metrics.length === 0 ? (
+            <EmptyState
+              title="Aucune mesure disponible"
+              description="Les indicateurs apparaîtront après les premières activités."
+            />
+          ) : (
+            <>
+              <section className="admin-stat-grid" aria-label="Indicateurs administratifs">
+                {metrics.map(([label, value]) => (
+                  <article className="admin-stat" key={label}>
+                    <span>{label}</span>
+                    <strong>{formatCount(value)}</strong>
+                  </article>
+                ))}
+              </section>
+              {(stats.topTrainers?.length || stats.popularEntries?.length) && (
+                <div className="admin-dashboard-grid">
+                  {stats.topTrainers?.length ? (
+                    <section className="content-panel admin-ranking-list">
+                      <h2>Meilleurs dresseurs</h2>
+                      <ol>
+                        {stats.topTrainers.map((trainer) => (
+                          <li key={String(trainer.id ?? trainer.publicSlug)}>
+                            <Link
+                              href={`/profil/${encodeURIComponent(trainer.publicSlug ?? trainer.slug ?? "")}`}
+                            >
+                              {trainer.displayName}
+                            </Link>
+                            <strong>
+                              {formatCount(trainer.captures ?? trainer.captureCount)} captures
+                            </strong>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  ) : null}
+                  {stats.popularEntries?.length ? (
+                    <section className="content-panel admin-ranking-list">
+                      <h2>Fiches populaires</h2>
+                      <ol>
+                        {stats.popularEntries.map((entry) => (
+                          <li key={String(entry.id)}>
+                            <Link href={`/fiches/${entry.slug}`}>{entry.name}</Link>
+                            <strong>
+                              {formatCount(Number(entry.metricValue ?? entry.viewCount ?? 0))} vues
+                            </strong>
+                          </li>
+                        ))}
+                      </ol>
+                    </section>
+                  ) : null}
+                </div>
+              )}
+            </>
+          )}
+          {currentUser?.role === "OWNER" && livePresence && (
+            <OwnerLivePresence initial={livePresence} />
           )}
         </>
       )}
