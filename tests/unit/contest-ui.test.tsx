@@ -209,6 +209,45 @@ describe("contest public UI", () => {
     expect(markup).toContain("***,12 g");
     expect(markup).not.toContain("123,67 g");
   });
+
+  it("shows the configured contest unit before guesses exist", () => {
+    const markup = renderToStaticMarkup(
+      <ContestParticipationPanel
+        initialContest={{
+          ...detail,
+          contestType: "WEIGHT_GUESS",
+          weightUnit: "g",
+          viewerParticipation: {
+            id: "22222222-2222-4222-8222-222222222222",
+            contestId: detail.id,
+            entryId: null,
+            status: "APPROVED",
+            statement: null,
+            submittedAt: "2026-08-10T10:00:00.000Z",
+            updatedAt: "2026-08-10T10:00:00.000Z",
+            withdrawnAt: null,
+          },
+          participantContent: {
+            longDescription: null,
+            instructions: null,
+            participationSteps: [],
+            fullRules: null,
+            terms: null,
+            additionalInformation: null,
+            links: [],
+            guesses: [],
+            guess: null,
+            maxGuesses: 2,
+            allowGuessEditing: false,
+          },
+        }}
+        initiallyAuthenticated
+      />,
+    );
+
+    expect(markup).toContain(">g</span>");
+    expect(markup).not.toContain("unité du concours");
+  });
 });
 
 describe("contest administration UI", () => {

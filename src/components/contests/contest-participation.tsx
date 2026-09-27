@@ -219,6 +219,7 @@ export function ContestParticipationPanel({
           allowGuessEditing: false,
         }
       : null);
+  const contestUnit = contest.weightUnit?.trim() || "";
   const contestEndLabel = new Intl.DateTimeFormat("fr-CH", {
     dateStyle: "long",
     timeStyle: "short",
@@ -355,7 +356,9 @@ export function ContestParticipationPanel({
                       )
                     }
                   />
-                  <span>{participantContent.guesses[0]?.unit ?? "unité du concours"}</span>
+                  {(participantContent.guesses[0]?.unit || contestUnit) && (
+                    <span>{participantContent.guesses[0]?.unit || contestUnit}</span>
+                  )}
                 </div>
               </div>
             ))}

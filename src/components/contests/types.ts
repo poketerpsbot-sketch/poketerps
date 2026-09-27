@@ -131,6 +131,7 @@ export type ParticipantContestContent = {
 export type ContestDetailData = ContestCardData & {
   publicIntro?: string | null;
   shortRules?: string | null;
+  weightUnit?: string | null;
   criteria: Record<string, unknown>;
   rewardBadge: {
     id: string;

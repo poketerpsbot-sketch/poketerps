@@ -89,6 +89,8 @@ type ContestRow = {
   registration_starts_at: Date | string | null;
   registration_ends_at: Date | string | null;
   result_published_at: Date | string | null;
+  weight_unit: string | null;
+  custom_weight_unit: string | null;
   main_image_bucket: string | null;
   main_image_path: string | null;
   participant_count: number | string;
@@ -290,6 +292,10 @@ function contestCardDto(row: ContestRow) {
     registrationsOpen: row.registrations_open,
     contestType: row.contest_type,
     participationOpen: effectiveStatus === "OPEN",
+    weightUnit:
+      row.weight_unit === "CUSTOM"
+        ? row.custom_weight_unit?.trim() || null
+        : row.weight_unit?.trim() || null,
     timeZone: getEnv().APP_TIMEZONE,
   };
 }
@@ -306,7 +312,8 @@ const publicContestColumns = `c.id,c.slug,c.title,
   c.status,c.contest_type,c.is_featured,c.starts_at,c.ends_at,c.scoring_mode,c.criteria,c.reward,
   c.reward_badge_id,c.max_participants,c.require_entry,c.registrations_open,
   c.registrations_manually_closed,c.registration_starts_at,c.registration_ends_at,
-  c.result_published_at,c.public_intro,c.short_rules,c.main_image_bucket,c.main_image_path`;
+  c.result_published_at,c.weight_unit,c.custom_weight_unit,
+  c.public_intro,c.short_rules,c.main_image_bucket,c.main_image_path`;
 
 export async function listPublicContests(query: ContestQuery) {
   const sqlClient = getSqlClient();
@@ -587,14 +594,16 @@ async function listContestLinks(contestId: string, includeParticipantsOnly: bool
 }
 
 function displayWeightUnit(weightUnit: string | null, customWeightUnit: string | null) {
-  return weightUnit === "CUSTOM" ? customWeightUnit?.trim() || "unité" : weightUnit || "g";
+  return weightUnit === "CUSTOM"
+    ? customWeightUnit?.trim() || ""
+    : weightUnit?.trim() || "";
 }
 
 export function formatPublicContestGuess(value: string, unit: string, reveal: boolean) {
   const normalized = value.trim().replace(",", ".");
   const [integerPart, decimalPart] = normalized.split(".");
   const decimals = decimalPart ? `,${decimalPart}` : "";
-  return `${reveal ? integerPart : "***"}${decimals} ${unit}`;
+  return `${reveal ? integerPart : "***"}${decimals}${unit ? ` ${unit}` : ""}`;
 }
 
 async function listPublicContestParticipants(contestId: string, reveal: boolean) {
