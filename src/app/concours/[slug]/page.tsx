@@ -15,6 +15,7 @@ import {
 import { ContestLeaderboard, ContestWinners } from "@/components/contests/contest-leaderboard";
 import { ContestParticipants } from "@/components/contests/contest-participants";
 import { ContestParticipationPanel } from "@/components/contests/contest-participation";
+import { ContestHeroImage } from "@/components/contests/contest-hero-image";
 import type { ContestDetailData, ContestLeaderboardItem } from "@/components/contests/types";
 import {
   formatContestPeriod,
@@ -63,11 +64,12 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
       <header className="contest-detail-hero">
         <div
           className={`contest-detail-hero__visual${imageUrl ? " contest-detail-hero__visual--image" : ""}`}
-          style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}
-          role={imageUrl ? "img" : undefined}
-          aria-label={imageUrl ? `Illustration du concours ${contest.title}` : undefined}
         >
-          {!imageUrl && <Medal aria-hidden="true" />}
+          {imageUrl ? (
+            <ContestHeroImage title={contest.title} imageUrl={imageUrl} />
+          ) : (
+            <Medal aria-hidden="true" />
+          )}
           <span className={`contest-phase contest-phase--${contest.phase.toLowerCase()}`}>
             {phaseLabels[contest.phase]}
           </span>

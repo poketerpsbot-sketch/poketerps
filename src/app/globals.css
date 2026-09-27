@@ -7561,6 +7561,120 @@ body.is-age-gate-open .app-shell {
   height: 100px;
 }
 
+.contest-detail-hero__image-button {
+  position: relative;
+  display: grid;
+  min-height: 260px;
+  width: 100%;
+  padding: 15px;
+  place-items: end center;
+  overflow: hidden;
+  border: 0;
+  background-color: var(--screen);
+  background-position: center;
+  background-size: cover;
+  cursor: zoom-in;
+}
+
+.contest-detail-hero__image-button::before {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / 0.58));
+  content: "";
+}
+
+.contest-detail-hero__image-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 0 3px 0 var(--ink);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.contest-detail-hero__image-hint svg {
+  width: 16px;
+  height: 16px;
+}
+
+.contest-image-modal {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  padding: max(18px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  place-items: center;
+  background: rgb(12 10 10 / 0.88);
+}
+
+.contest-image-modal__panel {
+  display: grid;
+  width: min(920px, 100%);
+  max-height: 100%;
+  overflow: hidden;
+  border: 3px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow-hard);
+}
+
+.contest-image-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 2px solid var(--border);
+}
+
+.contest-image-modal__header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 5vw, 2rem);
+  text-transform: uppercase;
+}
+
+.contest-image-modal__close {
+  flex: 0 0 auto;
+}
+
+.contest-image-modal__content {
+  display: grid;
+  min-height: 0;
+  max-height: calc(100vh - 150px);
+  place-items: center;
+  overflow: auto;
+  background: #171313;
+}
+
+.contest-image-modal__content img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: calc(100vh - 150px);
+  object-fit: contain;
+}
+
+.contest-image-modal__panel > p {
+  margin: 0;
+  padding: 10px 14px;
+  color: #5f5750;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+body.contest-image-modal-open {
+  overflow: hidden;
+}
+
 .contest-detail-hero__copy {
   display: grid;
   padding: clamp(22px, 6vw, 46px);
