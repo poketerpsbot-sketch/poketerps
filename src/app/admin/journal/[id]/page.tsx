@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, ScrollText, UserRound } from "lucide-react";
+import { ExternalLink, ScrollText, UserRound } from "lucide-react";
 
 import {
   activityEntityHref,
@@ -11,6 +11,7 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import type { TeamAuditItemDto } from "@/components/admin/user-activity-types";
 import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { ErrorState, StatusPill, formatDate } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata: Metadata = { title: "Trace d’audit · Administration" };
 
@@ -34,9 +35,7 @@ export default async function AdminAuditDetailPage({
   const entityHref = activityEntityHref(log.entityType, log.entityId);
   return (
     <>
-      <Link className="text-link contest-back-link" href="/admin/journal">
-        <ArrowLeft aria-hidden="true" /> Retour au journal
-      </Link>
+      <BackLink fallbackHref="/admin/journal" label="Retour au journal" />
       <AdminHeader
         eyebrow="Trace immuable"
         title={formatActivityAction(log.action)}

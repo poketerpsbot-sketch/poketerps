@@ -19,6 +19,7 @@ import { formatActivityAction } from "@/components/admin/admin-activity-utils";
 import { AdminHeader } from "@/components/admin/admin-header";
 import type { TeamActivitySummaryDto } from "@/components/admin/user-activity-types";
 import { serverApi, unwrapObject } from "@/components/data/server-api";
+import { withReturnTo } from "@/lib/navigation";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, ErrorState, StatusPill, formatDate } from "@/components/ui/states";
 import { getOptionalCurrentUser } from "@/lib/auth/current-user";
@@ -168,7 +169,12 @@ export default async function AdminTeamActivityPage({
                     {member.displayName.charAt(0).toUpperCase()}
                   </span>
                   <div>
-                    <Link href={`/admin/utilisateurs/${encodeURIComponent(member.id)}`}>
+                    <Link
+                      href={withReturnTo(
+                        `/admin/utilisateurs/${encodeURIComponent(member.id)}`,
+                        "/admin/equipe",
+                      )}
+                    >
                       {member.displayName}
                     </Link>
                     <RoleBadge role={member.role} compact />
@@ -228,7 +234,13 @@ export default async function AdminTeamActivityPage({
           {activity.recentAudit.length ? (
             <div className="admin-team-audit-list">
               {activity.recentAudit.map((item) => (
-                <Link href={`/admin/journal/${encodeURIComponent(item.id)}`} key={item.id}>
+                <Link
+                  href={withReturnTo(
+                    `/admin/journal/${encodeURIComponent(item.id)}`,
+                    "/admin/equipe",
+                  )}
+                  key={item.id}
+                >
                   <span className="admin-team-audit__icon">
                     <Activity aria-hidden="true" />
                   </span>

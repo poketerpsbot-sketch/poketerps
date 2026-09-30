@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowLeft, ShieldCheck, Trophy } from "lucide-react";
+import { ShieldCheck, Trophy } from "lucide-react";
 
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminContestDetail } from "@/components/contests/admin-contest-detail";
 import type { AdminContest, AdminContestParticipation } from "@/components/contests/types";
 import { serverApi, unwrapList, unwrapObject } from "@/components/data/server-api";
 import { ErrorState } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata: Metadata = { title: "Pilotage du concours" };
 
@@ -40,9 +40,7 @@ export default async function AdminContestDetailPage({
 
   return (
     <>
-      <Link className="text-link contest-back-link" href="/admin/concours">
-        <ArrowLeft aria-hidden="true" /> Retour aux concours
-      </Link>
+      <BackLink fallbackHref="/admin/concours" label="Retour aux concours" />
       <AdminHeader
         eyebrow={canManage ? "Pilotage du concours" : "Modération du concours"}
         title={contest.title}

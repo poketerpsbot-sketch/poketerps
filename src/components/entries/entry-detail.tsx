@@ -7,6 +7,8 @@ import { prepareDynamicFieldDisplay } from "@/components/entries/entry-detail-fi
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { ViewTracker } from "@/components/entries/view-tracker";
 import { EmptyState, formatCount, formatDate, SectionHeading } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
+import { withReturnTo } from "@/lib/navigation";
 
 function initials(name: string) {
   return name
@@ -121,6 +123,7 @@ export function EntryDetail({
 
   return (
     <div className="page-shell page-stack">
+      <BackLink fallbackHref="/explorer" />
       <ViewTracker entryId={String(entry.id)} />
       <article className="detail-hero">
         <figure className="detail-hero__visual">
@@ -284,7 +287,10 @@ export function EntryDetail({
             <SectionHeading
               title="Avis vérifiés"
               description="Chaque avis est relu avant sa publication."
-              action={{ href: `/fiches/${entry.slug}/avis`, label: "Donner mon avis" }}
+              action={{
+                href: withReturnTo(`/fiches/${entry.slug}/avis`, `/fiches/${entry.slug}`),
+                label: "Donner mon avis",
+              }}
             />
             {reviews.length === 0 ? (
               <EmptyState
@@ -348,7 +354,10 @@ export function EntryDetail({
             {author ? (
               <Link
                 className="contributor-card"
-                href={`/profil/${encodeURIComponent(profileSlug(author))}`}
+                href={withReturnTo(
+                  `/profil/${encodeURIComponent(profileSlug(author))}`,
+                  `/fiches/${encodeURIComponent(entry.slug)}`,
+                )}
               >
                 <UserAvatar
                   className="contributor-card__avatar"

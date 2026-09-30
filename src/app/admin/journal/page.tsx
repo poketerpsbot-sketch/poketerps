@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { serverApi, unwrapList } from "@/components/data/server-api";
+import { withReturnTo } from "@/lib/navigation";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
 
 export const metadata: Metadata = { title: "Journal d’audit · Administration" };
@@ -183,7 +184,10 @@ export default async function AdminAuditPage({
               </header>
               <Link
                 className="button button--secondary"
-                href={`/admin/journal/${encodeURIComponent(String(log.id))}`}
+                href={withReturnTo(
+                  `/admin/journal/${encodeURIComponent(String(log.id))}`,
+                  `/admin/journal?${new URLSearchParams({ ...filters, page: String(page) })}`,
+                )}
               >
                 Ouvrir la trace complète
               </Link>

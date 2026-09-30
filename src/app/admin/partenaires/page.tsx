@@ -5,6 +5,7 @@ import { PartnerAdminForm } from "@/components/admin/partner-admin-form";
 import type { PartnerDto } from "@/components/data/types";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EmptyState, ErrorState, StatusPill } from "@/components/ui/states";
+import { withReturnTo } from "@/lib/navigation";
 
 export const metadata: Metadata = { title: "Partenaires" };
 
@@ -39,7 +40,10 @@ export default async function AdminPartnersPage() {
                 </div>
                 <h2>{partner.name}</h2>
                 <p>{partner.description ?? "Aucune description."}</p>
-                <Link className="text-link" href={`/partenaires/${partner.slug}`}>
+                <Link
+                  className="text-link"
+                  href={withReturnTo(`/partenaires/${partner.slug}`, "/admin/partenaires")}
+                >
                   Voir la page publique <span aria-hidden="true">→</span>
                 </Link>
               </div>

@@ -7,6 +7,7 @@ import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
 import { BadgeEmblem } from "@/components/ui/badge-emblem";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { withReturnTo } from "@/lib/navigation";
 
 export const metadata: Metadata = { title: "Utilisateurs · Administration" };
 
@@ -223,14 +224,20 @@ export default async function AdminUsersPage({
                 {user.publicSlug && (
                   <Link
                     className="text-link"
-                    href={`/profil/${encodeURIComponent(user.publicSlug)}`}
+                    href={withReturnTo(
+                      `/profil/${encodeURIComponent(user.publicSlug)}`,
+                      "/admin/utilisateurs",
+                    )}
                   >
                     Voir le profil public <span aria-hidden="true">→</span>
                   </Link>
                 )}
                 <Link
                   className="button button--secondary"
-                  href={`/admin/utilisateurs/${encodeURIComponent(String(user.id))}`}
+                  href={withReturnTo(
+                    `/admin/utilisateurs/${encodeURIComponent(String(user.id))}`,
+                    "/admin/utilisateurs",
+                  )}
                 >
                   <UserRoundSearch aria-hidden="true" /> Ouvrir le dossier interne
                 </Link>

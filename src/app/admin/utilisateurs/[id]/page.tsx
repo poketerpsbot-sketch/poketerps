@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { ArrowLeft, UserRoundSearch } from "lucide-react";
+import { UserRoundSearch } from "lucide-react";
 
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminUserDetail } from "@/components/admin/admin-user-detail";
 import type { AdminUserDetailDto } from "@/components/admin/user-activity-types";
 import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { ErrorState } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata: Metadata = { title: "Dossier utilisateur · Administration" };
 
@@ -25,9 +25,7 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
   }
   return (
     <>
-      <Link className="text-link contest-back-link" href="/admin/utilisateurs">
-        <ArrowLeft aria-hidden="true" /> Retour aux utilisateurs
-      </Link>
+      <BackLink fallbackHref="/admin/utilisateurs" label="Retour aux utilisateurs" />
       <AdminHeader
         eyebrow="Compte et historique"
         title={detail.user.displayName}

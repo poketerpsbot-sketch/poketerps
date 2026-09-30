@@ -5,6 +5,7 @@ import { serverApi, unwrapObject } from "@/components/data/server-api";
 import type { EntryDetailDto } from "@/components/data/types";
 import { ReviewForm } from "@/components/forms/review-form";
 import { ErrorState } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -18,6 +19,7 @@ export default async function ReviewPage({ params }: Props) {
 
   return (
     <div className="page-shell page-shell--narrow page-stack">
+      <BackLink fallbackHref={`/fiches/${encodeURIComponent(slug)}`} />
       <header className="page-header">
         <div className="page-header__copy">
           <p className="eyebrow">Avis vérifié</p>

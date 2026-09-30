@@ -9,6 +9,7 @@ import type { AdminContest, ContestFormValue, ContestStatus } from "@/components
 import { contestStatusLabels, formatContestPeriod } from "@/components/contests/contest-utils";
 import { submitJson } from "@/components/forms/form-api";
 import { EmptyState, StatusPill } from "@/components/ui/states";
+import { withReturnTo } from "@/lib/navigation";
 
 type ContestFilter = "ALL" | "ACTIVE" | "UPCOMING" | "ENDED" | "DRAFT";
 const filters: Array<{ value: ContestFilter; label: string }> = [
@@ -196,7 +197,10 @@ export function AdminContestManager({
               <div className="button-row">
                 <Link
                   className="button button--secondary"
-                  href={`/admin/concours/${encodeURIComponent(contest.id)}`}
+                  href={withReturnTo(
+                    `/admin/concours/${encodeURIComponent(contest.id)}`,
+                    "/admin/concours",
+                  )}
                 >
                   {canManage ? "Gérer le concours" : "Modérer les participants"}
                 </Link>

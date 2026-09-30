@@ -7,12 +7,21 @@ import { ErrorState } from "@/components/ui/states";
 import { requireAdminUser } from "@/lib/auth/admin";
 import { getEntryByIdOrSlug } from "@/lib/services/catalogue";
 import { uuidSchema } from "@/lib/validation/common";
+import { safeInternalHref } from "@/lib/navigation";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata: Metadata = { title: "Modifier une fiche" };
 
-export default async function AdminEntryEditPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AdminEntryEditPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
   const actor = await requireAdminUser("entry:update:any");
   const { id } = await params;
+  const { returnTo } = await searchParams;
   const entryId = uuidSchema.parse(id);
   const [entry, categoriesResult, aromasResult] = await Promise.all([
     getEntryByIdOrSlug(entryId, actor),
@@ -28,6 +37,7 @@ export default async function AdminEntryEditPage({ params }: { params: Promise<{
 
   return (
     <>
+      <BackLink fallbackHref="/admin/fiches/gestion" />
       <header className="page-header page-header--compact">
         <div className="page-header__copy">
           <p className="eyebrow">Édition administrative</p>
@@ -51,7 +61,7 @@ export default async function AdminEntryEditPage({ params }: { params: Promise<{
           aromaFamilies={aromaFamilies}
           initialEntry={initialEntry}
           allowSubmit={false}
-          returnHref="/admin/fiches/gestion"
+          returnHref={safeInternalHref(returnTo, "/admin/fiches/gestion")}
         />
       )}
     </>

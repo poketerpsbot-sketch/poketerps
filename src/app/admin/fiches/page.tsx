@@ -6,6 +6,7 @@ import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
 import { requireAdminUser } from "@/lib/auth/admin";
 import { listPendingCorrections } from "@/lib/services/admin-queues";
+import { withReturnTo } from "@/lib/navigation";
 
 export const metadata: Metadata = { title: "Fiches à valider" };
 
@@ -55,7 +56,10 @@ export default async function AdminEntriesPage({
                 </div>
                 <h2>{entry.name}</h2>
                 <p>{entry.shortDescription ?? "Aucune description courte."}</p>
-                <Link className="text-link" href={`/fiches/${entry.slug}`}>
+                <Link
+                  className="text-link"
+                  href={withReturnTo(`/fiches/${entry.slug}`, "/admin/fiches")}
+                >
                   Consulter la fiche <span aria-hidden="true">→</span>
                 </Link>
               </div>
@@ -115,7 +119,13 @@ export default async function AdminEntriesPage({
                     {correction.author.username ? ` · @${correction.author.username}` : ""}
                   </p>
                   {correction.entry && (
-                    <Link className="text-link" href={`/fiches/${correction.entry.slug}`}>
+                    <Link
+                      className="text-link"
+                      href={withReturnTo(
+                        `/fiches/${correction.entry.slug}`,
+                        "/admin/fiches#corrections",
+                      )}
+                    >
                       Vérifier la fiche « {correction.entry.name} »{" "}
                       <span aria-hidden="true">→</span>
                     </Link>

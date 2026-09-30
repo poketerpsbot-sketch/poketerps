@@ -6,6 +6,7 @@ import type { ReviewDto } from "@/components/data/types";
 import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { ReviewEditForm } from "@/components/forms/review-edit-form";
 import { ErrorState } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
 
 type Props = { params: Promise<{ id: string }> };
 type EditableReview = ReviewDto & { canEdit: boolean };
@@ -20,6 +21,7 @@ export default async function EditReviewPage({ params }: Props) {
 
   return (
     <div className="page-shell page-shell--narrow page-stack">
+      <BackLink fallbackHref="/profil/avis" />
       <header className="page-header">
         <div className="page-header__copy">
           <p className="eyebrow">Nouvelle version</p>

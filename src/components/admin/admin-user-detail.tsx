@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { withReturnTo } from "@/lib/navigation";
 import Link from "next/link";
 import {
   Activity,
@@ -260,7 +261,10 @@ export function AdminUserDetail({ initialDetail }: { initialDetail: AdminUserDet
         {user.publicSlug && (
           <Link
             className="button button--secondary"
-            href={`/profil/${encodeURIComponent(user.publicSlug)}`}
+            href={withReturnTo(
+              `/profil/${encodeURIComponent(user.publicSlug)}`,
+              `/admin/utilisateurs/${encodeURIComponent(String(user.id))}`,
+            )}
           >
             Voir le profil public
           </Link>

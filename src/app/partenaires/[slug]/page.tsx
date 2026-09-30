@@ -6,6 +6,7 @@ import { serverApi, unwrapObject } from "@/components/data/server-api";
 import type { PartnerDto } from "@/components/data/types";
 import { PartnerLinks } from "@/components/partners/partner-links";
 import { ErrorState } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -44,6 +45,7 @@ export default async function PartnerPage({ params }: Props) {
     );
   return (
     <div className="page-shell page-stack">
+      <BackLink fallbackHref="/partenaires" />
       <article className="partner-feature">
         <div className="partner-feature__visual">
           {partner.coverUrl ? (

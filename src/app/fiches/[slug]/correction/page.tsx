@@ -5,6 +5,7 @@ import { serverApi, unwrapObject } from "@/components/data/server-api";
 import type { EntryDetailDto } from "@/components/data/types";
 import { CorrectionForm } from "@/components/forms/correction-form";
 import { ErrorState } from "@/components/ui/states";
+import { BackLink } from "@/components/ui/back-link";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -17,6 +18,7 @@ export default async function CorrectionPage({ params }: Props) {
   const entry = unwrapObject<EntryDetailDto>(result.data, ["entry"]);
   return (
     <div className="page-shell page-shell--narrow page-stack">
+      <BackLink fallbackHref={`/fiches/${encodeURIComponent(slug)}`} />
       <header className="page-header">
         <div className="page-header__copy">
           <p className="eyebrow">Révision communautaire</p>

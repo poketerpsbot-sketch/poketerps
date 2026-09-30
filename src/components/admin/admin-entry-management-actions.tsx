@@ -17,6 +17,7 @@ import {
 import { useState } from "react";
 
 import { submitJson } from "@/components/forms/form-api";
+import { withReturnTo } from "@/lib/navigation";
 
 type Props = {
   entryId: string;
@@ -24,6 +25,7 @@ type Props = {
   name: string;
   status: string;
   canPermanentlyDelete?: boolean;
+  returnTo?: string;
 };
 
 export function AdminEntryManagementActions({
@@ -32,6 +34,7 @@ export function AdminEntryManagementActions({
   name,
   status,
   canPermanentlyDelete = false,
+  returnTo = "/admin/fiches/gestion",
 }: Props) {
   const router = useRouter();
   const [pending, setPending] = useState("");
@@ -125,10 +128,16 @@ export function AdminEntryManagementActions({
   return (
     <div className="admin-action-stack admin-entry-card-actions">
       <div className="button-row">
-        <Link className="button button--secondary" href={`/fiches/${encodeURIComponent(slug)}`}>
+        <Link
+          className="button button--secondary"
+          href={withReturnTo(`/fiches/${encodeURIComponent(slug)}`, returnTo)}
+        >
           <Eye size={15} aria-hidden="true" /> Voir
         </Link>
-        <Link className="button" href={`/admin/fiches/${encodeURIComponent(entryId)}/modifier`}>
+        <Link
+          className="button"
+          href={withReturnTo(`/admin/fiches/${encodeURIComponent(entryId)}/modifier`, returnTo)}
+        >
           <Pencil size={15} aria-hidden="true" /> Modifier
         </Link>
         {status === "PENDING_REVIEW" && (

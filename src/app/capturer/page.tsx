@@ -4,10 +4,17 @@ import { serverApi, unwrapList } from "@/components/data/server-api";
 import type { AromaFamilyDto, CategoryDto } from "@/components/data/types";
 import { CaptureForm } from "@/components/forms/capture-form";
 import { ErrorState } from "@/components/ui/states";
+import { safeInternalHref } from "@/lib/navigation";
 
 export const metadata: Metadata = { title: "Capturer une découverte" };
 
-export default async function CapturePage() {
+export default async function CapturePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
+  const params = await searchParams;
+  const returnHref = safeInternalHref(params.returnTo, "/profil/fiches");
   const [result, aromaResult] = await Promise.all([
     serverApi<unknown>("/api/categories"),
     serverApi<unknown>("/api/aromas"),
@@ -41,7 +48,11 @@ export default async function CapturePage() {
           retryHref="/capturer"
         />
       ) : (
-        <CaptureForm categories={categories} aromaFamilies={aromaFamilies} />
+        <CaptureForm
+          categories={categories}
+          aromaFamilies={aromaFamilies}
+          returnHref={returnHref}
+        />
       )}
     </div>
   );

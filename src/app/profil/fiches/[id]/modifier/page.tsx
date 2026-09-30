@@ -8,12 +8,21 @@ import { requireCurrentUser } from "@/lib/auth/current-user";
 import { getEntryByIdOrSlug } from "@/lib/services/catalogue";
 import { getLatestEntryChangeRequest } from "@/lib/services/entries";
 import { uuidSchema } from "@/lib/validation/common";
+import { safeInternalHref } from "@/lib/navigation";
+import { BackLink } from "@/components/ui/back-link";
 
 export const metadata: Metadata = { title: "Corriger ma fiche" };
 
-export default async function MemberEntryEditPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function MemberEntryEditPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
+}) {
   const actor = await requireCurrentUser();
   const { id } = await params;
+  const { returnTo } = await searchParams;
   const entryId = uuidSchema.parse(id);
   const [entry, request, categoriesResult, aromasResult] = await Promise.all([
     getEntryByIdOrSlug(entryId, actor),
@@ -32,6 +41,7 @@ export default async function MemberEntryEditPage({ params }: { params: Promise<
 
   return (
     <div className="page-shell page-shell--narrow page-stack">
+      <BackLink fallbackHref="/profil/fiches" />
       <header className="page-header">
         <div className="page-header__copy">
           <p className="eyebrow">Mon atelier</p>
@@ -54,7 +64,7 @@ export default async function MemberEntryEditPage({ params }: { params: Promise<
           initialEntry={initialEntry}
           allowSubmit={canSubmit}
           moderationMessage={changesRequested ? request.reason : null}
-          returnHref="/profil/fiches"
+          returnHref={safeInternalHref(returnTo, "/profil/fiches")}
         />
       )}
     </div>

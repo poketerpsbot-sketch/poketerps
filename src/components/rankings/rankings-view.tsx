@@ -7,6 +7,7 @@ import { trainerIdentity } from "@/components/rankings/trainer-identity";
 import { BadgeEmblem } from "@/components/ui/badge-emblem";
 import { EmptyState, ErrorState, SectionHeading, formatCount } from "@/components/ui/states";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { withReturnTo } from "@/lib/navigation";
 
 export type RankingPeriod = "week" | "month" | "all";
 export type RankingMetric = "views" | "likes" | "rating" | "recent";
@@ -53,10 +54,12 @@ function RankingBadge({ item, compact = false }: { item: TrainerRankingDto; comp
   );
 }
 
-function trainerHref(item: TrainerRankingDto) {
+function trainerHref(item: TrainerRankingDto, returnTo: string) {
   const { user } = trainerIdentity(item);
   const value = user.publicSlug ?? user.id;
-  return value ? "/profil/" + encodeURIComponent(String(value)) : "/classements";
+  return value
+    ? withReturnTo("/profil/" + encodeURIComponent(String(value)), returnTo)
+    : "/classements";
 }
 
 function medal(index: number) {
@@ -244,6 +247,7 @@ export function RankingsView({
   const periodLabel = periods.find((item) => item.value === period)?.label ?? "Période";
   const trainerPlural = trainerTotal > 1 ? "s" : "";
   const entryPlural = entryTotal > 1 ? "s" : "";
+  const rankingsReturnTo = rankingsHref({ period, metric, trainerPage, entryPage });
 
   return (
     <div className="page-shell page-stack rankings-page">
@@ -306,7 +310,7 @@ export function RankingsView({
                   return (
                     <Link
                       className={"podium-card podium-card--" + ["first", "second", "third"][index]}
-                      href={trainerHref(item)}
+                      href={trainerHref(item, rankingsReturnTo)}
                       key={String(item.rank) + "-" + String(user.publicSlug ?? index)}
                     >
                       <span
@@ -339,7 +343,7 @@ export function RankingsView({
                   return (
                     <Link
                       className="rank-row competition-rank-row"
-                      href={trainerHref(item)}
+                      href={trainerHref(item, rankingsReturnTo)}
                       key={String(item.rank) + "-" + String(user.publicSlug ?? index)}
                     >
                       <span className="rank-row__rank">{item.rank}</span>
@@ -425,7 +429,13 @@ export function RankingsView({
                 <div className="ranked-entry" key={String(item.entry.id)}>
                   <span className="ranked-entry__rank">#{item.rank}</span>
                   <span className="ranked-entry__value">{metricValue(metric, item)}</span>
-                  <EntryCard entry={item.entry} />
+                  <EntryCard
+                    entry={item.entry}
+                    href={withReturnTo(
+                      `/fiches/${encodeURIComponent(item.entry.slug)}`,
+                      rankingsReturnTo,
+                    )}
+                  />
                 </div>
               );
             })}

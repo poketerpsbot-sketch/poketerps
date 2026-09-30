@@ -150,6 +150,7 @@ export default async function AdminEntryManagementPage({
                 name={entry.name}
                 status={entry.status ?? "DRAFT"}
                 canPermanentlyDelete={actor.role === "OWNER"}
+                returnTo={pageHref(params, page)}
               />
             </article>
           ))}

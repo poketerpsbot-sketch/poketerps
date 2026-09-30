@@ -5,6 +5,7 @@ import { ReviewHistory } from "@/components/admin/review-history";
 import type { ReviewDto } from "@/components/data/types";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
+import { withReturnTo } from "@/lib/navigation";
 
 export const metadata: Metadata = { title: "Avis à valider" };
 
@@ -27,7 +28,10 @@ function ReviewCard({ review, actions = false }: { review: ReviewDto; actions?: 
         {(review.entry?.slug ?? review.entryId) && (
           <Link
             className="text-link"
-            href={`/fiches/${encodeURIComponent(String(review.entry?.slug ?? review.entryId))}`}
+            href={withReturnTo(
+              `/fiches/${encodeURIComponent(String(review.entry?.slug ?? review.entryId))}`,
+              "/admin/avis",
+            )}
           >
             Voir la fiche <span aria-hidden="true">→</span>
           </Link>

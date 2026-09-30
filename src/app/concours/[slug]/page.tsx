@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import {
-  ArrowLeft,
   CalendarDays,
   Medal,
   ShieldCheck,
@@ -13,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { ContestLeaderboard, ContestWinners } from "@/components/contests/contest-leaderboard";
+import { BackLink } from "@/components/ui/back-link";
 import { ContestParticipants } from "@/components/contests/contest-participants";
 import { ContestParticipationPanel } from "@/components/contests/contest-participation";
 import { ContestHeroImage } from "@/components/contests/contest-hero-image";
@@ -57,9 +56,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
   const imageUrl = safeContestImage(contest.imageUrl);
   return (
     <div className="page-shell page-stack contest-detail-page">
-      <Link className="text-link contest-back-link" href="/concours">
-        <ArrowLeft aria-hidden="true" /> Tous les concours
-      </Link>
+      <BackLink fallbackHref="/concours" label="Tous les concours" />
 
       <header className="contest-detail-hero">
         <div

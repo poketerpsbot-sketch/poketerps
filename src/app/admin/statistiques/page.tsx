@@ -8,6 +8,7 @@ import { serverApi, unwrapObject } from "@/components/data/server-api";
 import { EmptyState, ErrorState, formatCount } from "@/components/ui/states";
 import { getOptionalCurrentUser } from "@/lib/auth/current-user";
 import { getOwnerLivePresence } from "@/lib/services/admin-user-insights";
+import { withReturnTo } from "@/lib/navigation";
 
 export const metadata: Metadata = { title: "Statistiques · Administration" };
 
@@ -107,7 +108,10 @@ export default async function AdminStatsPage() {
                         {stats.topTrainers.map((trainer) => (
                           <li key={String(trainer.id ?? trainer.publicSlug)}>
                             <Link
-                              href={`/profil/${encodeURIComponent(trainer.publicSlug ?? trainer.slug ?? "")}`}
+                              href={withReturnTo(
+                                `/profil/${encodeURIComponent(trainer.publicSlug ?? trainer.slug ?? "")}`,
+                                "/admin/statistiques",
+                              )}
                             >
                               {trainer.displayName}
                             </Link>
@@ -125,7 +129,11 @@ export default async function AdminStatsPage() {
                       <ol>
                         {stats.popularEntries.map((entry) => (
                           <li key={String(entry.id)}>
-                            <Link href={`/fiches/${entry.slug}`}>{entry.name}</Link>
+                            <Link
+                              href={withReturnTo(`/fiches/${entry.slug}`, "/admin/statistiques")}
+                            >
+                              {entry.name}
+                            </Link>
                             <strong>
                               {formatCount(Number(entry.metricValue ?? entry.viewCount ?? 0))} vues
                             </strong>

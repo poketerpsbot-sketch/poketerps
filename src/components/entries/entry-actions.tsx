@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Bookmark, Check, Heart, MessageSquarePlus, PencilLine, Share2 } from "lucide-react";
+import { withReturnTo } from "@/lib/navigation";
 
 type Props = {
   entryId: string;
@@ -159,13 +160,19 @@ export function EntryActions({
         </button>
         <Link
           className="button button--secondary"
-          href={`/fiches/${encodeURIComponent(slug)}/avis`}
+          href={withReturnTo(
+            `/fiches/${encodeURIComponent(slug)}/avis`,
+            `/fiches/${encodeURIComponent(slug)}`,
+          )}
         >
           <MessageSquarePlus size={17} aria-hidden="true" /> Ajouter un avis
         </Link>
         <Link
           className="button button--secondary"
-          href={`/fiches/${encodeURIComponent(slug)}/correction`}
+          href={withReturnTo(
+            `/fiches/${encodeURIComponent(slug)}/correction`,
+            `/fiches/${encodeURIComponent(slug)}`,
+          )}
         >
           <PencilLine size={17} aria-hidden="true" /> Corriger
         </Link>

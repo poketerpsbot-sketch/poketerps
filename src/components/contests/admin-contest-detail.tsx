@@ -30,6 +30,7 @@ import {
   readApiError,
 } from "@/components/contests/contest-utils";
 import { submitJson } from "@/components/forms/form-api";
+import { withReturnTo } from "@/lib/navigation";
 import { EmptyState, StatusPill } from "@/components/ui/states";
 
 const participationStatuses: Array<{ value: ContestParticipationStatus | "ALL"; label: string }> = [
@@ -459,7 +460,10 @@ export function AdminContestDetail({
                       {row.entry_slug ? (
                         <Link
                           className="text-link"
-                          href={`/fiches/${encodeURIComponent(row.entry_slug)}`}
+                          href={withReturnTo(
+                            `/fiches/${encodeURIComponent(row.entry_slug)}`,
+                            `/admin/concours/${encodeURIComponent(String(contest.id))}`,
+                          )}
                         >
                           {row.entry_name}
                         </Link>

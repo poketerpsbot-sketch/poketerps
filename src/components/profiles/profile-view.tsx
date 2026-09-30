@@ -32,6 +32,8 @@ import { BadgeEmblem } from "@/components/ui/badge-emblem";
 import { RoleBadge } from "@/components/ui/role-badge";
 import { EmptyState, SectionHeading, StatusPill, formatDate } from "@/components/ui/states";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { BackLink } from "@/components/ui/back-link";
+import { withReturnTo } from "@/lib/navigation";
 import {
   canAccessFullAdminConsole,
   canAccessModerationConsole,
@@ -220,8 +222,11 @@ export function ProfileHero({ profile }: { profile: PublicProfileDto }) {
 export function PublicProfileView({ profile }: { profile: ProfilePayload }) {
   const entries = profile.entries ?? [];
   const experience = experienceForProfile(profile);
+  const profileHref =
+    "/profil/" + encodeURIComponent(String(profile.publicSlug ?? profile.slug ?? profile.id ?? ""));
   return (
     <div className="page-shell page-stack">
+      <BackLink fallbackHref="/classements" />
       <ProfileHero profile={profile} />
       <XpProgressCard experience={experience} />
       <div className="button-row">
@@ -232,7 +237,12 @@ export function PublicProfileView({ profile }: { profile: ProfilePayload }) {
       {profile.featuredEntry && (
         <section className="section-stack">
           <SectionHeading eyebrow="Capture épinglée" title="Découverte en vedette" />
-          <EntryGrid entries={[profile.featuredEntry]} />
+          <EntryGrid
+            entries={[profile.featuredEntry]}
+            hrefForEntry={(entry) =>
+              withReturnTo("/fiches/" + encodeURIComponent(entry.slug), profileHref)
+            }
+          />
         </section>
       )}
       <section className="section-stack">
@@ -242,7 +252,12 @@ export function PublicProfileView({ profile }: { profile: ProfilePayload }) {
           description="Seules les fiches publiques sont visibles ici."
         />
         {entries.length > 0 ? (
-          <EntryGrid entries={entries} />
+          <EntryGrid
+            entries={entries}
+            hrefForEntry={(entry) =>
+              withReturnTo("/fiches/" + encodeURIComponent(entry.slug), profileHref)
+            }
+          />
         ) : (
           <EmptyState
             title="Aucune capture publique"
@@ -316,6 +331,7 @@ function EntryPreview({
   emptyTitle,
   emptyDescription,
   action,
+  returnTo = "/profil",
 }: {
   id?: string;
   eyebrow: string;
@@ -325,12 +341,18 @@ function EntryPreview({
   emptyTitle: string;
   emptyDescription: string;
   action: { href: string; label: string };
+  returnTo?: string;
 }) {
   return (
     <section className="section-stack profile-dashboard-section" id={id}>
       <SectionHeading eyebrow={eyebrow} title={title} description={description} action={action} />
       {entries.length > 0 ? (
-        <EntryGrid entries={entries.slice(0, 4)} />
+        <EntryGrid
+          entries={entries.slice(0, 4)}
+          hrefForEntry={(entry) =>
+            withReturnTo("/fiches/" + encodeURIComponent(entry.slug), returnTo)
+          }
+        />
       ) : (
         <EmptyState title={emptyTitle} description={emptyDescription} action={action} />
       )}
@@ -403,7 +425,7 @@ function ActivityList({ entries, kind }: { entries: EntrySummaryDto[]; kind: "li
         return (
           <Link
             className="profile-activity-row"
-            href={`/fiches/${encodeURIComponent(entry.slug)}`}
+            href={withReturnTo("/fiches/" + encodeURIComponent(entry.slug), "/profil")}
             key={String(entry.id)}
           >
             <span className="profile-activity-row__icon" aria-hidden="true">
@@ -445,7 +467,9 @@ function ReviewPreview({ reviews }: { reviews: ReviewDto[] }) {
           <div className="list-row__copy">
             <h3>
               {review.entrySlug ? (
-                <Link href={`/fiches/${encodeURIComponent(review.entrySlug)}`}>
+                <Link
+                  href={withReturnTo("/fiches/" + encodeURIComponent(review.entrySlug), "/profil")}
+                >
                   {review.entry?.name ?? review.entryName ?? "Avis"}
                 </Link>
               ) : (
@@ -640,7 +664,7 @@ export function MyProfileView({ profile }: { profile: ProfilePayload }) {
         entries={entries}
         emptyTitle="Aucune fiche ajoutée"
         emptyDescription="Commence une capture ; elle sera conservée comme brouillon avant soumission."
-        action={{ href: "/capturer", label: "Ajouter une fiche" }}
+        action={{ href: withReturnTo("/capturer", "/profil"), label: "Ajouter une fiche" }}
       />
 
       <section className="section-stack profile-dashboard-section" id="propositions">
@@ -716,7 +740,12 @@ export function SubmissionList({ submissions }: { submissions: SubmissionDto[] }
           <div className="list-row__copy">
             <h3>
               {submission.entrySlug ? (
-                <Link href={`/fiches/${encodeURIComponent(submission.entrySlug)}`}>
+                <Link
+                  href={withReturnTo(
+                    "/fiches/" + encodeURIComponent(submission.entrySlug),
+                    "/profil",
+                  )}
+                >
                   {submission.entry?.name ??
                     submission.entryName ??
                     submission.title ??

@@ -4,6 +4,7 @@ import type { CategoryDto, EntrySummaryDto } from "@/components/data/types";
 import { serverApi, unwrapList } from "@/components/data/server-api";
 import { EntryGrid } from "@/components/entries/entry-card";
 import { EmptyState, ErrorState, formatCount } from "@/components/ui/states";
+import { withReturnTo } from "@/lib/navigation";
 
 export type CatalogueSearchParams = {
   query?: string | string[];
@@ -66,6 +67,11 @@ function pageHref(pathname: string, params: CatalogueSearchParams, page: number)
   }
   query.set("page", String(page));
   return `${pathname}?${query.toString()}`;
+}
+
+function currentCatalogueHref(pathname: string, params: CatalogueSearchParams) {
+  const page = pageNumber(params.page);
+  return pageHref(pathname, params, page);
 }
 
 function categoryValue(category: CategoryDto) {
@@ -490,7 +496,15 @@ export async function CatalogueView({
               action={{ href: "/capturer", label: "Proposer une capture" }}
             />
           ) : (
-            <EntryGrid entries={entries} />
+            <EntryGrid
+              entries={entries}
+              hrefForEntry={(entry) =>
+                withReturnTo(
+                  `/fiches/${encodeURIComponent(entry.slug)}`,
+                  currentCatalogueHref(pathname, searchParams),
+                )
+              }
+            />
           )}
           {entries.length > 0 && totalPages > 1 && (
             <nav className="pagination" aria-label="Pagination du catalogue">
