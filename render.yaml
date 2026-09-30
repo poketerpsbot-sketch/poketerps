@@ -85,41 +85,92 @@ services:
       - key: NODE_ENV
         value: production
       - key: NEXT_PUBLIC_APP_URL
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: NEXT_PUBLIC_APP_URL
       - key: SUPABASE_URL
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: SUPABASE_URL
       - key: SUPABASE_ANON_KEY
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: SUPABASE_ANON_KEY
       - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: SUPABASE_SERVICE_ROLE_KEY
       - key: DATABASE_URL
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: DATABASE_URL
       - key: DIRECT_DATABASE_URL
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: DIRECT_DATABASE_URL
       - key: TELEGRAM_BOT_TOKEN
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_BOT_TOKEN
       - key: TELEGRAM_BOT_USERNAME
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_BOT_USERNAME
       - key: TELEGRAM_WEBHOOK_SECRET
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_WEBHOOK_SECRET
       - key: TELEGRAM_OWNER_IDS
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_OWNER_IDS
       - key: TELEGRAM_ADMIN_IDS
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_ADMIN_IDS
       - key: TELEGRAM_MODERATOR_IDS
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_MODERATOR_IDS
       - key: TELEGRAM_CHANNEL_ID
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_CHANNEL_ID
       - key: TELEGRAM_CHANNEL_URL
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_CHANNEL_URL
       - key: TELEGRAM_CHAT_URL
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: TELEGRAM_CHAT_URL
       - key: TELEGRAM_AUTH_MAX_AGE_SECONDS
         value: "900"
       - key: INSTAGRAM_URL
-        sync: false
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: INSTAGRAM_URL
       - key: SESSION_SECRET
-        generateValue: true
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: SESSION_SECRET
       - key: SESSION_MAX_AGE_SECONDS
         value: "604800"
       - key: SESSION_INACTIVITY_SECONDS
@@ -129,7 +180,10 @@ services:
       - key: SESSION_DEDUP_WINDOW_SECONDS
         value: "30"
       - key: RATE_LIMIT_SECRET
-        generateValue: true
+        fromService:
+          name: pokedex-community
+          type: web
+          envVarKey: RATE_LIMIT_SECRET
       - key: APP_DISPLAY_NAME
         value: PokéTerps
       - key: APP_TIMEZONE
