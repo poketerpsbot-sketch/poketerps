@@ -222,7 +222,7 @@ async function queueAnnouncementBroadcast(
   publicationId: string,
   createdById: string | null,
   payload: PublicationPayload,
-): Promise<void> {
+): Promise<string | null> {
   const [broadcast] = await getDb()
     .insert(telegramBroadcasts)
     .values({
@@ -236,7 +236,7 @@ async function queueAnnouncementBroadcast(
     .returning({ id: telegramBroadcasts.id });
   if (broadcast) {
     await prepareAnnouncementBroadcast(broadcast.id, publicationId, payload.text);
-    return;
+    return broadcast.id;
   }
   const [existing] = await getDb()
     .select({ id: telegramBroadcasts.id, status: telegramBroadcasts.status })
@@ -246,6 +246,7 @@ async function queueAnnouncementBroadcast(
   if (existing?.status === "QUEUED") {
     await prepareAnnouncementBroadcast(existing.id, publicationId, payload.text);
   }
+  return existing?.id ?? null;
 }
 
 async function deliverPublication(channelId: string | number, payload: PublicationPayload) {
@@ -315,6 +316,7 @@ export async function publishPublication(
     .returning({ id: telegramPublications.id });
   if (!claimed) throw conflict("Publication déjà traitée.", "PUBLICATION_ALREADY_CLAIMED");
 
+  let telegramBroadcastId: string | null = null;
   try {
     if (!channelId && publicationType !== "ANNOUNCEMENT") {
       throw new AppError("TELEGRAM_CHANNEL_NOT_CONFIGURED", "Canal Telegram non configuré.", 503);
@@ -334,7 +336,11 @@ export async function publishPublication(
         .from(telegramPublications)
         .where(eq(telegramPublications.id, id))
         .limit(1);
-      await queueAnnouncementBroadcast(id, publication?.createdById ?? null, payload);
+      telegramBroadcastId = await queueAnnouncementBroadcast(
+        id,
+        publication?.createdById ?? null,
+        payload,
+      );
     }
     await getDb()
       .update(telegramPublications)
@@ -385,7 +391,7 @@ export async function publishPublication(
       },
     });
   }
-  return { id, status: "PUBLISHED" as const };
+  return { id, status: "PUBLISHED" as const, telegramBroadcastId };
 }
 
 export async function processScheduledPublications(limit = 20): Promise<{

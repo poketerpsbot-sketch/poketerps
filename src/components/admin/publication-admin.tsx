@@ -111,6 +111,9 @@ export function PublicationComposer({
           <div className="field">
             <label htmlFor="publication-schedule">Planifier (optionnel)</label>
             <input id="publication-schedule" name="scheduledAt" type="datetime-local" />
+            <p className="field__hint">
+              Heure suisse — Europe/Zurich (UTC+1 ou UTC+2 selon la date).
+            </p>
           </div>
         </div>
         {type === "ANNOUNCEMENT" && (

@@ -21,6 +21,7 @@ describe("Telegram publication scheduler contract", () => {
     const packageJson = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
     const publications = read("src/lib/services/publications.ts");
     const broadcasts = read("src/lib/services/telegram-entry-broadcasts.ts");
+    const publicationRoute = read("src/app/api/admin/publications/[id]/route.ts");
     const migration = read("supabase/migrations/20260930123000_telegram_publication_scheduler.sql");
 
     expect(render).toMatch(/type: cron/);
@@ -33,8 +34,11 @@ describe("Telegram publication scheduler contract", () => {
     expect(publications).toMatch(/lte\(telegramPublications\.scheduledAt, new Date\(\)\)/);
     expect(publications).toContain('type: "ANNOUNCEMENT"');
     expect(publications).toContain("prepareAnnouncementBroadcast");
+    expect(publications).toContain("telegramBroadcastId");
     expect(publications).toMatch(/publicationType === "ANNOUNCEMENT" \? null : channelId/);
     expect(broadcasts).toContain("processQueuedTelegramBroadcasts");
+    expect(publicationRoute).toContain("processTelegramBroadcast");
+    expect(publicationRoute).toContain("telegram_announcement_broadcast_process_failed");
     expect(migration).toContain("publication_id");
     expect(migration).toContain("telegram_broadcasts_publication_unique");
   });
