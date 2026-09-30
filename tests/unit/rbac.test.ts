@@ -29,6 +29,9 @@ describe("RBAC", () => {
   it("keeps member and moderator capabilities scoped", () => {
     expect(hasPermission("MEMBER", "entry:create")).toBe(true);
     expect(hasPermission("MEMBER", "entry:moderate")).toBe(false);
+    expect(hasPermission("MODERATOR", "entry:create")).toBe(true);
+    expect(hasPermission("MODERATOR", "entry:update:own")).toBe(true);
+    expect(hasPermission("MODERATOR", "storage:upload:entry")).toBe(true);
     expect(hasPermission("MODERATOR", "review:moderate")).toBe(true);
     expect(hasPermission("MODERATOR", "entry:moderate")).toBe(true);
     expect(hasPermission("MODERATOR", "contest:moderate")).toBe(true);

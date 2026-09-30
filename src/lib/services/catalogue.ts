@@ -32,6 +32,24 @@ function escapedLike(value: string): string {
   return `%${value.replace(/[\\%_]/g, "\\$&")}%`;
 }
 
+type EntryViewer = Pick<CurrentUser, "id" | "role">;
+
+/**
+ * Published entries are public. Unpublished entries remain private, but the
+ * author and an authorized moderator may preview them through the server API.
+ * Drafts stay restricted to their author (or an explicit any-entry authority).
+ */
+export function canViewEntry(
+  row: Pick<typeof entries.$inferSelect, "status" | "createdById">,
+  viewer: EntryViewer | null | undefined,
+): boolean {
+  if (row.status === "PUBLISHED") return true;
+  if (!viewer) return false;
+  if (viewer.id === row.createdById) return true;
+  if (hasPermission(viewer.role, "entry:update:any")) return true;
+  return row.status !== "DRAFT" && hasPermission(viewer.role, "entry:moderate");
+}
+
 function publicEntrySelection() {
   return {
     id: entries.id,
@@ -201,10 +219,7 @@ export async function getEntryByIdOrSlug(idOrSlug: string, viewer?: CurrentUser 
     .where(and(identifier, isNull(entries.deletedAt)))
     .limit(1);
   if (!row) throw notFound("Capture");
-  if (
-    row.status !== "PUBLISHED" &&
-    (!viewer || (viewer.id !== row.createdById && !hasPermission(viewer.role, "entry:update:any")))
-  ) {
+  if (!canViewEntry(row, viewer)) {
     throw notFound("Capture");
   }
 

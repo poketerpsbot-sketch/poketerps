@@ -421,7 +421,10 @@ assert(schema.includes("('contest.manage',"), "contest.manage permission seed is
 assert(schema.includes("('contest.moderate',"), "contest.moderate permission seed is missing");
 assert(
   /\('MODERATOR','contest\.moderate'\)/.test(schema) &&
-    /\('MODERATOR','entry\.moderate'\)/.test(schema),
+    /\('MODERATOR','entry\.moderate'\)/.test(schema) &&
+    /\('MODERATOR','entry\.create'\)/.test(schema) &&
+    /\('MODERATOR','entry\.update\.own'\)/.test(schema) &&
+    /\('MODERATOR','storage\.upload\.entry'\)/.test(schema),
   "moderator contest/entry permissions are missing",
 );
 assert(

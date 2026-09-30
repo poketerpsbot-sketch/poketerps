@@ -1156,6 +1156,8 @@ insert into public.role_permissions(role,permission_code)
 select 'ADMIN'::public.user_role,p.code from public.permissions p
 on conflict do nothing;
 insert into public.role_permissions(role,permission_code) values
+  ('MODERATOR','entry.create'),('MODERATOR','entry.update.own'),
+  ('MODERATOR','storage.upload.entry'),
   ('MODERATOR','review.create'),('MODERATOR','review.moderate'),
   ('MODERATOR','message.create'),('MODERATOR','message.manage'),
   ('MODERATOR','storage.upload.message'),('MODERATOR','telegram.admin'),
