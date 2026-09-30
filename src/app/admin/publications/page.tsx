@@ -7,7 +7,13 @@ import {
   type PublicationTarget,
 } from "@/components/admin/publication-admin";
 import { serverApi, unwrapList } from "@/components/data/server-api";
-import { EmptyState, ErrorState, formatDate, StatusPill } from "@/components/ui/states";
+import {
+  EmptyState,
+  ErrorState,
+  formatDate,
+  formatDateTime,
+  StatusPill,
+} from "@/components/ui/states";
 
 export const metadata: Metadata = { title: "Publications Telegram · Administration" };
 
@@ -66,7 +72,7 @@ export default async function AdminPublicationsPage() {
                     <dt>Planification</dt>
                     <dd>
                       {publication.scheduledAt
-                        ? formatDate(publication.scheduledAt)
+                        ? formatDateTime(publication.scheduledAt)
                         : "Envoi manuel"}
                     </dd>
                   </div>
@@ -74,7 +80,7 @@ export default async function AdminPublicationsPage() {
                     <dt>Publication</dt>
                     <dd>
                       {publication.publishedAt
-                        ? formatDate(publication.publishedAt)
+                        ? formatDateTime(publication.publishedAt)
                         : "Pas encore publiée"}
                     </dd>
                   </div>

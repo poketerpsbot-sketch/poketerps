@@ -47,7 +47,7 @@ export function PublicationComposer({
       entryId: type === "ENTRY" ? String(data.get("entryId") ?? "") : null,
       partnerId: type === "PARTNER" ? String(data.get("partnerId") ?? "") : null,
       text: type === "ANNOUNCEMENT" ? String(data.get("text") ?? "") : undefined,
-      scheduledAt: schedule ? new Date(schedule).toISOString() : null,
+      scheduledAtLocal: schedule || null,
     });
     setPending(false);
     if (!result.ok) {

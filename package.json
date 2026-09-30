@@ -20,6 +20,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "demo-media:sync": "tsx scripts/sync-demo-media.ts",
+    "telegram:publish-scheduled": "tsx scripts/process-telegram-publications.ts",
     "telegram:set-webhook": "tsx scripts/set-telegram-webhook.ts",
     "telegram:set-webhook:startup": "tsx scripts/set-telegram-webhook.ts --startup"
   },

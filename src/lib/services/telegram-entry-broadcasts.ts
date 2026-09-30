@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gt, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db";
 import {
@@ -37,6 +37,13 @@ export type EntryPublishedPayload = {
   author: string | null;
   imageUrl: string | null;
 };
+
+export type AnnouncementBroadcastPayload = {
+  publicationId: string;
+  text: string;
+};
+
+type TelegramBroadcastPayload = EntryPublishedPayload | AnnouncementBroadcastPayload;
 
 type TelegramErrorDetails = {
   errorCode?: number;
@@ -191,6 +198,15 @@ async function sendEntryPreview(
   return { messageId: message.message_id };
 }
 
+async function sendBroadcastPreview(
+  telegramId: number,
+  payload: TelegramBroadcastPayload,
+): Promise<{ messageId: number }> {
+  if ("entryId" in payload) return sendEntryPreview(telegramId, payload);
+  const message = await sendTelegramMessage(telegramId, payload.text);
+  return { messageId: message.message_id };
+}
+
 export async function prepareEntryPublishedBroadcast(
   broadcastId: string,
   entryId: string,
@@ -247,9 +263,64 @@ export async function prepareEntryPublishedBroadcast(
   });
 }
 
+export async function prepareAnnouncementBroadcast(
+  broadcastId: string,
+  publicationId: string,
+  text: string,
+): Promise<void> {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    const [broadcast] = await tx
+      .select({ id: telegramBroadcasts.id })
+      .from(telegramBroadcasts)
+      .where(and(eq(telegramBroadcasts.id, broadcastId), eq(telegramBroadcasts.status, "QUEUED")))
+      .limit(1)
+      .for("update");
+    if (!broadcast) return;
+
+    const recipients = await tx
+      .select({ userId: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.accountKind, "TELEGRAM"),
+          eq(users.isSystem, false),
+          isNotNull(users.telegramId),
+          gt(users.telegramId, 0),
+          eq(users.isBanned, false),
+          ne(users.role, "BANNED"),
+          isNull(users.suspendedAt),
+          sql`exists (
+            select 1 from ${userSessions}
+            where ${userSessions.userId}=${users.id}
+              and ${userSessions.platform}='TELEGRAM_BOT'
+          )`,
+        ),
+      );
+
+    const payload: AnnouncementBroadcastPayload = { publicationId, text };
+    await tx
+      .update(telegramBroadcasts)
+      .set({ payload, totalRecipients: recipients.length })
+      .where(eq(telegramBroadcasts.id, broadcast.id));
+    if (recipients.length > 0) {
+      await tx
+        .insert(telegramBroadcastDeliveries)
+        .values(
+          recipients.map((recipient) => ({
+            broadcastId: broadcast.id,
+            userId: recipient.userId,
+            status: "QUEUED" as const,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+  });
+}
+
 async function deliverOne(
   delivery: { id: string; telegramId: number | null; attemptCount: number },
-  payload: EntryPublishedPayload,
+  payload: TelegramBroadcastPayload,
 ): Promise<"SENT" | "FAILED" | "BLOCKED"> {
   if (!delivery.telegramId) {
     await getDb()
@@ -271,7 +342,7 @@ async function deliverOne(
       .set({ attemptCount: attempt, errorCode: null, errorMessage: null })
       .where(eq(telegramBroadcastDeliveries.id, delivery.id));
     try {
-      const message = await sendEntryPreview(delivery.telegramId, payload);
+      const message = await sendBroadcastPreview(delivery.telegramId, payload);
       await getDb()
         .update(telegramBroadcastDeliveries)
         .set({
@@ -310,11 +381,16 @@ export async function processTelegramBroadcast(broadcastId: string): Promise<voi
   const [claimed] = await getDb()
     .update(telegramBroadcasts)
     .set({ status: "PROCESSING", startedAt: new Date() })
-    .where(and(eq(telegramBroadcasts.id, broadcastId), eq(telegramBroadcasts.status, "QUEUED")))
+    .where(
+      and(
+        eq(telegramBroadcasts.id, broadcastId),
+        inArray(telegramBroadcasts.status, ["QUEUED", "PARTIAL"]),
+      ),
+    )
     .returning({ id: telegramBroadcasts.id, payload: telegramBroadcasts.payload });
   if (!claimed) return;
 
-  const payload = claimed.payload as unknown as EntryPublishedPayload;
+  const payload = claimed.payload as unknown as TelegramBroadcastPayload;
   const deliveries = await getDb()
     .select({
       id: telegramBroadcastDeliveries.id,
@@ -368,9 +444,34 @@ export async function processTelegramBroadcast(broadcastId: string): Promise<voi
     );
   logger.info("telegram_entry_broadcast_completed", {
     broadcastId,
-    entryId: payload.entryId,
+    entryId: "entryId" in payload ? payload.entryId : undefined,
     sent,
     failed,
     pending,
   });
+}
+
+export async function processQueuedTelegramBroadcasts(limit = 20): Promise<{
+  processed: number;
+  failed: number;
+}> {
+  const queued = await getDb()
+    .select({ id: telegramBroadcasts.id })
+    .from(telegramBroadcasts)
+    .where(inArray(telegramBroadcasts.status, ["QUEUED", "PARTIAL"]))
+    .orderBy(asc(telegramBroadcasts.createdAt))
+    .limit(limit);
+  let failed = 0;
+  for (const broadcast of queued) {
+    try {
+      await processTelegramBroadcast(broadcast.id);
+    } catch (error) {
+      failed += 1;
+      logger.error("telegram_broadcast_process_failed", {
+        broadcastId: broadcast.id,
+        error,
+      });
+    }
+  }
+  return { processed: queued.length - failed, failed };
 }

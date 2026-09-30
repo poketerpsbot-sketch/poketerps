@@ -126,3 +126,18 @@ export function formatDate(value?: string | null) {
     year: "numeric",
   }).format(date);
 }
+
+export function formatDateTime(value?: string | null, timeZone = "Europe/Zurich") {
+  if (!value) return "Date inconnue";
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "Date inconnue";
+  return new Intl.DateTimeFormat("fr-CH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
+  }).format(date);
+}

@@ -70,6 +70,11 @@ export const createPublicationSchema = z
     partnerId: z.uuid().nullable().optional(),
     text: z.string().trim().min(1).max(4_096).optional(),
     scheduledAt: z.iso.datetime().nullable().optional(),
+    scheduledAtLocal: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+      .nullable()
+      .optional(),
   })
   .superRefine((value, context) => {
     if (value.type === "ENTRY" && !value.entryId) {

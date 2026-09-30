@@ -71,3 +71,74 @@ services:
         value: "18"
       - key: ENTRY_VIEW_DEDUP_HOURS
         value: "6"
+  - type: cron
+    name: pokedex-telegram-publications
+    runtime: node
+    plan: starter
+    schedule: "*/1 * * * *"
+    buildCommand: npm ci --include=dev
+    startCommand: npm run telegram:publish-scheduled
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_OWNER_IDS
+        sync: false
+      - key: TELEGRAM_ADMIN_IDS
+        sync: false
+      - key: TELEGRAM_MODERATOR_IDS
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: TELEGRAM_CHANNEL_URL
+        sync: false
+      - key: TELEGRAM_CHAT_URL
+        sync: false
+      - key: TELEGRAM_AUTH_MAX_AGE_SECONDS
+        value: "900"
+      - key: INSTAGRAM_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SESSION_MAX_AGE_SECONDS
+        value: "604800"
+      - key: SESSION_INACTIVITY_SECONDS
+        value: "1800"
+      - key: SESSION_MAX_DURATION_SECONDS
+        value: "43200"
+      - key: SESSION_DEDUP_WINDOW_SECONDS
+        value: "30"
+      - key: RATE_LIMIT_SECRET
+        generateValue: true
+      - key: APP_DISPLAY_NAME
+        value: PokéTerps
+      - key: APP_TIMEZONE
+        value: Europe/Zurich
+      - key: APP_LEGAL_COUNTRY
+        value: CH
+      - key: AGE_GATE_ENABLED
+        value: "true"
+      - key: MINIMUM_AGE
+        value: "18"
+      - key: ENTRY_VIEW_DEDUP_HOURS
+        value: "6"

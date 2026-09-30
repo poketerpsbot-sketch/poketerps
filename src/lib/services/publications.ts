@@ -1,15 +1,23 @@
 import "server-only";
 
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql, lte } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { CurrentUser } from "@/lib/auth/current-user";
 import { getDb, getSqlClient } from "@/lib/db";
-import { entries, entryImages, partners, telegramPublications } from "@/lib/db/schema";
+import {
+  entries,
+  entryImages,
+  partners,
+  telegramBroadcasts,
+  telegramPublications,
+} from "@/lib/db/schema";
 import { getEnv } from "@/lib/env";
 import { AppError, conflict, notFound } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { recordAudit } from "@/lib/services/audit";
+import { prepareAnnouncementBroadcast } from "@/lib/services/telegram-entry-broadcasts";
+import { zonedDateTimeToUtc } from "@/lib/timezone";
 import { publicStorageUrl } from "@/lib/services/storage-url";
 import {
   escapeTelegramHtml,
@@ -20,6 +28,16 @@ import type { createPublicationSchema } from "@/lib/validation/admin";
 
 type CreatePublication = z.infer<typeof createPublicationSchema>;
 type PublicationPayload = { text: string; imageUrl?: string };
+
+function publicationError(error: unknown): AppError {
+  if (error instanceof AppError && error.status < 500) return error;
+  return new AppError(
+    "PUBLICATION_DELIVERY_FAILED",
+    "Impossible d’envoyer la publication via Telegram.",
+    502,
+    { cause: error, expose: true },
+  );
+}
 
 export async function listPublications(query: { limit: number; offset: number; status?: string }) {
   const status = query.status ?? null;
@@ -85,7 +103,16 @@ export async function createPublication(
   actor: CurrentUser,
   requestId?: string,
 ) {
-  const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : null;
+  let scheduledAt: Date | null = null;
+  if (input.scheduledAtLocal) {
+    try {
+      scheduledAt = zonedDateTimeToUtc(input.scheduledAtLocal, getEnv().APP_TIMEZONE);
+    } catch {
+      throw new AppError("INVALID_PUBLICATION_TIME", "Date de planification invalide.", 400);
+    }
+  } else if (input.scheduledAt) {
+    scheduledAt = new Date(input.scheduledAt);
+  }
   const [publication] = await getDb()
     .insert(telegramPublications)
     .values({
@@ -181,6 +208,46 @@ async function buildPayload(id: string): Promise<PublicationPayload> {
   throw new AppError("INVALID_PUBLICATION", "Cible de publication manquante.", 400);
 }
 
+async function getPublicationType(id: string): Promise<"ENTRY" | "PARTNER" | "ANNOUNCEMENT"> {
+  const [publication] = await getDb()
+    .select({ type: telegramPublications.type })
+    .from(telegramPublications)
+    .where(eq(telegramPublications.id, id))
+    .limit(1);
+  if (!publication) throw notFound("Publication");
+  return publication.type;
+}
+
+async function queueAnnouncementBroadcast(
+  publicationId: string,
+  createdById: string | null,
+  payload: PublicationPayload,
+): Promise<void> {
+  const [broadcast] = await getDb()
+    .insert(telegramBroadcasts)
+    .values({
+      type: "ANNOUNCEMENT",
+      publicationId,
+      createdById,
+      status: "QUEUED",
+      payload: { publicationId, text: payload.text },
+    })
+    .onConflictDoNothing()
+    .returning({ id: telegramBroadcasts.id });
+  if (broadcast) {
+    await prepareAnnouncementBroadcast(broadcast.id, publicationId, payload.text);
+    return;
+  }
+  const [existing] = await getDb()
+    .select({ id: telegramBroadcasts.id, status: telegramBroadcasts.status })
+    .from(telegramBroadcasts)
+    .where(eq(telegramBroadcasts.publicationId, publicationId))
+    .limit(1);
+  if (existing?.status === "QUEUED") {
+    await prepareAnnouncementBroadcast(existing.id, publicationId, payload.text);
+  }
+}
+
 async function deliverPublication(channelId: string | number, payload: PublicationPayload) {
   if (payload.imageUrl && payload.text.length <= 1_024) {
     try {
@@ -222,17 +289,19 @@ export async function previewPublication(id: string, actor: CurrentUser, request
   return { ...updated, preview: payload };
 }
 
-export async function publishPublication(id: string, actor: CurrentUser, requestId?: string) {
+export async function publishPublication(
+  id: string,
+  actor: CurrentUser | null,
+  requestId?: string,
+) {
   const channelId = getEnv().TELEGRAM_CHANNEL_ID;
-  if (!channelId)
-    throw new AppError("TELEGRAM_CHANNEL_NOT_CONFIGURED", "Canal Telegram non configuré.", 503);
-  const payload = await buildPayload(id);
+  const publicationType = await getPublicationType(id);
+  const channelPublicationId = publicationType === "ANNOUNCEMENT" ? null : channelId;
   const [claimed] = await getDb()
     .update(telegramPublications)
     .set({
       status: "PUBLISHING",
-      channelId,
-      previewPayload: payload,
+      ...(channelPublicationId ? { channelId: channelPublicationId } : {}),
       lastError: null,
       attemptCount: sql`${telegramPublications.attemptCount} + 1`,
       updatedAt: new Date(),
@@ -247,12 +316,31 @@ export async function publishPublication(id: string, actor: CurrentUser, request
   if (!claimed) throw conflict("Publication déjà traitée.", "PUBLICATION_ALREADY_CLAIMED");
 
   try {
-    const message = await deliverPublication(channelId, payload);
+    if (!channelId && publicationType !== "ANNOUNCEMENT") {
+      throw new AppError("TELEGRAM_CHANNEL_NOT_CONFIGURED", "Canal Telegram non configuré.", 503);
+    }
+    const payload = await buildPayload(id);
+    await getDb()
+      .update(telegramPublications)
+      .set({ previewPayload: payload, updatedAt: new Date() })
+      .where(and(eq(telegramPublications.id, id), eq(telegramPublications.status, "PUBLISHING")));
+    const message =
+      publicationType === "ANNOUNCEMENT" || !channelId
+        ? null
+        : await deliverPublication(channelId, payload);
+    if (publicationType === "ANNOUNCEMENT") {
+      const [publication] = await getDb()
+        .select({ createdById: telegramPublications.createdById })
+        .from(telegramPublications)
+        .where(eq(telegramPublications.id, id))
+        .limit(1);
+      await queueAnnouncementBroadcast(id, publication?.createdById ?? null, payload);
+    }
     await getDb()
       .update(telegramPublications)
       .set({
         status: "PUBLISHED",
-        telegramMessageId: message.message_id,
+        telegramMessageId: message?.message_id ?? null,
         finalPayload: payload,
         publishedAt: new Date(),
         lastError: null,
@@ -260,27 +348,78 @@ export async function publishPublication(id: string, actor: CurrentUser, request
       })
       .where(and(eq(telegramPublications.id, id), eq(telegramPublications.status, "PUBLISHING")));
   } catch (error) {
+    const safeError = publicationError(error);
     await getDb()
       .update(telegramPublications)
       .set({
         status: "FAILED",
-        lastError: (error instanceof Error ? error.message : "Telegram error").slice(0, 2_000),
+        lastError: safeError.message.slice(0, 2_000),
         updatedAt: new Date(),
       })
       .where(and(eq(telegramPublications.id, id), eq(telegramPublications.status, "PUBLISHING")));
-    throw error;
+    throw safeError;
   }
-  await recordAudit({
-    actorUserId: actor.id,
-    actorTelegramIdSnapshot: actor.telegramId,
-    action: "TELEGRAM_PUBLICATION_PUBLISHED",
-    entityType: "TELEGRAM_PUBLICATION",
-    entityId: id,
-    source: "WEB_ADMIN",
-    requestId,
-    after: { channelId },
-  });
+  if (actor) {
+    await recordAudit({
+      actorUserId: actor.id,
+      actorTelegramIdSnapshot: actor.telegramId,
+      action: "TELEGRAM_PUBLICATION_PUBLISHED",
+      entityType: "TELEGRAM_PUBLICATION",
+      entityId: id,
+      source: "WEB_ADMIN",
+      requestId,
+      after: {
+        channelId: channelPublicationId,
+        audience: publicationType === "ANNOUNCEMENT" ? "BOT_USERS" : "CHANNEL",
+      },
+    });
+  } else {
+    await recordAudit({
+      action: "TELEGRAM_PUBLICATION_PUBLISHED",
+      entityType: "TELEGRAM_PUBLICATION",
+      entityId: id,
+      source: "SYSTEM",
+      after: {
+        channelId: channelPublicationId,
+        audience: publicationType === "ANNOUNCEMENT" ? "BOT_USERS" : "CHANNEL",
+      },
+    });
+  }
   return { id, status: "PUBLISHED" as const };
+}
+
+export async function processScheduledPublications(limit = 20): Promise<{
+  claimed: number;
+  published: number;
+  failed: number;
+}> {
+  const due = await getDb()
+    .select({ id: telegramPublications.id })
+    .from(telegramPublications)
+    .where(
+      and(
+        eq(telegramPublications.status, "SCHEDULED"),
+        lte(telegramPublications.scheduledAt, new Date()),
+      ),
+    )
+    .orderBy(asc(telegramPublications.scheduledAt))
+    .limit(limit);
+  let published = 0;
+  let failed = 0;
+  for (const publication of due) {
+    try {
+      await publishPublication(publication.id, null, `scheduler:${new Date().toISOString()}`);
+      published += 1;
+    } catch (error) {
+      if (error instanceof AppError && error.code === "PUBLICATION_ALREADY_CLAIMED") continue;
+      failed += 1;
+      logger.error("telegram_scheduled_publication_failed", {
+        publicationId: publication.id,
+        error,
+      });
+    }
+  }
+  return { claimed: due.length, published, failed };
 }
 
 export async function cancelPublication(id: string, actor: CurrentUser, requestId?: string) {
